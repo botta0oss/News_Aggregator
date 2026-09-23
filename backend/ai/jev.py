@@ -1,0 +1,38 @@
+"""Shared TypeSafe Jev (System One) client."""
+from typing import Optional
+from backend.config import settings
+
+_client = None
+
+
+class JevUnavailableError(RuntimeError):
+    """Raised when a Jev evaluation is required but no API key is configured."""
+
+
+def is_enabled() -> bool:
+    return _client is not None or bool(settings.TYPESAFE_API_KEY)
+
+
+def get_client():
+    """Returns a lazily created, process-wide AsyncTypeSafeClient (reuses the HTTP connection pool)."""
+    global _client
+    if _client is None:
+        if not settings.TYPESAFE_API_KEY:
+            raise JevUnavailableError("TYPESAFE_API_KEY is not configured")
+        from typesafe_sdk import AsyncTypeSafeClient
+        _client = AsyncTypeSafeClient(api_key=settings.TYPESAFE_API_KEY, model=settings.TYPESAFE_MODEL)
+    return _client
+
+
+def set_client(client) -> None:
+    """Overrides the shared client (used by tests to inject a mock transport)."""
+    global _client
+    _client = client
+
+
+async def close_client() -> None:
+    global _client
+    client: Optional[object] = _client
+    _client = None
+    if client is not None:
+        await client.aclose()

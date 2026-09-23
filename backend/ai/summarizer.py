@@ -75,27 +75,18 @@ async def summarize_article(title: str, content: str) -> str:
     Summarizes an article using the configured or best available provider
     (Google Gemini -> Groq -> Ollama -> Fallback).
     """
-    provider = settings.SUMMARIZER_PROVIDER.lower()
-    
-    if provider == "gemini":
-        summary = await summarize_with_gemini(title, content)
-        if summary: return summary
-    elif provider == "groq":
-        summary = await summarize_with_groq(title, content)
-        if summary: return summary
-    elif provider == "ollama":
-        summary = await summarize_with_ollama(title, content)
-        if summary: return summary
-
-    # Auto fallback chain
-    summary = await summarize_with_gemini(title, content)
-    if summary: return summary
-    
-    summary = await summarize_with_groq(title, content)
-    if summary: return summary
-    
-    summary = await summarize_with_ollama(title, content)
-    if summary: return summary
+    providers = {
+        "gemini": summarize_with_gemini,
+        "groq": summarize_with_groq,
+        "ollama": summarize_with_ollama,
+    }
+    preferred = settings.SUMMARIZER_PROVIDER.lower()
+    # Preferred provider first, then the auto fallback chain (each provider tried at most once)
+    order = ([preferred] if preferred in providers else []) + [p for p in providers if p != preferred]
+    for name in order:
+        summary = await providers[name](title, content)
+        if summary:
+            return summary
     
     # Fallback: clean excerpt from raw content
     clean_text = content.strip() if content else title

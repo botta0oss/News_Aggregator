@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Boolean, Integer, Float, Text, ForeignKey, DateTime
+from sqlalchemy import Boolean, Integer, Float, Text, ForeignKey, DateTime, UniqueConstraint, Index
+from typing import Optional
 from sqlalchemy.orm import declarative_base, relationship, Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 from pgvector.sqlalchemy import Vector
@@ -60,3 +61,58 @@ class ProcessedArticle(Base):
     processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     article = relationship("Article", back_populates="processed")
+
+
+class Market(Base):
+    """A binary (Yes/No) Polymarket market, synced read-only from the Gamma API."""
+    __tablename__ = 'markets'
+    id: Mapped[str] = mapped_column(Text, primary_key=True)  # Polymarket market id
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    slug: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    event_slug: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # resolution rules
+    end_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    yes_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # implied P(YES), 0-1
+    volume: Mapped[float] = mapped_column(Float, default=0.0)
+    liquidity: Mapped[float] = mapped_column(Float, default=0.0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    closed: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolved_yes: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)  # set once resolved
+    question_embedding = mapped_column(Vector(384), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class MarketArticleLink(Base):
+    """News article semantically related to a market (candidate evidence for the forecast)."""
+    __tablename__ = 'market_article_links'
+    __table_args__ = (UniqueConstraint('market_id', 'article_id', name='uq_market_article'),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    market_id: Mapped[str] = mapped_column(ForeignKey('markets.id', ondelete='CASCADE'), index=True)
+    article_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('articles.id', ondelete='CASCADE'), index=True)
+    similarity: Mapped[float] = mapped_column(Float, nullable=False)
+    # Filled by Jev at prediction time
+    relevance: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # P(article is relevant)
+    impact: Mapped[Optional[str]] = mapped_column(Text, nullable=True)        # raises_yes / lowers_yes / neutral
+    impact_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    article = relationship("Article")
+
+
+class MarketPrediction(Base):
+    """A Jev forecast for a market, compared with the market price at prediction time."""
+    __tablename__ = 'market_predictions'
+    __table_args__ = (Index('ix_market_predictions_market_created', 'market_id', 'created_at'),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    market_id: Mapped[str] = mapped_column(ForeignKey('markets.id', ondelete='CASCADE'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    model_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    market_probability: Mapped[float] = mapped_column(Float, nullable=False)   # price at prediction time
+    model_probability: Mapped[float] = mapped_column(Float, nullable=False)    # raw Jev P(YES)
+    evidence_strength: Mapped[float] = mapped_column(Float, nullable=False)    # 0-1
+    blended_probability: Mapped[float] = mapped_column(Float, nullable=False)  # shrunk toward market
+    edge: Mapped[float] = mapped_column(Float, nullable=False)                 # blended - market
+    signal: Mapped[str] = mapped_column(Text, nullable=False)                  # BUY_YES / BUY_NO / HOLD
+    kelly_fraction: Mapped[float] = mapped_column(Float, default=0.0)          # suggested bankroll fraction
+    article_count: Mapped[int] = mapped_column(Integer, default=0)
