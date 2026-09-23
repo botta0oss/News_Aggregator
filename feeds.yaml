@@ -1,10 +1,20 @@
 feeds:
   - name: "BBC News"
-    url: "http://feeds.bbci.co.uk/news/rss.xml"
+    url: "https://feeds.bbci.co.uk/news/rss.xml"
     active: true
+  # feeds.reuters.com was discontinued in 2020 and no longer returns entries
   - name: "Reuters"
     url: "https://feeds.reuters.com/reuters/topNews"
+    active: false
+  - name: "The Guardian - World"
+    url: "https://www.theguardian.com/world/rss"
     active: true
   - name: "Al Jazeera"
     url: "https://www.aljazeera.com/xml/rss/all.xml"
+    active: true
+  - name: "NPR News"
+    url: "https://feeds.npr.org/1001/rss.xml"
+    active: true
+  - name: "CNBC Top News"
+    url: "https://www.cnbc.com/id/100003114/device/rss/rss.html"
     active: true

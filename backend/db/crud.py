@@ -32,6 +32,7 @@ async def find_similar_article(session: AsyncSession, embedding: list[float], th
     return result.scalars().first()
 
 async def get_unprocessed_articles(session: AsyncSession, limit: int = 50):
-    stmt = select(Article).outerjoin(ProcessedArticle).where(ProcessedArticle.id == None).limit(limit)
+    stmt = select(Article).outerjoin(ProcessedArticle).where(ProcessedArticle.id == None)\
+        .order_by(Article.fetched_at.desc()).limit(limit)
     result = await session.execute(stmt)
     return result.scalars().all()

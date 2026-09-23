@@ -1,3 +1,4 @@
+import uuid
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
@@ -8,11 +9,14 @@ from backend.ai.typesafe_evaluator import calculate_composite_score
 
 router = APIRouter(prefix="/articles", tags=["articles"])
 
+def _or_default(value, default):
+    return default if value is None else value
+
 @router.get("", response_model=ArticleListResponse)
 async def get_articles(
     category: str = Query(None, description="Filtra per macro categoria"),
     limit: int = Query(50, le=200),
-    offset: int = Query(0),
+    offset: int = Query(0, ge=0),
     # Weight parameters for dynamic composite ranking
     w_authority: float = Query(0.35, ge=0.0, le=2.0, description="Peso autorevolezza"),
     w_tech: float = Query(0.25, ge=0.0, le=2.0, description="Peso profondità tecnica"),
@@ -40,10 +44,19 @@ async def get_articles(
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
     
-    # Retrieve candidates to apply dynamic weighted ranking
-    # Fetch a batch to rank in Python
-    fetch_limit = min(300, max(limit + offset, 100))
-    query = query.order_by(Article.fetched_at.desc()).limit(fetch_limit)
+    # Dynamic weighted ranking computed in SQL, so ordering and pagination cover
+    # the whole result set (same formula as calculate_composite_score)
+    auth_col = func.coalesce(ProcessedArticle.authority_score, 0.5)
+    tech_col = func.coalesce(ProcessedArticle.technical_depth_score, 0.5)
+    urg_col = func.coalesce(ProcessedArticle.urgency_score, 0.5)
+    cb_col = func.coalesce(ProcessedArticle.clickbait_score, 0.0)
+    rank_expr = func.greatest(0.0, func.least(1.0,
+        w_authority * auth_col + w_tech * tech_col + w_urgency * urg_col - w_clickbait * cb_col
+    ))
+    query = query.order_by(
+        rank_expr.desc(),
+        func.coalesce(Article.published_at, Article.fetched_at).desc().nulls_last(),
+    ).offset(offset).limit(limit)
     
     result = await db.execute(query)
     rows = result.all()
@@ -85,22 +98,12 @@ async def get_articles(
             "importance_score": legacy_importance,
             "cluster_id": cluster.id if cluster else None,
             "cluster_source_count": cluster.source_count if cluster else 1,
-            "_sort_key": (dynamic_score, article.fetched_at or article.published_at)
         })
         
-    # Sort descending by dynamic composite score
-    scored_articles.sort(key=lambda x: x["_sort_key"], reverse=True)
-    
-    # Paginate
-    paginated = scored_articles[offset:offset + limit]
-    # Remove internal sort key
-    for a in paginated:
-        a.pop("_sort_key", None)
-        
-    return {"total": total, "articles": paginated}
+    return {"total": total, "articles": scored_articles}
 
 @router.get("/{article_id}", response_model=ArticleResponse)
-async def get_article(article_id: str, db: AsyncSession = Depends(get_db)):
+async def get_article(article_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     query = select(Article, ProcessedArticle, Source, Cluster).select_from(Article)\
         .join(ProcessedArticle, ProcessedArticle.article_id == Article.id)\
         .join(Source, Source.id == Article.source_id)\
@@ -121,12 +124,13 @@ async def get_article(article_id: str, db: AsyncSession = Depends(get_db)):
         "published_at": article.published_at,
         "summary": processed.summary,
         "category": processed.category,
-        "clickbait_score": processed.clickbait_score or 0.0,
-        "authority_score": processed.authority_score or 0.5,
-        "technical_depth_score": processed.technical_depth_score or 0.5,
-        "urgency_score": processed.urgency_score or 0.5,
-        "composite_score": processed.composite_score or 0.5,
-        "importance_score": processed.importance_score or 5,
+        # Explicit None checks: a legitimate 0.0 score must not be replaced by the default
+        "clickbait_score": _or_default(processed.clickbait_score, 0.0),
+        "authority_score": _or_default(processed.authority_score, 0.5),
+        "technical_depth_score": _or_default(processed.technical_depth_score, 0.5),
+        "urgency_score": _or_default(processed.urgency_score, 0.5),
+        "composite_score": _or_default(processed.composite_score, 0.5),
+        "importance_score": _or_default(processed.importance_score, 5),
         "cluster_id": cluster.id if cluster else None,
         "cluster_source_count": cluster.source_count if cluster else 1
     }

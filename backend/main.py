@@ -1,11 +1,18 @@
 import contextlib
+import logging
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from backend.config import settings
 from backend.db.database import init_db
 from backend.ingestor.scheduler import start_scheduler, shutdown_scheduler
-from backend.api.routes import articles, categories, ingest
+from backend.ai import jev
+from backend.api.routes import articles, categories, ingest, markets
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+FRONTEND_DIR = "frontend"
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -13,6 +20,7 @@ async def lifespan(app: FastAPI):
     start_scheduler()
     yield
     shutdown_scheduler()
+    await jev.close_client()
 
 app = FastAPI(title="News Aggregator", lifespan=lifespan)
 
@@ -27,6 +35,9 @@ app.add_middleware(
 app.include_router(articles.router)
 app.include_router(categories.router)
 app.include_router(ingest.router)
+app.include_router(markets.router)
+app.include_router(markets.predictions_router)
 
-# Mount frontend files at root
-app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+# Mount frontend files at root (only if present: StaticFiles raises at startup on a missing directory)
+if os.path.isdir(FRONTEND_DIR):
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

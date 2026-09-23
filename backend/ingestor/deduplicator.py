@@ -1,10 +1,13 @@
 import hashlib
+from functools import lru_cache
 from urllib.parse import urlparse, urlunparse
-from sentence_transformers import SentenceTransformer
 from backend.config import settings
 
-# Singleton initialization
-model = SentenceTransformer(settings.EMBEDDING_MODEL)
+@lru_cache(maxsize=1)
+def _get_model():
+    # Loaded lazily: importing the app (or the tests) must not download/load the model
+    from sentence_transformers import SentenceTransformer
+    return SentenceTransformer(settings.EMBEDDING_MODEL)
 
 def normalize_url(url: str) -> str:
     parsed = urlparse(url)
@@ -17,4 +20,4 @@ def hash_url(url: str) -> str:
     return hashlib.sha256(normalized.encode('utf-8')).hexdigest()
 
 def get_title_embedding(title: str) -> list[float]:
-    return model.encode(title).tolist()
+    return _get_model().encode(title).tolist()
