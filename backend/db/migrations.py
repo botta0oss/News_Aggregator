@@ -1,0 +1,34 @@
+"""Idempotent schema upgrades.
+
+`create_all` creates missing tables but never alters existing ones, so columns added
+after a table was first created are added here. Every statement must be safe to run
+on every startup.
+"""
+from sqlalchemy import text
+
+STATEMENTS = [
+    # Sources managed from the dashboard
+    "ALTER TABLE sources ADD COLUMN IF NOT EXISTS category_hint TEXT",
+    "ALTER TABLE sources ADD COLUMN IF NOT EXISTS last_fetched_at TIMESTAMPTZ",
+    "ALTER TABLE sources ADD COLUMN IF NOT EXISTS last_status TEXT",
+    "ALTER TABLE sources ADD COLUMN IF NOT EXISTS last_error TEXT",
+    "ALTER TABLE sources ADD COLUMN IF NOT EXISTS last_new_items INTEGER",
+    # Richer classification
+    "ALTER TABLE processed_articles ADD COLUMN IF NOT EXISTS category_confidence DOUBLE PRECISION",
+    "ALTER TABLE processed_articles ADD COLUMN IF NOT EXISTS region TEXT",
+    "ALTER TABLE processed_articles ADD COLUMN IF NOT EXISTS is_opinion DOUBLE PRECISION",
+    "ALTER TABLE processed_articles ADD COLUMN IF NOT EXISTS market_relevance DOUBLE PRECISION",
+    "ALTER TABLE processed_articles ADD COLUMN IF NOT EXISTS classifier TEXT",
+    # Forecast explanation
+    "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS model_weight DOUBLE PRECISION",
+    # Full-text search on title + content ("simple" config: feeds mix languages)
+    """CREATE INDEX IF NOT EXISTS ix_articles_fts ON articles
+       USING gin (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(content_raw, '')))""",
+    "CREATE INDEX IF NOT EXISTS ix_articles_source_id ON articles (source_id)",
+    "CREATE INDEX IF NOT EXISTS ix_articles_fetched_at ON articles (fetched_at)",
+]
+
+
+async def run_migrations(conn) -> None:
+    for statement in STATEMENTS:
+        await conn.execute(text(statement))

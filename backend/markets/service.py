@@ -227,6 +227,7 @@ async def predict_market(session: AsyncSession, market: Market) -> MarketPredict
         model_probability=round(model_p, 4),
         evidence_strength=round(evidence_strength, 4),
         blended_probability=signal.blended_probability,
+        model_weight=signal.model_weight,
         edge=signal.edge,
         signal=signal.signal,
         kelly_fraction=signal.kelly_fraction,

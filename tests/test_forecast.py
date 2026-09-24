@@ -38,3 +38,9 @@ def test_brier():
     assert brier_score([]) is None
     assert brier_score([(1.0, True), (0.0, False)]) == 0.0
     assert brier_score([(0.5, True), (0.5, False)]) == 0.25
+
+
+def test_signal_exposes_model_weight():
+    s = compute_signal(0.8, 0.35, evidence_strength=0.75)
+    assert s.model_weight == pytest.approx(0.375)
+    assert s.blended_probability == pytest.approx(0.375 * 0.8 + 0.625 * 0.35, abs=1e-4)

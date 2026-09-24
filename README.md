@@ -33,10 +33,11 @@ opportunità.
 
 | Fase | Descrizione |
 |---|---|
-| **Raccolta** | Legge i feed in `feeds.yaml` ogni `INGEST_INTERVAL_MINUTES` (e subito all'avvio). |
+| **Raccolta** | Legge le fonti attive ogni `INGEST_INTERVAL_MINUTES` (e subito all'avvio). Le fonti si gestiscono dalla dashboard; `feeds.yaml` è il catalogo delle fonti consigliate. |
 | **Deduplicazione** | L1: hash dell'URL normalizzato. L2: similarità degli embedding dei titoli; le notizie quasi identiche finiscono nello stesso cluster. |
 | **Riassunto** | Gemini → Groq → Ollama, con fallback a un estratto del testo. |
-| **Classificazione** | Jev valuta clickbait, autorevolezza, profondità tecnica, urgenza e categoria. Senza chiave usa un'euristica locale. |
+| **Classificazione** | Jev assegna categoria (8, allineate ai temi di Polymarket), regione, opinione o notizia, rilevanza per i mercati, clickbait, autorevolezza, profondità e urgenza. Senza chiave usa parole chiave pesate. |
+| **Ricerca** | Ricerca full-text su titolo, testo e riassunto, con evidenziazione e filtri. |
 | **Mercati** | Sincronizza in sola lettura i mercati Sì/No più scambiati di Polymarket. |
 | **Collegamento** | Associa ogni mercato alle notizie recenti più simili (pgvector). |
 | **Previsione** | Jev stima la probabilità del SÌ a partire da regole del mercato e notizie. |
@@ -102,8 +103,17 @@ dipendenze né build, nella cartella `frontend/`.
 | **Opportunità** | Mercati con segnale attivo ordinati per edge: prezzo, stima Jev e probabilità blended sulla stessa scala 0–100 %, puntata suggerita e forza delle evidenze. Filtri per edge ed evidenze minime. |
 | **Mercati** | Tabella dei mercati con ricerca, prezzo in centesimi, volume, scadenza, notizie collegate e ultimo segnale. |
 | **Dettaglio mercato** | Ultima previsione, pulsante per chiederne una nuova, storico (prezzo contro blended), notizie collegate con rilevanza e impatto, regole di risoluzione. |
-| **Notizie** | Notizie riassunte con i punteggi Jev, filtro per categoria e pesi dell'ordinamento regolabili. |
+| **Notizie** | Ricerca nelle notizie (titolo, testo, riassunto) con parole evidenziate; filtri per fonte, periodo, regione, categoria, rilevanza per i mercati, opinioni; ordinamento per pertinenza, punteggio o data. |
 | **Calibrazione** | Brier score di prezzo, Jev e blended sui mercati risolti, con avviso se il campione è piccolo. |
+| **Come funziona** | Il metodo passo per passo con i parametri reali del server, un esempio numerico e un glossario. |
+| **Impostazioni** | Fonti: aggiungi (con prova del feed prima di salvare), modifica, attiva/disattiva, aggiorna subito, elimina; fonti consigliate dal catalogo; riclassificazione; parametri di previsione in sola lettura. |
+
+Nel dettaglio di un mercato la scheda **Perché questo segnale** mostra il calcolo completo
+sui numeri di quella previsione: stima Jev, peso, probabilità blended, edge, controlli
+superati e puntata. I termini tecnici hanno una definizione al passaggio del mouse (ⓘ).
+
+La ricerca accetta frasi tra virgolette, `-parola` per escludere e `or` per alternative;
+l'ultima parola vale anche come prefisso. Il link `#/notizie?q=...` riapre la stessa ricerca.
 
 I pulsanti in alto avviano l'aggiornamento di notizie e mercati. La pagina si aggiorna da
 sola mentre il lavoro procede in background.
@@ -221,6 +231,10 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | Variabile | Default | Descrizione |
 |---|---|---|
 | `INGEST_INTERVAL_MINUTES` | `60` | Intervallo della pipeline |
+| `AI_BATCH_SIZE` | `100` | Notizie riassunte e classificate a ogni esecuzione |
+| `FEED_TIMEOUT_SECONDS` | `20` | Tempo massimo per scaricare un feed |
+| `FEED_MAX_BYTES` | `5000000` | Dimensione massima di un feed |
+| `ALLOW_PRIVATE_FEEDS` | `false` | Permette feed su indirizzi interni (vedi sotto) |
 | `CORS_ORIGINS` | – | Origini esterne ammesse, separate da virgola. La dashboard non ne ha bisogno |
 | `API_DOCS_ENABLED` | `true` | Pubblica `/docs` e `/openapi.json`. Disattiva in produzione |
 
@@ -241,7 +255,13 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 
 </details>
 
-I feed si gestiscono in `feeds.yaml` (`active: false` per disattivarne uno).
+**Fonti.** Si gestiscono da *Impostazioni → Fonti*. Al primo avvio, con la tabella delle
+fonti vuota, vengono aggiunte le voci di `feeds.yaml` con `active: true`; le altre compaiono
+tra le fonti consigliate. Ogni fonte può avere un argomento prevalente, usato come indizio
+dal classificatore. Per sicurezza il server rifiuta i feed che puntano a reti interne
+(localhost, 10.x, 192.168.x, metadati cloud), anche dopo un reindirizzamento: altrimenti
+chi aggiunge una fonte potrebbe far interrogare al server la rete interna. Se ti serve un
+feed interno imposta `ALLOW_PRIVATE_FEEDS=true`.
 
 ## Come nasce una previsione
 
@@ -309,17 +329,37 @@ il ruolo `admin`.
 
 | Metodo | Path | Descrizione |
 |---|---|---|
-| GET | `/articles` | Notizie ordinate per punteggio composito |
+| GET | `/articles` | Notizie con ricerca, filtri e ordinamento |
 | GET | `/articles/{id}` | Dettaglio di una notizia |
 | GET | `/categories` | Numero di notizie per categoria |
-| POST | `/ingest` | Avvia subito la pipeline completa |
+| POST | `/ingest` | Avvia subito la pipeline completa (admin) |
+| POST | `/ingest/reclassify` | Riclassifica le notizie salvate (admin, `limit` fino a 1000) |
 
-`/articles` accetta `category`, `limit`, `offset`, i pesi `w_authority`, `w_tech`,
-`w_urgency`, `w_clickbait` e le soglie `max_clickbait`, `min_authority`.
+`/articles` accetta:
+- **ricerca:** `q` (testo), `scope` (`all` o `title`), `sort` (`relevance`, `score`, `recent`);
+- **filtri:** `category`, `region`, `source_id`, `since_hours`, `min_market_relevance`, `hide_opinion`;
+- **paginazione:** `limit`, `offset`;
+- **pesi del punteggio:** `w_authority`, `w_tech`, `w_urgency`, `w_clickbait`, con le soglie `max_clickbait`, `min_authority`.
+
+Con `q` ogni notizia ha anche `title_highlight` e `snippet`, con le parole trovate racchiuse
+tra i caratteri `\u0002` e `\u0003`.
 
 ```bash
-curl "localhost:8000/articles?category=Economy&max_clickbait=0.3&w_urgency=0.6"
+curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&min_market_relevance=0.5"
 ```
+
+### Fonti
+
+| Metodo | Path | Descrizione |
+|---|---|---|
+| GET | `/sources` | Fonti con stato dell'ultimo aggiornamento e numero di notizie |
+| POST | `/sources` | Aggiunge una fonte `{name, url, category_hint, active}` (admin) |
+| PATCH | `/sources/{id}` | Modifica nome, indirizzo, argomento o attivazione (admin) |
+| DELETE | `/sources/{id}` | Elimina la fonte; se ha notizie serve `delete_articles=true` (admin) |
+| POST | `/sources/{id}/fetch` | Scarica subito le notizie di questa fonte (admin) |
+| POST | `/sources/test` | Prova un feed senza salvarlo: titolo, numero di notizie, esempi (admin) |
+| GET | `/sources/catalog` | Fonti consigliate da `feeds.yaml`, con quelle già aggiunte |
+| POST | `/sources/catalog` | Aggiunge fonti dal catalogo `{urls: [...]}` (admin) |
 
 ### Mercati e previsioni
 
@@ -408,6 +448,8 @@ pytest
 | `tests/test_polymarket.py` | Parsing e filtri dei mercati Gamma |
 | `tests/test_markets_e2e.py` | Flusso completo: raccolta → mercati → previsione → API → risoluzione |
 | `tests/test_auth.py` | Password, cookie, CSRF, ruoli, limite tentativi, scadenze, logout, header di sicurezza |
+| `tests/test_sources.py` | Fetcher (pulizia HTML, reindirizzamenti, blocco reti interne, limiti), catalogo, migrazioni, API delle fonti |
+| `tests/test_search.py` | Ricerca su titolo, testo e riassunto, prefissi, sintassi, evidenziazioni, filtri, uso dell'indice |
 
 ## Struttura del progetto
 
@@ -421,18 +463,19 @@ backend/
 │   ├── typesafe_evaluator.py  # classificazione e punteggi delle notizie
 │   └── summarizer.py       # riassunti Gemini / Groq / Ollama
 ├── ingestor/
-│   ├── fetcher.py          # lettura e pulizia dei feed RSS
+│   ├── fetcher.py          # download sicuro e pulizia dei feed RSS/Atom
+│   ├── sources.py          # catalogo (feeds.yaml) e validazione delle fonti
 │   ├── deduplicator.py     # hash URL ed embedding
-│   └── scheduler.py        # pipeline periodica
+│   └── scheduler.py        # pipeline periodica e riclassificazione
 ├── markets/
 │   ├── polymarket.py       # client Gamma API (sola lettura)
 │   ├── service.py          # sync, collegamento notizie, previsioni Jev
 │   └── forecast.py         # blending, edge, Kelly, Brier
-├── db/                     # modelli SQLAlchemy e query
+├── db/                     # modelli SQLAlchemy, query e migrazioni idempotenti
 └── api/                    # schemi e route FastAPI
-frontend/                   # dashboard (index.html, styles.css, app.js, ui.js, charts.js)
+frontend/                   # dashboard: app.js, ui.js, charts.js, explain.js, views/ (notizie, impostazioni, metodo)
 scripts/check_env.py        # verifica chiavi e database
-feeds.yaml                  # elenco dei feed
+feeds.yaml                  # catalogo delle fonti consigliate
 ```
 
 ## Limiti noti

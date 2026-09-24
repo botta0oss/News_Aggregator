@@ -27,6 +27,18 @@ class ArticleResponse(BaseModel):
     cluster_id: Optional[uuid.UUID] = None
     cluster_source_count: int
 
+    # Classification details
+    source_id: Optional[uuid.UUID] = None
+    region: Optional[str] = None
+    category_confidence: Optional[float] = None
+    is_opinion: Optional[float] = None
+    market_relevance: Optional[float] = None
+    classifier: Optional[str] = None
+
+    # Search: text with matches wrapped in \u0002 ... \u0003 (the client turns them into highlights)
+    title_highlight: Optional[str] = None
+    snippet: Optional[str] = None
+
 class ArticleListResponse(BaseModel):
     total: int
     articles: List[ArticleResponse]
@@ -49,6 +61,7 @@ class PredictionResponse(BaseModel):
     model_probability: float
     evidence_strength: float
     blended_probability: float
+    model_weight: Optional[float] = None
     edge: float
     signal: str
     kelly_fraction: float
@@ -103,6 +116,13 @@ class StatusResponse(BaseModel):
     prediction_auto: bool
     min_edge: float
     min_evidence: float
+    model_weight_max: float
+    kelly_fraction: float
+    market_match_threshold: float
+    market_news_window_hours: int
+    market_max_articles: int
+    sources_active: int = 0
+    sources_with_errors: int = 0
     articles: int
     processed_articles: int
     last_article_at: Optional[datetime]

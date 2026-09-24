@@ -73,6 +73,9 @@ const ICONS = {
   arrowUp: ["M12 19V5", "M5 12l7-7 7 7"],
   arrowDown: ["M12 5v14", "M19 12l-7 7-7-7"],
   minus: ["M5 12h14"],
+  plus: ["M12 5v14", "M5 12h14"],
+  settings: ["M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"],
+  help: ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z", "M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3", "M12 17h.01"],
   user: ["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2", "M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"],
   logout: ["M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", "M16 17l5-5-5-5", "M21 12H9"],
   lock: ["M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z", "M7 11V7a5 5 0 0 1 10 0v4"],
@@ -117,12 +120,14 @@ export const fmt = {
   pct: (p) => (p == null ? "–" : pctFmt.format(p)),
   // Polymarket quotes a YES share in cents: price 0.35 = 35¢ = 35% implied probability
   cents: (p) => (p == null ? "–" : `${centFmt.format(p * 100)}¢`),
-  pts: (edge) => (edge == null ? "–" : `${edge > 0 ? "+" : edge < 0 ? "−" : ""}${Math.abs(edge * 100).toFixed(1)} pt`),
+  pts: (edge) => (edge == null ? "–" : `${edge > 0 ? "+" : edge < 0 ? "−" : ""}${Math.abs(edge * 100).toFixed(1).replace(".", ",")} pt`),
   usd: (v) => (v == null ? "–" : usdFmt.format(v)),
   int: (v) => (v == null ? "–" : intFmt.format(v)),
   num3: (v) => (v == null ? "–" : numFmt.format(v)),
   date: (d) => (d ? new Date(d).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" }) : "–"),
   dateTime: (d) => (d ? new Date(d).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "–"),
+  /** "1 notizia" / "3 notizie" */
+  count: (n, one, many) => `${intFmt.format(n)} ${n === 1 ? one : many}`,
   ago(d) {
     if (!d) return "–";
     const diff = (new Date(d).getTime() - Date.now()) / 1000;
@@ -279,4 +284,53 @@ export function emptyState(title, body, ...extra) {
 
 export function skeleton(n = 3) {
   return h("div", { class: "stack" }, Array.from({ length: n }, () => h("div", { class: "skeleton" })));
+}
+
+// ---------- Labels ----------
+export const CATEGORY_LABELS = {
+  Politics: "Politica", Economy: "Economia", Crypto: "Crypto", Technology: "Tecnologia",
+  "Foreign Affairs": "Esteri", Science: "Scienza e salute", Sports: "Sport", Culture: "Cultura",
+};
+export const REGION_LABELS = {
+  "North America": "Nord America", Europe: "Europa", "Middle East & Africa": "Medio Oriente e Africa",
+  "Asia-Pacific": "Asia-Pacifico", "Latin America": "America Latina", Global: "Globale",
+};
+
+// ---------- Glossary ----------
+export const GLOSSARY = {
+  price: "Prezzo di una quota SÌ su Polymarket, in centesimi. Una quota paga 1 $ se l'evento accade: 35¢ equivale a una probabilità implicita del 35%.",
+  jev: "Probabilità che il mercato si risolva SÌ secondo Jev, calcolata leggendo le regole del mercato e le notizie collegate. Jev non vede il prezzo.",
+  evidence: "Quanto le notizie collegate dicono qualcosa di concreto sull'esito, da 0% (nulla di rilevante) a 100% (informazione decisiva). Stabilisce quanto pesa la stima di Jev.",
+  weight: "Peso della stima di Jev nella probabilità finale: peso massimo × forza delle evidenze. Il resto del peso va al prezzo di mercato.",
+  blended: "Probabilità finale usata per il segnale: una media pesata tra la stima di Jev e il prezzo di mercato.",
+  edge: "Differenza tra la probabilità blended e il prezzo, in punti percentuali. Positivo: il SÌ sembra sottovalutato. Negativo: il NO sembra sottovalutato.",
+  kelly: "Quota del capitale da puntare secondo il criterio di Kelly, ridotta per prudenza (Kelly frazionario). È un'indicazione, non un obbligo.",
+  brier: "Errore quadratico medio tra probabilità prevista ed esito reale (1 se SÌ, 0 se NO). Più basso è meglio; dire sempre 50% vale 0,25.",
+  relevance: "Quanto la notizia può cambiare la probabilità di un evento futuro verificabile su cui si scommette (elezioni, tassi, conflitti, sentenze, prezzi, partite).",
+};
+
+/** Small focusable (i) button showing a definition on hover and focus. */
+export function infoTip(text, label = "Che cos'è?") {
+  const btn = h("button", { class: "info-tip", type: "button", "aria-label": `${label} ${text}` }, "i");
+  withTooltip(btn, () => text);
+  btn.addEventListener("click", (e) => e.preventDefault());
+  return btn;
+}
+
+/** Turns text with \u0002…\u0003 match markers (from the search API) into safe DOM with <mark>. */
+export function highlight(text) {
+  const out = [];
+  const parts = String(text || "").split(/(\u0002[^\u0003]*\u0003)/);
+  for (const part of parts) {
+    if (part.startsWith("\u0002")) out.push(h("mark", {}, part.slice(1, -1)));
+    else if (part) out.push(part.replace(/[\u0002\u0003]/g, ""));
+  }
+  return out;
+}
+
+export function selectField(id, label, options, value, onChange) {
+  const select = h("select", { id, class: "select" },
+    options.map(([v, text]) => h("option", { value: v, selected: String(v) === String(value ?? "") }, text)));
+  select.addEventListener("change", () => onChange(select.value));
+  return h("label", { class: "field", for: id }, label, select);
 }

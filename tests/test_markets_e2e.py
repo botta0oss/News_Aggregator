@@ -35,11 +35,16 @@ def gamma_client(active, single=None):
 
 
 async def ingest_articles(monkeypatch, entries):
+    from backend.db.models import Source
+
     async def fake_fetch(url):
         return entries
     monkeypatch.setattr(scheduler, "fetch_and_parse_feed", fake_fetch)
     async with SessionLocal() as session:
-        return await scheduler.ingest_feed(session, {"name": "Reuters", "url": "https://example.test/rss"})
+        source = Source(name="Reuters", url="https://example.test/rss", category_hint="Economy")
+        session.add(source)
+        await session.commit()
+        return await scheduler.ingest_source(session, source)
 
 
 def entry(title, url):

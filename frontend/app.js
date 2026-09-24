@@ -1,8 +1,12 @@
 import {
   h, clear, api, setCsrfToken, fmt, toast, debounce, icon, hydrateIcons, externalLink,
-  signalBadge, impactBadge, marketStateBadge, meter, statTile, emptyState, skeleton,
+  signalBadge, impactBadge, marketStateBadge, meter, statTile, emptyState, skeleton, infoTip, GLOSSARY,
 } from "./ui.js";
 import { probTrack, probLegend, historyChart, brierBars } from "./charts.js";
+import { explainCard, explainSentence } from "./explain.js";
+import { viewNews } from "./views/news.js";
+import { viewSettings } from "./views/settings.js";
+import { viewMethod } from "./views/method.js";
 
 const view = document.getElementById("view");
 let status = null;
@@ -216,9 +220,11 @@ const routes = [
   [/^#\/opportunita$/, "opportunita", viewOpportunities],
   [/^#\/mercati$/, "mercati", viewMarkets],
   [/^#\/mercati\/(.+)$/, "mercati", viewMarketDetail],
-  [/^#\/notizie$/, "notizie", viewNews],
+  [/^#\/notizie(?:\?(.*))?$/, "notizie", (qs) => viewNews(ctx, Object.fromEntries(new URLSearchParams(qs || "")))],
   [/^#\/calibrazione$/, "calibrazione", viewCalibration],
   [/^#\/account$/, "account", viewAccount],
+  [/^#\/impostazioni$/, "impostazioni", () => viewSettings(ctx)],
+  [/^#\/metodo$/, "metodo", () => viewMethod(ctx)],
 ];
 
 async function route({ quiet = false } = {}) {
@@ -234,12 +240,15 @@ async function route({ quiet = false } = {}) {
     if (a.dataset.tab === tab) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   });
+  const settingsLink = document.getElementById("settings-link");
+  if (tab === "impostazioni") settingsLink.setAttribute("aria-current", "page");
+  else settingsLink.removeAttribute("aria-current");
   const token = ++renderToken;
   if (!quiet) {
     clear(view).append(skeleton(3));
     window.scrollTo(0, 0);
   }
-  const params = hash.match(re).slice(1).map(decodeURIComponent);
+  const params = hash.match(re).slice(1).map((p) => (p == null ? p : decodeURIComponent(p)));
   try {
     const content = await render(...params);
     if (token !== renderToken) return; // a newer navigation won
@@ -313,7 +322,8 @@ async function viewOpportunities() {
 
   await reload();
   return h("div", {},
-    pageHead("Opportunità", "Mercati in cui la stima di Jev, pesata per la forza delle notizie, si discosta dal prezzo. Ordinati per edge."),
+    pageHead("Opportunità", "Mercati in cui la stima di Jev, pesata per la forza delle notizie, si discosta dal prezzo. Ordinati per edge.",
+      h("a", { class: "btn btn-ghost", href: "#/metodo" }, icon("help"), "Come funziona")),
     kpis, filters, list,
   );
 }
@@ -351,6 +361,7 @@ function opportunityCard({ market, prediction: p }) {
       ),
       probTrack({ market: p.market_probability, blended: p.blended_probability, jev: p.model_probability }),
       probLegend({ market: p.market_probability, blended: p.blended_probability, jev: p.model_probability }),
+      h("p", { class: "opp-explain" }, explainSentence(p, status), " ", h("a", { href: marketHref(market.id) }, "Vedi il calcolo")),
     ),
     h("div", { class: "opp-side" },
       h("div", { class: "opp-side-top" },
@@ -358,11 +369,11 @@ function opportunityCard({ market, prediction: p }) {
         market.url ? externalLink(market.url, "Polymarket ", icon("external")) : null,
       ),
       h("div", { class: "opp-figures" },
-        h("div", {}, h("div", { class: "fig-label" }, "Edge"), h("div", { class: `fig-value ${edgeCls}` }, fmt.pts(p.edge))),
-        h("div", {}, h("div", { class: "fig-label" }, "Puntata suggerita"), h("div", { class: "fig-value" }, p.kelly_fraction > 0 ? `${fmt.pct(p.kelly_fraction)}` : "–"),
+        h("div", {}, h("div", { class: "fig-label" }, "Edge", infoTip(GLOSSARY.edge)), h("div", { class: `fig-value ${edgeCls}` }, fmt.pts(p.edge))),
+        h("div", {}, h("div", { class: "fig-label" }, "Puntata suggerita", infoTip(GLOSSARY.kelly)), h("div", { class: "fig-value" }, p.kelly_fraction > 0 ? `${fmt.pct(p.kelly_fraction)}` : "–"),
           p.kelly_fraction > 0 ? h("div", { class: "fig-label" }, "del bankroll") : null),
       ),
-      h("div", {}, h("div", { class: "fig-label" }, "Forza delle evidenze"), meter(p.evidence_strength, "Forza delle evidenze")),
+      h("div", {}, h("div", { class: "fig-label" }, "Forza delle evidenze", infoTip(GLOSSARY.evidence)), meter(p.evidence_strength, "Forza delle evidenze")),
     ),
   );
 }
@@ -522,96 +533,9 @@ async function viewMarketDetail(id) {
     ),
     h("div", { class: "grid-2", style: { marginBottom: "16px" } }, forecastCard, historyCard),
     h("div", { class: "stack" },
+      latest ? explainCard(latest, market, market.evidence, status) : null,
       evidenceCard,
       market.description ? h("details", { class: "card rules" }, h("summary", {}, "Regole di risoluzione"), h("p", { class: "rules-text" }, market.description)) : null,
-    ),
-  );
-}
-
-// ---------- Notizie ----------
-const newsFilters = {
-  category: "", w_authority: 0.35, w_tech: 0.25, w_urgency: 0.25, w_clickbait: 0.4, max_clickbait: 1, min_authority: 0,
-};
-const CATEGORY_LABELS = {
-  Technology: "Tecnologia", Politics: "Politica", Economy: "Economia",
-  "Foreign Affairs": "Esteri", Science: "Scienza", Culture: "Cultura",
-};
-
-async function viewNews() {
-  const categories = await api("/categories").catch(() => []);
-  const list = h("div", { class: "news" });
-  const summary = h("p", { class: "muted small", role: "status" });
-  const more = h("div", { class: "more" });
-  let offset = 0;
-
-  const load = async (reset) => {
-    if (reset) offset = 0;
-    const f = newsFilters;
-    const data = await api("/articles", {
-      params: {
-        category: f.category, limit: 30, offset,
-        w_authority: f.w_authority, w_tech: f.w_tech, w_urgency: f.w_urgency, w_clickbait: f.w_clickbait,
-        max_clickbait: f.max_clickbait < 1 ? f.max_clickbait : null, min_authority: f.min_authority > 0 ? f.min_authority : null,
-      },
-    });
-    if (reset) clear(list);
-    list.append(...data.articles.map(articleCard));
-    offset += data.articles.length;
-    summary.textContent = data.total ? `${fmt.int(offset)} di ${fmt.int(data.total)} notizie, ordinate per punteggio` : "";
-    if (!data.total) list.replaceChildren(emptyState("Nessuna notizia", isAdmin() ? "Premi «Aggiorna notizie» o allenta i filtri." : "Allenta i filtri o attendi il prossimo aggiornamento automatico.",
-      isAdmin() ? h("button", { class: "btn btn-primary", type: "button", on: { click: () => document.getElementById("btn-ingest").click() } }, icon("refresh"), "Aggiorna notizie") : null));
-    more.replaceChildren(offset < data.total ? h("button", { class: "btn btn-ghost", type: "button", on: { click: () => load(false) } }, "Carica altre") : "");
-  };
-  const reloadSoon = debounce(() => load(true).catch((e) => toast(e.message, { error: true })), 300);
-
-  const chips = h("div", { class: "chips", role: "group", "aria-label": "Categoria" });
-  const total = categories.reduce((a, c) => a + c.count, 0);
-  const paintChips = () => chips.replaceChildren(
-    ...[{ name: "", count: total }, ...categories].map((c) => h("button", {
-      class: "chip", type: "button", "aria-pressed": String(newsFilters.category === c.name),
-      on: { click: () => { newsFilters.category = c.name; paintChips(); reloadSoon(); } },
-    }, c.name ? CATEGORY_LABELS[c.name] || c.name : "Tutte", h("span", { class: "count" }, fmt.int(c.count)))),
-  );
-  paintChips();
-
-  const weight = (key, label, max = 1) => rangeField(`w-${key}`, label, { min: 0, max, step: 0.05, value: newsFilters[key], format: (v) => v.toFixed(2).replace(".", ",") },
-    (v) => { newsFilters[key] = v; reloadSoon(); });
-
-  const tuning = h("details", { class: "tuning" },
-    h("summary", {}, "Personalizza l'ordinamento"),
-    h("div", { class: "tuning-grid" },
-      weight("w_authority", "Autorevolezza"), weight("w_tech", "Profondità"), weight("w_urgency", "Urgenza"), weight("w_clickbait", "Penalità clickbait"),
-      weight("max_clickbait", "Clickbait massimo"), weight("min_authority", "Autorevolezza minima"),
-    ),
-  );
-
-  await load(true);
-  return h("div", {},
-    pageHead("Notizie", "Riassunte e valutate da Jev. Le notizie quasi identiche di più testate sono raggruppate."),
-    h("div", { class: "filters", style: { flexDirection: "column", alignItems: "stretch" } }, chips, tuning),
-    h("div", { class: "stack" }, summary, list, more),
-  );
-}
-
-function articleCard(a) {
-  const scoreRow = (label, v, hint) => h("div", { class: "score-row", title: hint }, h("span", {}, label), meter(v, label));
-  return h("article", { class: "card article" },
-    h("div", {},
-      externalLink(a.url, h("span", { class: "article-title" }, a.title)),
-      h("div", { class: "article-meta" },
-        h("span", {}, a.source_name),
-        h("span", { title: fmt.dateTime(a.published_at) }, fmt.ago(a.published_at)),
-        a.category ? h("span", { class: "badge" }, CATEGORY_LABELS[a.category] || a.category) : null,
-        a.cluster_source_count > 1 ? h("span", { class: "badge badge-outline" }, icon("news"), `${a.cluster_source_count} fonti`) : null,
-      ),
-      a.summary ? h("p", { class: "article-summary" }, a.summary) : null,
-    ),
-    h("div", { class: "scores" },
-      h("div", { class: "composite" }, h("span", { class: "fig-label" }, "Punteggio"), h("b", {}, fmt.pct(a.composite_score))),
-      scoreRow("Autorevolezza", a.authority_score, "Quanto è verificata e ben sostenuta da fonti"),
-      scoreRow("Profondità", a.technical_depth_score, "Livello di analisi tecnica o quantitativa"),
-      scoreRow("Urgenza", a.urgency_score, "Quanto è una notizia in evoluzione"),
-      scoreRow("Clickbait", a.clickbait_score, "Sensazionalismo del titolo (più basso è meglio)"),
     ),
   );
 }
@@ -720,6 +644,17 @@ async function viewAccount() {
     ),
   );
 }
+
+// ---------- Context shared with the view modules ----------
+const ctx = {
+  get status() { return status; },
+  isAdmin,
+  pageHead,
+  rangeField,
+  checkField,
+  setBusy,
+  rerender: () => route({ quiet: true }),
+};
 
 // ---------- Boot ----------
 setupShell();
