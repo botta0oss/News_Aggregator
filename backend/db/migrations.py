@@ -58,6 +58,10 @@ STATEMENTS = [
     # Final outcome including 50-50 splits (resolved_yes stays for yes/no)
     "ALTER TABLE markets ADD COLUMN IF NOT EXISTS resolution TEXT",
     "ALTER TABLE markets ADD COLUMN IF NOT EXISTS last_trading_price DOUBLE PRECISION",
+    # Buy/sell strategy: selling simulated bets before resolution
+    "ALTER TABLE betting_settings ADD COLUMN IF NOT EXISTS auto_sell BOOLEAN NOT NULL DEFAULT true",
+    "ALTER TABLE paper_bets ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION",
+    "ALTER TABLE paper_bets ADD COLUMN IF NOT EXISTS exit_reason TEXT",
     # Forecast: Platt-calibrated Jev, pooling method, ensemble size
     "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS calibrated_probability DOUBLE PRECISION",
     "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS blend_method TEXT",

@@ -195,6 +195,7 @@ class BettingSettings(Base):
     bankroll: Mapped[float] = mapped_column(Float, nullable=False)        # initial capital (USD)
     preset: Mapped[str] = mapped_column(Text, nullable=False)
     auto_paper: Mapped[bool] = mapped_column(Boolean, default=True)       # bet automatically on every GO/SMALL
+    auto_sell: Mapped[bool] = mapped_column(Boolean, default=True)        # sell open bets when the plan says so
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
@@ -214,12 +215,14 @@ class PaperBet(Base):
     p_conservative: Mapped[float] = mapped_column(Float, nullable=False)
     expected_profit: Mapped[float] = mapped_column(Float, default=0.0)
     preset: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(Text, default="open", index=True)  # open / won / lost / excluded
+    status: Mapped[str] = mapped_column(Text, default="open", index=True)  # open / won / lost / void / sold / excluded
     placed_by: Mapped[str] = mapped_column(Text, default="auto")          # auto / manual
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     settled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     payout: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    exit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # average sale price, if sold
+    exit_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)     # why it was sold
 
     market = relationship("Market")
 

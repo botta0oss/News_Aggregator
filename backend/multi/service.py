@@ -371,6 +371,8 @@ def outcome_prediction(prediction: MultiPrediction, outcome_id: str):
         id=None, market_id=outcome_id, created_at=prediction.created_at, signal=signal,
         market_probability=entry.get("price", entry["market"]), model_probability=entry["model"],
         blended_probability=entry["blended"], evidence_strength=prediction.evidence_strength,
+        # Multi-outcome distributions are pooled log-linearly and not Platt-calibrated
+        blend_method="logodds", calibrated_probability=entry["model"],
         model_weight=prediction.model_weight, edge=entry["edge"], multi_prediction_id=prediction.id,
     )
 

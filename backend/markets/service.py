@@ -392,9 +392,10 @@ async def run_market_pipeline(session: AsyncSession) -> dict:
 
 
 async def _run_market_pipeline(session: AsyncSession) -> dict:
-    from backend.betting.portfolio import settle_bets
+    from backend.betting.portfolio import review_open_bets, settle_bets
     stats = await sync_markets(session)
     stats["settled_bets"] = await settle_bets(session)
+    stats["sold_bets"] = await review_open_bets(session)
     stats["targeted"] = await run_targeted_search(session)
     stats["links"] = await refresh_links(session)
     try:

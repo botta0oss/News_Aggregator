@@ -33,14 +33,18 @@ def _now() -> datetime:
 async def get_settings(db: AsyncSession) -> BettingSettings:
     row = await db.get(BettingSettings, 1)
     if row is None:
-        row = BettingSettings(id=1, bankroll=settings.PAPER_BANKROLL, preset=get_profile(settings.PAPER_PRESET).key, auto_paper=True)
+        row = BettingSettings(id=1, bankroll=settings.PAPER_BANKROLL, preset=get_profile(settings.PAPER_PRESET).key,
+                              auto_paper=True, auto_sell=True)
         db.add(row)
         await db.commit()
     return row
 
 
-async def update_settings(db: AsyncSession, *, preset: Optional[str] = None, auto_paper: Optional[bool] = None) -> BettingSettings:
+async def update_settings(db: AsyncSession, *, preset: Optional[str] = None, auto_paper: Optional[bool] = None,
+                          auto_sell: Optional[bool] = None) -> BettingSettings:
     row = await get_settings(db)
+    if auto_sell is not None:
+        row.auto_sell = auto_sell
     if preset is not None:
         row.preset = get_profile(preset).key
     if auto_paper is not None:
@@ -64,7 +68,7 @@ async def reset_portfolio(db: AsyncSession, bankroll: float, preset: Optional[st
     return row
 
 
-SETTLED = ("won", "lost", "void")  # void: market resolved 50-50
+SETTLED = ("won", "lost", "void", "sold")  # void: market resolved 50-50; sold: closed before resolution
 
 
 async def ledger(db: AsyncSession) -> dict:
@@ -240,6 +244,7 @@ async def apply_economics(db: AsyncSession, market: Market, prediction: MarketPr
         prediction.economics = ev.as_dict()
         await db.commit()
         await maybe_place_bet(db, market, prediction, ev)
+        await review_open_bets(db, [market.id])
         return ev
     except Exception as e:
         logger.error(f"Economic evaluation failed for {market.id}: {e}")
@@ -266,6 +271,88 @@ async def settle_bets(db: AsyncSession) -> int:
         bet.settled_at = _now()
     await db.commit()
     return len(rows)
+
+
+# ---------- Selling before resolution ----------
+
+async def sell_bet(db: AsyncSession, bet: PaperBet, market: Market, reason: str, min_price: float = 0.01) -> bool:
+    """Sells all the shares of an open bet into the order book, not below `min_price`.
+    Without a book, at the best bid known from the last sync. False if the book is too thin."""
+    from backend.betting.fees import fee_per_share
+    from backend.betting.plans import best_bid
+    token = market.yes_token_id if bet.side == "YES" else market.no_token_id
+    bids = None
+    if token:
+        try:
+            bids = (await polymarket.fetch_order_book(token)).bids
+        except Exception as e:
+            logger.info(f"Order book unavailable to sell {bet.id}: {e}")
+    if not bids:
+        price = await best_bid(market, bet.side)
+        bids = [(price, bet.shares)] if price else []
+    fee_bps = market.taker_fee_bps if market.taker_fee_bps is not None else fees.category_rate(market.category) * 10_000
+    left, proceeds, fee = bet.shares, 0.0, 0.0
+    for price, size in bids:
+        if price < min_price or left <= 1e-9:
+            break
+        take = min(size, left)
+        proceeds += take * price
+        fee += take * fee_per_share(price, fee_bps)
+        left -= take
+    if left > 1e-6:
+        logger.info(f"Not enough bids to sell bet {bet.id} ({left:.1f} shares left)")
+        return False
+    bet.payout = proceeds - fee
+    bet.fee = (bet.fee or 0.0) + fee
+    bet.pnl = proceeds - bet.stake - bet.fee
+    bet.exit_price = proceeds / bet.shares
+    bet.exit_reason = reason
+    bet.status = "sold"
+    bet.settled_at = _now()
+    await db.commit()
+    logger.info(f"Paper bet {bet.id} sold at {bet.exit_price:.3f}: {reason}")
+    return True
+
+
+async def review_open_bets(db: AsyncSession, market_ids: Optional[list] = None, limit: int = 50) -> int:
+    """Sells the open simulated bets whose plan says SELL (price reached the estimate, or the
+    forecast turned). Runs after each sync and each new forecast, if auto_sell is on."""
+    from backend.betting.plans import plan_for
+    s = await get_settings(db)
+    if not s.auto_sell:
+        return 0
+    stmt = select(PaperBet, Market).join(Market, Market.id == PaperBet.market_id).where(
+        PaperBet.status == "open", Market.closed == False)  # noqa: E712
+    if market_ids is not None:
+        stmt = stmt.where(PaperBet.market_id.in_(market_ids))
+    sold = 0
+    for bet, market in (await db.execute(stmt.limit(limit))).all():
+        try:
+            prediction = await latest_prediction(db, market)
+            if prediction is None or market.yes_price is None:
+                continue
+            ev = await evaluate_prediction(db, market, prediction)
+            plan = await plan_for(db, market, prediction, ev, get_profile(s.preset), position=bet)
+            if plan.action == "SELL":
+                # Price reached the estimate: sell only at or above the target. Forecast turned: at the best bids.
+                floor = plan.levels.get("sell_above") if plan.code == "target_reached" else None
+                sold += await sell_bet(db, bet, market, plan.summary, min_price=floor or 0.01)
+        except Exception as e:
+            logger.error(f"Review of bet {bet.id} failed: {e}")
+            await db.rollback()
+    return sold
+
+
+async def latest_prediction(db: AsyncSession, market: Market):
+    """Latest forecast for a market (for an outcome of a multi-outcome event, its share of the distribution)."""
+    if market.multi_event_id:
+        from backend.db.models import MultiPrediction
+        from backend.multi.service import outcome_prediction
+        latest = (await db.execute(select(MultiPrediction).where(MultiPrediction.event_id == market.multi_event_id)
+                                   .order_by(MultiPrediction.created_at.desc()).limit(1))).scalar_one_or_none()
+        return outcome_prediction(latest, market.id) if latest else None
+    return (await db.execute(select(MarketPrediction).where(MarketPrediction.market_id == market.id)
+                             .order_by(MarketPrediction.created_at.desc()).limit(1))).scalar_one_or_none()
 
 
 def bet_clv(bet: PaperBet, market: Market) -> Optional[float]:
@@ -306,8 +393,10 @@ async def summary(db: AsyncSession) -> dict:
                 open_value += value
                 unrealized += value - bet.stake - bet.fee
     settled = counts["won"] + counts["lost"]
+    sold_won = sum(1 for bet, _ in bets if bet.status == "sold" and (bet.pnl or 0) > 0)
     return {
-        "settings": {"bankroll": s.bankroll, "preset": s.preset, "auto_paper": s.auto_paper, "started_at": s.started_at},
+        "settings": {"bankroll": s.bankroll, "preset": s.preset, "auto_paper": s.auto_paper, "auto_sell": s.auto_sell,
+                     "started_at": s.started_at},
         "equity": led["equity"],
         "cash": led["cash"],
         "invested": led["open_outlay"],
@@ -316,8 +405,9 @@ async def summary(db: AsyncSession) -> dict:
         "unrealized_pnl": unrealized,
         "total_value": led["cash"] + open_value,
         "roi": (led["cash"] + open_value - s.bankroll) / s.bankroll if s.bankroll else None,
-        "counts": {"open": counts["open"], "won": counts["won"], "lost": counts["lost"], "void": counts["void"], "excluded": counts["excluded"]},
-        "hit_rate": counts["won"] / settled if settled else None,
+        "counts": {"open": counts["open"], "won": counts["won"], "lost": counts["lost"], "void": counts["void"], "sold": counts["sold"], "excluded": counts["excluded"]},
+        # Bets sold before resolution count as won when they made money
+        "hit_rate": (counts["won"] + sold_won) / (settled + counts["sold"]) if settled + counts["sold"] else None,
         "expected_pnl_settled": expected_settled,
         # Closing line value (points of the side bought) on bets whose market closed, and the
         # move so far on open ones: positive = bought below the price the market settled on
