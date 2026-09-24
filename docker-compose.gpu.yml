@@ -1,0 +1,15 @@
+# Local GPU: CUDA image and access to the NVIDIA GPUs of the host.
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+# Requires the NVIDIA driver and the NVIDIA Container Toolkit on the host.
+services:
+  api:
+    build:
+      dockerfile: Dockerfile.cuda
+    image: news-aggregator-api:cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

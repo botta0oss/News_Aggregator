@@ -89,13 +89,31 @@ docker compose exec api python -m backend.auth.cli create-user tuonome --role ad
 Il compose avvia anche Postgres con pgvector. Dashboard su http://localhost:8000 (accedi
 con l'utente appena creato), documentazione interattiva delle API su http://localhost:8000/docs.
 
+**CPU o GPU.** Ci sono due immagini:
+
+| File | Per | Note |
+|---|---|---|
+| `Dockerfile` (predefinito) | Server, VPS, macchine ARM, PC senza GPU NVIDIA | PyTorch solo CPU: immagine molto più piccola e build più veloce |
+| `Dockerfile.cuda` | PC con GPU NVIDIA | PyTorch con CUDA; gli embedding vengono calcolati sulla GPU |
+
+Per usare la GPU (serve il driver NVIDIA e l'[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) sull'host, solo x86_64):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+```
+
+Nel log all'avvio, `Embedding model ... on cuda:0` conferma che la GPU è in uso (`on cpu`
+altrimenti). Le due immagini hanno nomi diversi (`news-aggregator-api:cpu` e `:cuda`), quindi
+si può passare dall'una all'altra senza ricostruire ogni volta. Per un server la GPU non serve:
+il modello è piccolo e gli articoli arrivano a gruppi.
+
 ### In locale
 
 Serve un PostgreSQL con l'estensione [pgvector](https://github.com/pgvector/pgvector).
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt   # senza GPU, prima: pip install torch --index-url https://download.pytorch.org/whl/cpu
 cp .env.example .env        # imposta DATABASE_URL e le chiavi
 python -m backend.auth.cli create-user tuonome --role admin
 uvicorn backend.main:app --reload

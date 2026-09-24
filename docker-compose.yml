@@ -14,7 +14,11 @@ services:
       retries: 10
 
   api:
-    build: .
+    # CPU-only image; for a local NVIDIA GPU add docker-compose.gpu.yml (see README)
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: news-aggregator-api:cpu
     ports:
       - "8000:8000"
     env_file:
