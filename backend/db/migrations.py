@@ -42,6 +42,9 @@ STATEMENTS = [
     "ALTER TABLE markets ADD COLUMN IF NOT EXISTS targeted_at TIMESTAMPTZ",
     "ALTER TABLE market_article_links ADD COLUMN IF NOT EXISTS match_score DOUBLE PRECISION",
     "ALTER TABLE market_article_links ADD COLUMN IF NOT EXISTS matched_terms JSONB",
+    # Alerts: links that existed before are marked as already checked, new ones start unchecked
+    "ALTER TABLE market_article_links ADD COLUMN IF NOT EXISTS alert_checked BOOLEAN NOT NULL DEFAULT true",
+    "ALTER TABLE market_article_links ALTER COLUMN alert_checked SET DEFAULT false",
 ]
 
 

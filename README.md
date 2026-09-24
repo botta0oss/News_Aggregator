@@ -24,6 +24,7 @@ opportunità.
 - [API](#api)
 - [Flusso di lavoro consigliato](#flusso-di-lavoro-consigliato)
 - [Valutazione economica e portafoglio simulato](#valutazione-economica-e-portafoglio-simulato)
+- [Allerte notizie–prezzo](#allerte-notizieprezzo)
 - [Calibrazione](#calibrazione)
 - [Sviluppo e test](#sviluppo-e-test)
 - [Struttura del progetto](#struttura-del-progetto)
@@ -48,6 +49,7 @@ opportunità.
 | **Segnale** | Confronta la stima con il prezzo: `BUY_YES`, `BUY_NO` o `HOLD`. |
 | **Valutazione economica** | Decide se conviene davvero e quanto puntare: prezzo reale dal book, commissioni, incertezza della stima, rendimento annualizzato, Kelly sul book e limiti di rischio. |
 | **Portafoglio simulato** | Ogni scommessa che conviene diventa una scommessa virtuale, chiusa alla risoluzione, per misurare i risultati prima di usare soldi veri. |
+| **Allerte** | Quando esce una notizia fresca e pertinente per un mercato, Jev lo valuta subito. Se conviene arriva una notifica su Telegram; poi si registra il prezzo dopo 15 minuti, 1, 6 e 24 ore per misurare se l'allerta ha anticipato il mercato. |
 
 ## Architettura
 
@@ -110,6 +112,7 @@ dipendenze né build, nella cartella `frontend/`.
 | **Mercati** | Tabella dei mercati con ricerca e ordinamento (clic sulle colonne o menu «Ordina per»): prezzo in centesimi, volume, liquidità, scadenza con giorni mancanti, notizie collegate, ultimo segnale ed edge. |
 | **Dettaglio mercato** | Ultima previsione, pulsante per chiederne una nuova, storico (prezzo contro blended), notizie collegate con rilevanza e impatto, regole di risoluzione. |
 | **Notizie** | Ricerca nelle notizie (titolo, testo, riassunto) con parole evidenziate; filtri per fonte, periodo, regione, categoria, rilevanza per i mercati, opinioni; ordinamento per pertinenza, punteggio o data. |
+| **Allerte** | Ultime allerte con notizia, prezzo all'allerta e movimento a favore dopo 15 minuti, 1, 6 e 24 ore; risultati complessivi; impostazioni (categorie, soglie, limite giornaliero, ore silenziose, prova di Telegram). |
 | **Calibrazione** | Brier score di prezzo, Jev e blended sui mercati risolti, con avviso se il campione è piccolo. |
 | **Come funziona** | Il metodo passo per passo con i parametri reali del server, un esempio numerico e un glossario. |
 | **Impostazioni** | Fonti: aggiungi (con prova del feed prima di salvare), modifica, attiva/disattiva, aggiorna subito, elimina; fonti consigliate dal catalogo; riclassificazione; parametri di previsione in sola lettura. |
@@ -260,6 +263,11 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | Variabile | Default | Descrizione |
 |---|---|---|
 | `INGEST_INTERVAL_MINUTES` | `60` | Intervallo della pipeline |
+| `ALERT_SCAN_MINUTES` | `10` | Controllo rapido per le allerte: fonti → collegamenti → allerte, senza riassunti (`0` lo disattiva) |
+| `ALERT_FOLLOWUP_MINUTES` | `5` | Ogni quanto registrare il prezzo dopo le allerte |
+| `ALERT_TIMEZONE` | `Europe/Rome` | Fuso orario delle ore silenziose |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | Bot e chat che ricevono le notifiche |
+| `PUBLIC_URL` | – | Indirizzo della dashboard, per il link nelle notifiche (es. `https://news.example.com`) |
 | `AI_BATCH_SIZE` | `25` | Notizie riassunte e classificate a ogni esecuzione |
 | `FEED_TIMEOUT_SECONDS` | `20` | Tempo massimo per scaricare un feed |
 | `FEED_MAX_BYTES` | `5000000` | Dimensione massima di un feed |
@@ -512,6 +520,16 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 | GET · POST | `/portfolio/exclusions` | Esclusioni `{kind: market/event/category, value, label}` (POST admin) |
 | DELETE | `/portfolio/exclusions/{id}` | Rimuove un'esclusione (admin) |
 
+### Allerte
+
+| Metodo | Path | Descrizione |
+|---|---|---|
+| GET | `/alerts` | Allerte con notizia, prezzi dopo l'allerta e movimento a favore. `kind` = `opportunities` (default) o `all` |
+| GET | `/alerts/summary` | Risultati degli ultimi `days` giorni: movimento medio e quota a favore per ogni intervallo, esito dei mercati risolti |
+| GET · PUT | `/alerts/settings` | Impostazioni (PUT admin) |
+| POST | `/alerts/test-telegram` | Invia un messaggio di prova (admin) |
+| POST | `/alerts/run` | Controlla subito le notizie nuove (admin) |
+
 Codici di errore di `/markets/{id}/predict`: `503` chiave TypeSafe mancante, `422` nessuna
 notizia collegata, `409` mercato chiuso o senza prezzo, `404` mercato sconosciuto.
 
@@ -595,6 +613,51 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
   - mercati, eventi o categorie, che le scommesse automatiche saltano.
 - **Impostazioni:** si possono scegliere il preset, attivare o disattivare le scommesse automatiche, oppure ricominciare con un nuovo capitale.
 
+## Allerte notizie–prezzo
+
+Su Polymarket il vantaggio viene soprattutto dalla velocità: esce una notizia e il prezzo ci
+mette minuti o ore ad adeguarsi. Le allerte servono a arrivare prima.
+
+**Quando parte un'allerta.** Ogni volta che le notizie vengono collegate ai mercati:
+- nella raccolta completa;
+- in un controllo rapido ogni `ALERT_SCAN_MINUTES` minuti, che scarica le fonti e collega le
+  notizie senza fare riassunti né classificazioni.
+
+Per ogni collegamento nuovo l'app controlla che:
+- la notizia sia fresca (età massima configurabile, 6 ore di default);
+- sia pertinente (60 % di default);
+- venga da una fonte affidabile e non sia un articolo d'opinione;
+- riguardi una categoria seguita.
+
+Per ogni mercato vale la notizia migliore. I mercati in pausa, cioè con un'allerta nelle
+ultime 3 ore, vengono saltati.
+
+**Cosa succede.**
+1. Il prezzo viene aggiornato da Polymarket in quel momento.
+2. Jev valuta il mercato: è una chiamata, contata nel limite giornaliero (30 di default).
+3. La valutazione economica decide se conviene e quanto puntare. La scommessa simulata segue
+   le regole del portafoglio.
+4. Se conviene arriva un messaggio Telegram con la notizia, il prezzo, la stima, l'edge, la
+   puntata e il prezzo massimo. Nelle ore silenziose il messaggio arriva senza suono.
+5. Ogni `ALERT_FOLLOWUP_MINUTES` minuti viene registrato il prezzo 15 minuti, 1, 6 e 24 ore
+   dopo l'allerta.
+
+**I risultati.** Il *movimento a favore* misura di quanti punti il prezzo si è spostato
+nella direzione consigliata. Se è positivo, l'allerta è arrivata prima del mercato. La
+pagina *Allerte* mostra la media e la quota di allerte a favore per ogni intervallo, e
+l'esito dei mercati già risolti. Vengono salvate anche le valutazioni che non convenivano
+(«Tutte le valutazioni»), così si vede quanto costano le allerte rispetto a ciò che rendono.
+
+**Configurare Telegram.**
+1. Crea un bot con [@BotFather](https://t.me/BotFather) e copia il token.
+2. Scrivi un messaggio al bot, poi apri `https://api.telegram.org/bot<TOKEN>/getUpdates`:
+   il numero in `chat.id` è il tuo `TELEGRAM_CHAT_ID`. Per un gruppo aggiungi il bot al
+   gruppo; l'id inizia con `-`.
+3. Metti i due valori nel `.env`, riavvia e premi «Invia messaggio di prova» nella pagina
+   *Allerte*.
+
+Il token resta solo nel `.env`: non compare nelle API, nei log o nei messaggi d'errore.
+
 ## Calibrazione
 
 Quando un mercato seguito si risolve, il sync lo rileva e salva l'esito.
@@ -662,6 +725,9 @@ backend/
 │   ├── profiles.py         # preset di rischio
 │   ├── economics.py        # valutazione economica (funzioni pure)
 │   └── portfolio.py        # portafoglio simulato
+├── alerts/
+│   ├── service.py          # rilevamento, valutazione immediata, prezzi dopo l'allerta
+│   └── telegram.py         # notifiche Telegram
 ├── db/                     # modelli SQLAlchemy, query e migrazioni idempotenti
 └── api/                    # schemi e route FastAPI
 frontend/                   # dashboard: app.js, ui.js, charts.js, explain.js, views/ (notizie, impostazioni, metodo)

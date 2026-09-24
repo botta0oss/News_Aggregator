@@ -14,6 +14,7 @@ from backend.ingestor.deduplicator import embedding_text, get_title_embedding
 from backend.markets import polymarket
 from backend.markets.forecast import compute_signal
 from backend.markets.targeted import run_targeted_search
+from backend.alerts.service import run_alerts
 from backend.markets.matching import EvidenceItem, extract_terms, match_score, rank_evidence, term_overlap
 
 logger = logging.getLogger(__name__)
@@ -360,6 +361,8 @@ async def _run_market_pipeline(session: AsyncSession) -> dict:
     stats["settled_bets"] = await settle_bets(session)
     stats["targeted"] = await run_targeted_search(session)
     stats["links"] = await refresh_links(session)
+    # Fresh, relevant news: evaluate those markets right away and notify (before the batch below)
+    stats["alerts"] = await run_alerts(session)
     stats["predictions"] = 0
     if settings.PREDICTION_AUTO and jev.is_enabled():
         for market in await markets_needing_prediction(session, settings.PREDICTION_MAX_PER_RUN):
