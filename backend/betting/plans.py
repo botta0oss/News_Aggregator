@@ -18,6 +18,13 @@ from backend.markets.forecast import calibrate, model_weight
 logger = logging.getLogger(__name__)
 
 
+def half_spread(market: Market) -> float:
+    """Half the bid-ask spread: buying pays it above the mid price, selling loses it below."""
+    if market.best_bid is not None and market.best_ask is not None and market.best_ask > market.best_bid:
+        return (market.best_ask - market.best_bid) / 2
+    return settings.DEFAULT_SPREAD / 2
+
+
 def forecast_of(prediction, sigma: float) -> Forecast:
     """The forecast as it was computed: calibrated Jev, its weight, the pooling method.
     Forecasts made before calibration and log-odds pooling were linear and uncalibrated."""
@@ -97,7 +104,7 @@ async def plan_for(db: AsyncSession, market: Market, prediction, ev: Evaluation,
         min_edge=settings.MIN_EDGE, risk_free=settings.RISK_FREE_RATE,
         position={"side": position.side, "shares": position.shares, "avg_price": position.avg_price} if position else None,
         sell_bid=sell_bid, tally=await news_tally(db, market), track=track,
-        market_closed=bool(market.closed), excluded_by=excluded_by,
+        market_closed=bool(market.closed), excluded_by=excluded_by, half_spread=half_spread(market),
     )
 
 
@@ -107,7 +114,7 @@ def exit_plan(prediction, market: Market, side: str, profile: RiskProfile, days:
     from backend.betting.strategy import sell_above
     fee_bps = market.taker_fee_bps if market.taker_fee_bps is not None else fees.category_rate(market.category) * 10_000
     hurdle = settings.RISK_FREE_RATE + profile.min_apr_premium
-    target = sell_above(forecast_of(prediction, sigma), side, fee_bps, days, hurdle)
+    target = sell_above(forecast_of(prediction, sigma), side, fee_bps, days, hurdle, half_spread(market))
     if side == "YES":
         bid = market.best_bid if market.best_bid is not None else market.yes_price
     else:

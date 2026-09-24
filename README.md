@@ -24,6 +24,7 @@ opportunità.
 - [API](#api)
 - [Flusso di lavoro consigliato](#flusso-di-lavoro-consigliato)
 - [Valutazione economica e portafoglio simulato](#valutazione-economica-e-portafoglio-simulato)
+- [Strategia di acquisto e vendita](#strategia-di-acquisto-e-vendita)
 - [Allerte notizie–prezzo](#allerte-notizieprezzo)
 - [Backtest](#backtest)
 - [Mercati a più esiti](#mercati-a-più-esiti)
@@ -51,7 +52,8 @@ opportunità.
 | **Previsione** | Jev stima la probabilità del SÌ a partire da regole del mercato e notizie. |
 | **Segnale** | Confronta la stima con il prezzo: `BUY_YES`, `BUY_NO` o `HOLD`. |
 | **Valutazione economica** | Decide se conviene davvero e quanto puntare: prezzo reale dal book, commissioni, incertezza della stima, rendimento annualizzato, Kelly sul book e limiti di rischio. |
-| **Portafoglio simulato** | Ogni scommessa che conviene diventa una scommessa virtuale, chiusa alla risoluzione, per misurare i risultati prima di usare soldi veri. |
+| **Strategia** | Per ogni mercato dice cosa fare (compra SÌ/NO, aspetta, evita, tieni, vendi), con quali ordini limite, a che prezzi la decisione cambierebbe e perché sì o perché no. |
+| **Portafoglio simulato** | Ogni scommessa che conviene diventa una scommessa virtuale, venduta quando il piano lo dice o chiusa alla risoluzione, per misurare i risultati prima di usare soldi veri. |
 | **Allerte** | Quando esce una notizia fresca e pertinente per un mercato, Jev lo valuta subito. Se conviene arriva una notifica su Telegram; poi si registra il prezzo dopo 15 minuti, 1, 6 e 24 ore per misurare se l'allerta ha anticipato il mercato. |
 
 ## Architettura
@@ -544,7 +546,7 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 | GET | `/predictions/opportunities` | Mercati con edge maggiore. Filtri: `min_edge`, `min_evidence`, `include_hold` |
 | GET | `/predictions/calibration` | Brier score sui mercati risolti |
 | GET | `/status` | Configurazione (Jev attivo, soglie) e contatori per la dashboard |
-| GET | `/markets/{id}/economics` | Valutazione economica dal vivo dell'ultima previsione (`preset` opzionale) |
+| GET | `/markets/{id}/economics` | Valutazione economica dal vivo dell'ultima previsione e piano (`strategy`: azione, ordini, prezzi, motivi; `preset` opzionale) |
 | POST | `/markets/{id}/paper-bet` | Aggiunge subito la scommessa simulata, se conviene (admin) |
 
 ### Portafoglio simulato
@@ -552,10 +554,11 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 | Metodo | Path | Descrizione |
 |---|---|---|
 | GET | `/portfolio` | Riepilogo, curva del capitale, preset disponibili |
-| PUT | `/portfolio/settings` | `{preset, auto_paper}` (admin) |
+| PUT | `/portfolio/settings` | `{preset, auto_paper, auto_sell}` (admin) |
 | POST | `/portfolio/reset` | `{bankroll, preset}`: cancella le scommesse simulate e ricomincia (admin) |
-| GET | `/portfolio/bets` | Scommesse: `status` = `open`, `settled`, `excluded`, `all` |
+| GET | `/portfolio/bets` | Scommesse: `status` = `open`, `settled`, `excluded`, `all`; quelle aperte hanno il piano d'uscita (`plan`) |
 | POST | `/portfolio/bets/{id}/exclude` · `/include` | Esclude o riammette una scommessa (admin) |
+| POST | `/portfolio/bets/{id}/sell` | Vende subito una scommessa aperta sul book (admin) |
 | GET · POST | `/portfolio/exclusions` | Esclusioni `{kind: market/event/category, value, label}` (POST admin) |
 | DELETE | `/portfolio/exclusions/{id}` | Rimuove un'esclusione (admin) |
 
@@ -682,6 +685,11 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
 
 **Portafoglio simulato** (pagina *Portafoglio*):
 - **Scommesse automatiche:** ogni previsione con verdetto *Conviene* o *Conviene poco* diventa una scommessa virtuale al prezzo reale del momento, al massimo una aperta per mercato.
+- **Vendita:** dopo ogni aggiornamento dei mercati e ogni nuova previsione le posizioni aperte
+  vengono riviste con la [strategia](#strategia-di-acquisto-e-vendita): se il piano dice
+  «Vendi», le quote vengono vendute sul book (stato «venduta», con prezzo e motivo). Si può
+  disattivare («Vendi automaticamente») o vendere a mano. Le vendite in guadagno contano come
+  vinte.
 - **Chiusura:** avviene quando il mercato si risolve in modo definitivo (prezzo a 1/0 e, se
   Gamma lo riporta, `umaResolutionStatus` = «resolved»: un esito solo proposto o contestato
   può ancora cambiare). Una quota vincente vale 1 $; se il mercato si chiude 50-50 ogni quota
@@ -690,7 +698,54 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
 - **Esclusioni:**
   - singole scommesse, anche già chiuse (non contano nei risultati e si possono riammettere);
   - mercati, eventi o categorie, che le scommesse automatiche saltano.
-- **Impostazioni:** si possono scegliere il preset, attivare o disattivare le scommesse automatiche, oppure ricominciare con un nuovo capitale.
+- **Impostazioni:** si possono scegliere il preset, attivare o disattivare le scommesse e le vendite automatiche, oppure ricominciare con un nuovo capitale.
+
+## Strategia di acquisto e vendita
+
+La scheda **Cosa fare** del dettaglio di un mercato (e di ogni esito dei mercati a più esiti)
+trasforma previsione e valutazione economica in istruzioni (`backend/betting/strategy.py`):
+
+| Azione | Quando | Cosa indica |
+|---|---|---|
+| **Compra SÌ / NO** | La valutazione dice *Conviene* | Ordine limite: quote, prezzo massimo, cifra. Appena comprate, un ordine limite di vendita |
+| **Aspetta** | Il vantaggio c'è, ma al prezzo attuale costi e incertezza se lo mangiano | Il prezzo a cui conviene: un ordine in attesa |
+| **Evita** | Il problema non è il prezzo: mercato poco liquido, scadenza oltre il preset, limiti di rischio pieni | I motivi |
+| **Nessuna azione** | La stima è vicina al prezzo | A che prezzo comprare SÌ o NO diventerebbe conveniente |
+| **Tieni** | C'è una posizione e il prezzo è ancora sotto la stima | L'ordine limite di vendita |
+| **Vendi** | Il prezzo ha raggiunto la stima, o una nuova previsione l'ha girata | Quante quote e a che prezzo |
+
+**Prezzi a cui la decisione cambia.** Per ogni prezzo del SÌ tra 1¢ e 99¢ la stima blended
+viene ricalcolata come nella previsione (Jev calibrato unito a quel prezzo) e si rifanno i
+controlli: segnale (`MIN_EDGE`), margine dopo commissioni e incertezza, rendimento annuo.
+Il più alto prezzo che li passa tutti è «compra SÌ sotto»; il più basso per il NO è «compra
+NO sopra». Il dettaglio li mostra su una scala dei prezzi insieme al prezzo attuale.
+
+**Quando vendere.** Tenere una quota vale la probabilità che vinca, scontata per il tempo in
+cui il capitale resta bloccato al rendimento che il preset chiede (tasso senza rischio + premio).
+Vendere vale il prezzo di acquisto offerto meno la commissione. Il prezzo di vendita è il più
+basso a cui vendere rende almeno quanto tenere:
+
+```
+vendi se  bid − commissione(bid)  ≥  P(lato vince | prezzo = bid) / (1 + rendimento richiesto)^(giorni/365)
+```
+
+Con poco tempo alla scadenza coincide quasi con la stima; con molti mesi è più basso, perché
+incassare prima libera il capitale. Non c'è uno stop-loss fisso: se il prezzo scende ma la
+stima no, la quota è ancora più conveniente. Si vende invece quando una nuova previsione dice
+che conviene il lato opposto.
+
+**Perché sì / perché no.** Ogni piano elenca i motivi: la differenza tra stima e prezzo, le
+notizie che Jev ha giudicato a favore o contro (con i titoli), il margine dopo i costi, il
+rendimento annuo, il tempo, la probabilità di perdere, il book stimato, le esclusioni e i
+risultati passati (vantaggio sul prezzo nei mercati risolti e prezzo di chiusura dei segnali).
+
+**Fiducia** *alta*, *media* o *bassa*: sale con notizie forti e risultati passati buoni;
+scende con notizie deboli, stima incerta, prezzi stimati senza book e risultati passati
+assenti o negativi.
+
+Il piano compare anche nelle opportunità (con i prezzi del momento della previsione), nel
+portafoglio (piano d'uscita di ogni posizione aperta) e nelle notifiche Telegram (ordine di
+acquisto e di vendita).
 
 ## Allerte notizie–prezzo
 
@@ -977,7 +1032,8 @@ In CI un database non raggiungibile fa fallire i test invece di saltarli.
 | `tests/test_economics.py` | Book, commissioni `p × (1 − p)`, prezzo massimo al netto della commissione, book stimato a livelli, Kelly sul book, incertezza, annualizzazione, verdetti e limiti dei preset |
 | `tests/test_markets_sort.py` | Ordinamento dei mercati per ogni campo e direzione, valori mancanti in fondo, paginazione stabile |
 | `tests/test_ratelimit.py` | Limitatore (distanziamento, pausa, concorrenza), Groq sotto rate limit e con modelli di ragionamento, coda che riprende, 429 sulla previsione manuale, file senza cache |
-| `tests/test_portfolio.py` | Scommesse automatiche, esclusioni, chiusura (anche 50-50), commissioni per categoria, prezzo di chiusura (CLV), profitti e perdite, curva, API e permessi |
+| `tests/test_portfolio.py` | Scommesse automatiche, esclusioni, chiusura (anche 50-50), vendita automatica e a mano, piano nell'API, commissioni per categoria, prezzo di chiusura (CLV), profitti e perdite, curva, API e permessi |
+| `tests/test_strategy.py` | Prezzi a cui comprare e vendere, azioni (compra, aspetta, evita, tieni, vendi), motivi, fiducia |
 
 ## Struttura del progetto
 

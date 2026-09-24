@@ -61,6 +61,8 @@ def test_plan_buy_with_orders_and_reasons():
     assert p.action == "BUY" and p.side == "YES" and p.title == "Compra SÌ"
     buy, sell = p.orders
     assert buy["type"] == "buy" and buy["limit"] > 0.35 and buy["shares"] > 0
+    # The price scale and the order agree: never pay more than the evaluation's maximum price
+    assert p.levels["yes_limit"] == pytest.approx(buy["limit"], abs=1e-3)
     assert sell["type"] == "sell" and sell["after_fill"] and sell["limit"] == p.levels["sell_above"]
     assert any("Fed signals cut" in r for r in p.pros) and any("Inflation up" in r for r in p.cons)
     assert any("probabilità" in r for r in p.cons)            # the chance of losing is always said
@@ -73,7 +75,28 @@ def test_plan_wait_when_the_price_is_too_high():
     price = q + 0.03   # still a signal, but costs and uncertainty eat the edge
     p = plan(f, price, "BUY_YES")
     assert p.action == "WAIT" and p.orders[0]["conditional"] and p.orders[0]["limit"] == q
-    assert "solo sotto" in p.title
+    assert p.title.endswith("o meno") and "si mangiano il vantaggio" in p.summary
+
+
+def test_levels_and_orders_account_for_the_spread():
+    """Buying pays half a spread above the mid: the order limit is the ask, consistent with the
+    evaluation made at the real ask (regression: "buy below 70.5¢" while the ask was 70¢)."""
+    f = Forecast(model=0.12, weight=0.4, evidence=0.8, sigma=0.0315, method="linear")
+    hs = 0.01
+    levels = buy_levels(f, PROFILE, 400, 128, 0.05, HURDLE, hs)
+    assert levels["no_limit"] == pytest.approx(1 - levels["buy_no_above"] + hs)
+    # At a YES mid of 0.31 the NO ask is 0.70: the evaluation says no, the plan waits below 70¢
+    p = build_plan(ev=ev_at(f, 0.30, "BUY_NO", days=128), fc=f, signal="BUY_NO", market_price=0.30, profile=PROFILE,
+                   fee_bps=400, days=128, min_edge=0.05, risk_free=0.04, half_spread=hs)
+    assert p.action in ("WAIT", "BUY")
+    if p.action == "WAIT":
+        assert p.orders[0]["limit"] < 0.705   # below the ask the evaluation rejected
+    # Without the spread the level would be more generous
+    assert buy_levels(f, PROFILE, 400, 128, 0.05, HURDLE)["buy_no_above"] <= levels["buy_no_above"]
+    # Selling: the forecast is recomputed at the mid, half a spread above the bid that is sold into
+    g = fc()
+    x = sell_above(g, "YES", 400, 30, HURDLE, hs)
+    assert x - fee_per_share(x, 400) >= hold_value(g, x + hs, "YES", 30, HURDLE)
 
 
 def test_plan_avoid_for_structural_reasons():

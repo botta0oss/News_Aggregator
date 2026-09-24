@@ -76,12 +76,14 @@ class Plan:
 # ---------- Price levels ----------
 
 def _buy_ok(fc: Forecast, q: float, side: str, profile: RiskProfile, fee_bps: float, days: float,
-            min_edge: float, hurdle: float) -> bool:
-    """Would buying `side` be worth it if the YES price were q (and the side's ask its price)?"""
+            min_edge: float, hurdle: float, half_spread: float = 0.0) -> bool:
+    """Would buying `side` be worth it if the YES mid price were q? The share is bought at the
+    ask, half a spread above the side's mid price."""
     p_yes = fc.p_yes(q)
-    p_side, price = (p_yes, q) if side == "YES" else (1 - p_yes, 1 - q)
-    if p_side - price < min_edge:                      # the signal itself
+    p_side, mid = (p_yes, q) if side == "YES" else (1 - p_yes, 1 - q)
+    if p_side - mid < min_edge:                        # the signal itself (measured on the mid, like the forecast)
         return False
+    price = min(0.99, mid + half_spread)
     cost = price + fee_per_share(price, fee_bps)
     p_cons = max(0.0, p_side - profile.z * fc.sigma)
     if p_cons - cost < profile.min_net_edge:           # margin after costs and uncertainty
@@ -90,25 +92,33 @@ def _buy_ok(fc: Forecast, q: float, side: str, profile: RiskProfile, fee_bps: fl
 
 
 def buy_levels(fc: Forecast, profile: RiskProfile, fee_bps: float, days: float, min_edge: float,
-               hurdle: float) -> dict:
-    """Highest YES price at which buying YES is worth it, lowest at which buying NO is."""
-    yes = [q for q in GRID if _buy_ok(fc, q, "YES", profile, fee_bps, days, min_edge, hurdle)]
-    no = [q for q in GRID if _buy_ok(fc, q, "NO", profile, fee_bps, days, min_edge, hurdle)]
-    return {"buy_yes_below": max(yes) if yes else None, "buy_no_above": min(no) if no else None}
+               hurdle: float, half_spread: float = 0.0) -> dict:
+    """Highest YES mid price at which buying YES is worth it, lowest at which buying NO is, and
+    the matching limit prices of the orders (the asks of the side)."""
+    yes = [q for q in GRID if _buy_ok(fc, q, "YES", profile, fee_bps, days, min_edge, hurdle, half_spread)]
+    no = [q for q in GRID if _buy_ok(fc, q, "NO", profile, fee_bps, days, min_edge, hurdle, half_spread)]
+    q_yes, q_no = (max(yes) if yes else None), (min(no) if no else None)
+    return {
+        "buy_yes_below": q_yes, "buy_no_above": q_no,
+        "yes_limit": round(min(0.99, q_yes + half_spread), 4) if q_yes is not None else None,
+        "no_limit": round(min(0.99, 1 - q_no + half_spread), 4) if q_no is not None else None,
+    }
 
 
 def hold_value(fc: Forecast, price_side: float, side: str, days: float, hurdle: float) -> float:
     """What one share is worth to keep: its chance of paying 1 $, discounted for the time the
-    money stays locked at the return the preset asks for."""
+    money stays locked at the return the preset asks for. price_side: mid price of the side."""
     q = price_side if side == "YES" else 1 - price_side
     p_side = fc.p_yes(q) if side == "YES" else 1 - fc.p_yes(q)
     return p_side / math.pow(1 + max(hurdle, 0.0), max(days, 0.0) / 365)
 
 
-def sell_above(fc: Forecast, side: str, fee_bps: float, days: float, hurdle: float) -> Optional[float]:
-    """Lowest bid for the side held at which selling beats holding (fee on the sale included)."""
+def sell_above(fc: Forecast, side: str, fee_bps: float, days: float, hurdle: float,
+               half_spread: float = 0.0) -> Optional[float]:
+    """Lowest bid for the side held at which selling beats holding (fee on the sale included).
+    The bid sits half a spread below the mid price the forecast is recomputed at."""
     for x in GRID:
-        if x - fee_per_share(x, fee_bps) >= hold_value(fc, x, side, days, hurdle):
+        if x - fee_per_share(x, fee_bps) >= hold_value(fc, min(0.99, x + half_spread), side, days, hurdle):
             return x
     return None
 
@@ -179,12 +189,13 @@ def build_plan(*, ev: dict, fc: Forecast, signal: str, market_price: float, prof
                fee_bps: float, days: float, min_edge: float, risk_free: float,
                position: Optional[dict] = None, sell_bid: Optional[float] = None,
                tally: Optional[dict] = None, track: Optional[dict] = None,
-               market_closed: bool = False, excluded_by: Optional[str] = None) -> Plan:
+               market_closed: bool = False, excluded_by: Optional[str] = None, half_spread: float = 0.0) -> Plan:
     """ev: the evaluation (Evaluation.as_dict()) of the latest forecast at the current prices.
     position: the open simulated bet on this market (side, shares, avg_price), if any.
     sell_bid: what one share of the position's side would fetch now (best bid)."""
     hurdle = risk_free + profile.min_apr_premium
-    levels = buy_levels(fc, profile, fee_bps, days, min_edge, hurdle)
+    levels = buy_levels(fc, profile, fee_bps, days, min_edge, hurdle, half_spread)
+    _cap_with_evaluation(levels, ev, signal, half_spread)
     p_now = fc.p_yes(market_price)
     blocking = [r for r in ev["reasons"] if r["blocking"]]
     structural = [r for r in blocking if r["code"] in STRUCTURAL and r["code"] != "exposure_cap"]
@@ -199,7 +210,7 @@ def build_plan(*, ev: dict, fc: Forecast, signal: str, market_price: float, prof
     if position:
         side = position["side"]
         s_it = SIDE_IT[side]
-        target = sell_above(fc, side, fee_bps, days, hurdle)
+        target = sell_above(fc, side, fee_bps, days, hurdle, half_spread)
         levels["sell_above"] = target
         p_side_now = p_now if side == "YES" else 1 - p_now
         pros, cons = _evidence_lines(tally, side)
@@ -227,6 +238,7 @@ def build_plan(*, ev: dict, fc: Forecast, signal: str, market_price: float, prof
                         levels=levels, pros=pros, cons=cons, exit=exit_lines, confidence=confidence, confidence_why=why,
                         code="target_reached")
         hold_pros = pros + [f"La stima ({_pct(p_side_now)}) è ancora sopra il prezzo: tenere rende più che vendere."]
+        cons = cons + [f"Resta una probabilità del {_pct(1 - p_side_now)} che le quote {s_it} non paghino nulla."]
         return Plan("HOLD", side, f"Tieni le quote {s_it}",
                     f"Tieni fino alla risoluzione, con un ordine di vendita a {_cents(target)}." if target
                     else "Tieni fino alla risoluzione.",
@@ -243,10 +255,10 @@ def build_plan(*, ev: dict, fc: Forecast, signal: str, market_price: float, prof
         cons = [f"La stima ({_pct(p_now)}) è vicina al prezzo ({_pct(market_price)}): non c'è un vantaggio da sfruttare."] \
             + ([f"Notizie poco informative ({_pct(fc.evidence)}): la stima pesa poco."] if fc.evidence < 0.5 else []) + cons
         orders = []
-        if levels["buy_yes_below"] is not None:
-            orders.append({"type": "buy", "side": "YES", "limit": levels["buy_yes_below"], "conditional": True})
-        if levels["buy_no_above"] is not None:
-            orders.append({"type": "buy", "side": "NO", "limit": round(1 - levels["buy_no_above"], 3), "conditional": True})
+        if levels["yes_limit"] is not None:
+            orders.append({"type": "buy", "side": "YES", "limit": levels["yes_limit"], "conditional": True})
+        if levels["no_limit"] is not None:
+            orders.append({"type": "buy", "side": "NO", "limit": levels["no_limit"], "conditional": True})
         return Plan("NONE", None, "Nessuna azione", _conditional_text(levels) or "Nessun prezzo renderebbe conveniente una scommessa.",
                     orders=orders, levels=levels, pros=pros, cons=cons + track_cons, confidence=confidence,
                     confidence_why=why)
@@ -263,7 +275,8 @@ def build_plan(*, ev: dict, fc: Forecast, signal: str, market_price: float, prof
     if ev.get("net_edge") is not None and ev["net_edge"] >= profile.min_net_edge:
         pros.append(f"Anche dopo spread, commissioni e incertezza restano {_pts(ev['net_edge'])} di margine.")
     if ev.get("apr") is not None and ev["apr"] >= ev["hurdle_apr"]:
-        pros.append(f"Rendimento annuo prudente {_pct(min(ev['apr'], 10))}, sopra la soglia del {_pct(ev['hurdle_apr'])}.")
+        apr = "oltre 1000%" if ev["apr"] >= 10 else _pct(ev["apr"])
+        pros.append(f"Rendimento annuo prudente {apr}, sopra la soglia del {_pct(ev['hurdle_apr'])}.")
     pros += track_pros
     cons = [r["text"] for r in blocking] + news_cons
     if ev.get("prob_loss") is not None:
@@ -277,7 +290,7 @@ def build_plan(*, ev: dict, fc: Forecast, signal: str, market_price: float, prof
     if excluded_by:
         cons.append("Hai escluso questo mercato (o il suo evento o categoria) dal portafoglio simulato.")
     cons += track_cons
-    target = sell_above(fc, side, fee_bps, days, hurdle)
+    target = sell_above(fc, side, fee_bps, days, hurdle, half_spread)
     levels["sell_above"] = target
     exit_lines = [
         f"Dopo l'acquisto: ordine limite di vendita a {_cents(target)}, il prezzo a cui incassare rende più che aspettare."
@@ -301,22 +314,48 @@ def build_plan(*, ev: dict, fc: Forecast, signal: str, market_price: float, prof
                     "Il vantaggio c'è, ma " + "; ".join(r["text"][0].lower() + r["text"][1:].rstrip(".") for r in (structural or blocking)[:2]) + ".",
                     levels=levels, pros=pros, cons=cons, confidence=confidence, confidence_why=why)
 
-    limit = levels["buy_yes_below"] if side == "YES" else (1 - levels["buy_no_above"] if levels["buy_no_above"] is not None else None)
-    return Plan("WAIT", side, f"Aspetta: compra {s_it} solo sotto {_cents(limit)}" if limit else "Aspetta",
-                (f"Al prezzo attuale ({_cents(ev.get('best_price'))}) costi e incertezza si mangiano il vantaggio. "
-                 f"Metti un ordine limite a {_cents(limit)}: se il prezzo scende fin lì, conviene.")
-                if limit else "Al prezzo attuale costi e incertezza si mangiano il vantaggio, e nessun prezzo ragionevole lo recupera.",
+    limit = levels["yes_limit"] if side == "YES" else levels["no_limit"]
+    best = ev.get("best_price")
+    if limit is None:
+        summary = "Al prezzo attuale costi e incertezza si mangiano il vantaggio, e nessun prezzo ragionevole lo recupera."
+    elif best is not None and limit >= best:
+        # At the best ask it would be worth it, but not for a useful amount (book, minimum order)
+        summary = (f"Il prezzo migliore ({_cents(best)}) è al limite: conviene solo per poche quote. "
+                   f"Metti un ordine limite a {_cents(limit)} e lascia che il prezzo venga da te.")
+    else:
+        summary = (f"Al prezzo attuale ({_cents(best)}) costi e incertezza si mangiano il vantaggio. "
+                   f"Metti un ordine limite a {_cents(limit)}: se il prezzo scende fin lì, conviene.")
+    return Plan("WAIT", side, f"Aspetta: compra {s_it} a {_cents(limit)} o meno" if limit else "Aspetta", summary,
                 orders=[{"type": "buy", "side": side, "limit": limit, "conditional": True}] if limit else [],
                 levels=levels, pros=pros, cons=cons, exit=exit_lines, confidence=confidence, confidence_why=why)
+
+
+def _cap_with_evaluation(levels: dict, ev: dict, signal: str, half_spread: float) -> None:
+    """For the side of the signal, the order limit is never above the evaluation's maximum price.
+
+    The level recomputes the blend at each price, so a higher price also raises the estimate
+    (the market is part of it): fine to say when a falling price becomes a buy, too generous
+    for how much to pay now. The evaluation's maximum price uses the estimate at today's price.
+    """
+    if signal not in ("BUY_YES", "BUY_NO") or not ev.get("limit_price"):
+        return
+    cap = ev["limit_price"]
+    if signal == "BUY_YES" and levels["yes_limit"] is not None and cap < levels["yes_limit"]:
+        levels["yes_limit"] = round(cap, 4)
+        levels["buy_yes_below"] = round(max(0.0, cap - half_spread), 4)
+    if signal == "BUY_NO" and levels["no_limit"] is not None and cap < levels["no_limit"]:
+        levels["no_limit"] = round(cap, 4)
+        levels["buy_no_above"] = round(min(1.0, 1 - cap + half_spread), 4)
 
 
 def _conditional_text(levels: dict) -> Optional[str]:
     parts = []
     if levels.get("buy_yes_below") is not None:
-        parts.append(f"conviene comprare SÌ se il prezzo scende sotto {_cents(levels['buy_yes_below'])}")
+        parts.append(f"conviene comprare SÌ se il prezzo scende sotto {_cents(levels['buy_yes_below'])} "
+                     f"(ordine SÌ a {_cents(levels['yes_limit'])})")
     if levels.get("buy_no_above") is not None:
         parts.append(f"conviene comprare NO se il prezzo del SÌ sale sopra {_cents(levels['buy_no_above'])} "
-                     f"(NO a {_cents(1 - levels['buy_no_above'])})")
+                     f"(ordine NO a {_cents(levels['no_limit'])})")
     if not parts:
         return None
     text = " e ".join(parts)

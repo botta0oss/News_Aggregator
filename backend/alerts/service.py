@@ -368,7 +368,8 @@ def _cents(p: Optional[float]) -> str:
     return "–" if p is None else f"{_short(p * 100)}¢"
 
 
-def format_message(alert: Alert, market: Market, prediction: MarketPrediction, trig: dict) -> str:
+def format_message(alert: Alert, market: Market, prediction: MarketPrediction, trig: dict,
+                   sell_above: Optional[float] = None) -> str:
     e = telegram.escape
     side = "SÌ" if alert.side == "YES" else "NO"
     verdict = "conviene" if alert.verdict == "GO" else "conviene, puntata piccola"
@@ -385,11 +386,31 @@ def format_message(alert: Alert, market: Market, prediction: MarketPrediction, t
         f"Edge {'+' if (alert.edge or 0) >= 0 else '−'}{_num(abs(alert.edge or 0) * 100, 1)} pt",
     ]
     if alert.outlay:
-        lines.append(f"Puntata simulata {_num(alert.outlay, 2)} $, prezzo massimo {_cents(alert.limit_price)} per quota {side}")
+        lines += ["", f"<b>Ordine</b>: compra {side} con limite {_cents(alert.limit_price)} (puntata simulata {_num(alert.outlay, 2)} $)"]
+        if sell_above is not None:
+            lines.append(f"<b>Poi</b>: vendita limite a {_cents(sell_above)}, oppure tieni fino alla risoluzione")
     if settings.PUBLIC_URL:
         path = f"multi/{market.multi_event_id}" if market.multi_event_id else f"mercati/{market.id}"
         lines += ["", f"{settings.PUBLIC_URL.rstrip('/')}/#/{path}"]
     return "\n".join(lines)
+
+
+async def _sell_target(db: AsyncSession, alert: Alert, market: Market, prediction) -> Optional[float]:
+    """Price at which to sell the shares the alert suggests buying (see betting/strategy.py)."""
+    from backend.betting import portfolio
+    from backend.betting.economics import model_sigma
+    from backend.betting.plans import exit_plan, forecast_of
+    from backend.betting.profiles import get_profile
+    if alert.side not in ("YES", "NO"):
+        return None
+    try:
+        profile = get_profile((await portfolio.get_settings(db)).preset)
+        sigma = model_sigma(prediction.model_probability, prediction.evidence_strength,
+                            forecast_of(prediction, 0).weight, settings.MODEL_PSEUDO_COUNT)
+        return exit_plan(prediction, market, alert.side, profile, portfolio.days_to_end(market), sigma)["sell_above"]
+    except Exception as e:
+        logger.info(f"No sale target for alert {alert.id}: {e}")
+        return None
 
 
 async def notify(db: AsyncSession, alert: Alert, market: Market, prediction: MarketPrediction, trig: dict,
@@ -397,7 +418,8 @@ async def notify(db: AsyncSession, alert: Alert, market: Market, prediction: Mar
     if not s.telegram_enabled or not telegram.is_configured():
         return False
     try:
-        await telegram.send_message(format_message(alert, market, prediction, trig), silent=in_quiet_hours(s))
+        await telegram.send_message(format_message(alert, market, prediction, trig, await _sell_target(db, alert, market, prediction)),
+                                    silent=in_quiet_hours(s))
         alert.notified_at = _now()
         ok = True
     except telegram.TelegramError as e:

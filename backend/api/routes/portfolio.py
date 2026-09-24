@@ -221,7 +221,8 @@ async def market_economics(market_id: str, preset: Optional[Literal["prudente", 
         "preset": profile.as_dict(),
         "excluded_by": excluded_by,
         "open_bet": _bet_dict(open_bet, market) if open_bet else None,
-        "market": {"id": market.id, "event_slug": market.event_slug, "category": market.category, "question": market.question},
+        "market": {"id": market.id, "event_slug": market.event_slug, "category": market.category, "question": market.question,
+                   "yes_price": market.yes_price},
         "evaluated_at": datetime.now().astimezone(),
     }
 

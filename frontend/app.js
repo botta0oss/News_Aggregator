@@ -15,6 +15,7 @@ import { viewMultiList, viewMultiDetail, eventCard } from "./views/multi.js";
 import { viewUsage } from "./views/usage.js";
 import { renderNav, markCurrent, setBadge, setupCollapse, setupMenu } from "./nav.js";
 import { economicsCard, verdictBadge } from "./economics.js";
+import { planLine } from "./strategy.js";
 
 const view = document.getElementById("view");
 let status = null;
@@ -411,6 +412,7 @@ function opportunityCard({ market, prediction: p }) {
       probTrack({ market: p.market_probability, blended: p.blended_probability, jev: p.model_probability }),
       probLegend({ market: p.market_probability, blended: p.blended_probability, jev: p.model_probability }),
       h("p", { class: "opp-explain" }, explainSentence(p, status), " ", h("a", { href: marketHref(market.id) }, "Vedi il calcolo")),
+      planLine(p.economics),
     ),
     h("div", { class: "opp-side" },
       h("div", { class: "opp-side-top" },
