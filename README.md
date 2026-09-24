@@ -791,10 +791,21 @@ I test richiedono un PostgreSQL con pgvector. TypeSafe e Polymarket vengono simu
 livello HTTP, quindi non servono chiavi né rete.
 
 ```bash
-pip install -r requirements.txt pytest pytest-asyncio
+pip install -r requirements.txt -r requirements-dev.txt
 export TEST_DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/newsagg
 pytest
 ```
+
+I test non usano il modello di embedding, quindi `sentence-transformers` (e PyTorch) si può
+saltare se serve solo far girare i test.
+
+**CI.** Su GitHub ogni push su `main` e ogni pull request avviano
+`.github/workflows/tests.yml`:
+- **backend:** tutti i test, su un Postgres con pgvector (`pgvector/pgvector:pg16`) e senza
+  PyTorch;
+- **frontend:** controllo di sintassi dei moduli JavaScript con `node --check`.
+
+In CI un database non raggiungibile fa fallire i test invece di saltarli.
 
 ⚠️ Il test end-to-end **cancella e ricrea tutte le tabelle** del database indicato da
 `TEST_DATABASE_URL`: usa sempre un database dedicato.

@@ -108,6 +108,8 @@ async def db(monkeypatch):
             await conn.run_sync(Base.metadata.create_all)
             await run_migrations(conn)
     except Exception as e:  # pragma: no cover
+        if os.environ.get("CI"):
+            raise  # in CI a missing database is a failure, not a reason to skip half the suite
         pytest.skip(f"Test database not available: {e}")
     monkeypatch.setattr(service, "get_title_embedding", fake_embedding)
     monkeypatch.setattr(scheduler, "get_title_embedding", fake_embedding)
