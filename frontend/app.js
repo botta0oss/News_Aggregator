@@ -9,6 +9,7 @@ import { viewSettings } from "./views/settings.js";
 import { viewMethod } from "./views/method.js";
 import { viewPortfolio } from "./views/portfolio.js";
 import { bulkPredict } from "./views/bulk.js";
+import { viewAlerts } from "./views/alerts.js";
 import { economicsCard, verdictBadge } from "./economics.js";
 
 const view = document.getElementById("view");
@@ -231,6 +232,7 @@ const routes = [
   [/^#\/impostazioni$/, "impostazioni", () => viewSettings(ctx)],
   [/^#\/metodo$/, "metodo", () => viewMethod(ctx)],
   [/^#\/portafoglio$/, "portafoglio", () => viewPortfolio(ctx)],
+  [/^#\/allerte$/, "allerte", () => viewAlerts(ctx)],
 ];
 
 async function route({ quiet = false } = {}) {

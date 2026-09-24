@@ -193,7 +193,8 @@ async def run_ingestion_pipeline():
     async with _pipeline_lock:
         await _run_pipeline()
 
-async def _run_pipeline():
+async def _fetch_all_sources() -> int:
+    total = 0
     async with SessionLocal() as session:
         await seed_sources_if_empty(session)
         sources = (await session.execute(select(Source).where(Source.active == True, Source.kind == "feed"))).scalars().all()  # noqa: E712
@@ -203,10 +204,16 @@ async def _run_pipeline():
             try:
                 source = await session.get(Source, source_id)
                 added = await ingest_source(session, source)
+                total += added
                 logger.info(f"Feed {name}: {added} new articles")
             except Exception as e:
                 logger.error(f"Ingestion failed for feed {name}: {e}")
                 await session.rollback()
+    return total
+
+
+async def _run_pipeline():
+    await _fetch_all_sources()
 
     # Step 3: AI Pipeline for Unprocessed Articles
     await process_ai_queue()
@@ -220,6 +227,40 @@ async def _run_pipeline():
         except Exception as e:
             logger.error(f"Market pipeline failed: {e}")
 
+async def run_alert_scan() -> None:
+    """Fast lane for alerts, between two full runs: new news -> links -> alerts.
+
+    No summaries or classification here (the full run does them), so it is cheap enough
+    to run every few minutes. Skipped while the full pipeline is running.
+    """
+    from backend.alerts.service import get_settings, run_alerts
+    from backend.markets.service import _market_lock, refresh_links
+    from backend.ai import jev
+
+    if not settings.POLYMARKET_ENABLED or not jev.is_enabled() or _pipeline_lock.locked():
+        return
+    async with SessionLocal() as session:
+        if not (await get_settings(session)).enabled:
+            return
+    async with _pipeline_lock:
+        added = await _fetch_all_sources()
+        if not added or _market_lock.locked():
+            return
+        async with _market_lock:
+            async with SessionLocal() as session:
+                await refresh_links(session)
+                await run_alerts(session)
+
+
+async def run_alert_followups() -> None:
+    from backend.alerts.service import record_followups
+    async with SessionLocal() as session:
+        try:
+            await record_followups(session)
+        except Exception as e:
+            logger.error(f"Alert follow-ups failed: {e}")
+
+
 def start_scheduler():
     # First run right after startup, then every INGEST_INTERVAL_MINUTES
     scheduler.add_job(
@@ -228,6 +269,10 @@ def start_scheduler():
         next_run_time=datetime.now(timezone.utc),
         max_instances=1, coalesce=True,
     )
+    if settings.ALERT_SCAN_MINUTES > 0 and settings.ALERT_SCAN_MINUTES < settings.INGEST_INTERVAL_MINUTES:
+        scheduler.add_job(run_alert_scan, 'interval', minutes=settings.ALERT_SCAN_MINUTES, max_instances=1, coalesce=True)
+    scheduler.add_job(run_alert_followups, 'interval', minutes=max(1, settings.ALERT_FOLLOWUP_MINUTES),
+                      max_instances=1, coalesce=True)
     scheduler.start()
 
 def shutdown_scheduler():

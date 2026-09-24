@@ -47,6 +47,15 @@ class Settings(BaseSettings):
     TARGETED_NEWS_MAX_RESULTS: int = 10       # articles kept per search
     TARGETED_NEWS_DAYS: int = 7               # only news from the last N days
 
+    # News-vs-price alerts (the thresholds are edited in the dashboard)
+    ALERT_SCAN_MINUTES: int = 10              # fast scan: new news -> links -> alerts, without AI summaries
+    ALERT_FOLLOWUP_MINUTES: int = 5           # how often the price after each alert is recorded
+    ALERT_TIMEZONE: str = "Europe/Rome"       # for quiet hours
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_CHAT_ID: str = ""
+    TELEGRAM_API_URL: str = "https://api.telegram.org"
+    PUBLIC_URL: str = ""                      # dashboard address, for links in the notifications
+
     # Forecasting / betting signals
     PREDICTION_AUTO: bool = False             # run Jev predictions automatically after each ingest
     PREDICTION_MAX_PER_RUN: int = 10

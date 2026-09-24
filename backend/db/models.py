@@ -121,6 +121,7 @@ class MarketArticleLink(Base):
     similarity: Mapped[float] = mapped_column(Float, nullable=False)
     match_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)       # similarity + key terms
     matched_terms: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)      # key terms found in the article
+    alert_checked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # seen by the alert scan
     # Filled by Jev at prediction time
     relevance: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # P(article is relevant)
     impact: Mapped[Optional[str]] = mapped_column(Text, nullable=True)        # raises_yes / lowers_yes / neutral
@@ -224,3 +225,47 @@ class PaperExclusion(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False)
     label: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class AlertSettings(Base):
+    """News-vs-price alerts settings (single row, id = 1). Telegram credentials stay in .env."""
+    __tablename__ = 'alert_settings'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    categories: Mapped[list] = mapped_column(JSONB, default=list)           # empty = all categories
+    min_match: Mapped[float] = mapped_column(Float, default=0.6)            # minimum news <-> market match
+    max_news_age_hours: Mapped[float] = mapped_column(Float, default=6.0)   # only fresh news triggers
+    daily_budget: Mapped[int] = mapped_column(Integer, default=30)          # Jev calls per 24 h
+    cooldown_hours: Mapped[float] = mapped_column(Float, default=3.0)       # per market
+    min_verdict: Mapped[str] = mapped_column(Text, default="SMALL")         # notify GO only, or GO + SMALL
+    telegram_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    quiet_start: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # hour 0-23, silent notifications
+    quiet_end: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class Alert(Base):
+    """A fresh, relevant news item for a market, the immediate Jev evaluation and the price afterwards."""
+    __tablename__ = 'alerts'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    market_id: Mapped[str] = mapped_column(ForeignKey('markets.id', ondelete='CASCADE'), index=True)
+    article_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('articles.id', ondelete='SET NULL'), nullable=True)
+    prediction_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('market_predictions.id', ondelete='SET NULL'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    news_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)   # publication of the trigger
+    trigger_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    price: Mapped[float] = mapped_column(Float, nullable=False)          # P(YES) when the alert was raised
+    side: Mapped[Optional[str]] = mapped_column(Text, nullable=True)     # YES / NO
+    verdict: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # GO / SMALL / NO
+    signal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    edge: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    blended: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    outlay: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    limit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    opportunity: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    notify_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    followups: Mapped[dict] = mapped_column(JSONB, default=dict)         # {"15m": price, "1h": ..., "6h": ..., "24h": ...}
+
+    market = relationship("Market")
+    article = relationship("Article")
