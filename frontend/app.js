@@ -1,15 +1,123 @@
 import {
-  h, clear, api, fmt, toast, debounce, icon, hydrateIcons, externalLink,
+  h, clear, api, setCsrfToken, fmt, toast, debounce, icon, hydrateIcons, externalLink,
   signalBadge, impactBadge, marketStateBadge, meter, statTile, emptyState, skeleton,
 } from "./ui.js";
 import { probTrack, probLegend, historyChart, brierBars } from "./charts.js";
 
 const view = document.getElementById("view");
 let status = null;
+let me = null; // { username, role } once signed in
 let renderToken = 0;
+let afterLogin = null; // hash to return to after signing in
+
+const isAdmin = () => me?.role === "admin";
+
+// ---------- Session ----------
+function setSignedIn(info) {
+  me = info.user;
+  setCsrfToken(info.csrf_token);
+  for (const id of ["tabs", "actions", "footer"]) document.getElementById(id).hidden = false;
+  document.getElementById("user-name").textContent = me.username;
+  document.getElementById("user-link").setAttribute("title", `${me.username} (${me.role === "admin" ? "amministratore" : "sola lettura"}): account e password`);
+  // Jobs and paid API calls are admin-only: viewers don't get the buttons
+  document.querySelectorAll(".admin-only").forEach((el) => { el.hidden = !isAdmin(); });
+}
+
+function setSignedOut() {
+  me = null;
+  status = null;
+  setCsrfToken(null);
+  for (const id of ["tabs", "actions", "footer", "banner"]) document.getElementById(id).hidden = true;
+}
+
+async function checkSession() {
+  try {
+    setSignedIn(await api("/auth/me", { handle401: false }));
+    return true;
+  } catch (e) {
+    if (e.status !== 401) toast(e.message, { error: true });
+    return false;
+  }
+}
+
+function showLogin(message) {
+  if (!afterLogin && !/^#\/(account)?$/.test(window.location.hash)) afterLogin = window.location.hash || null;
+  setSignedOut();
+  ++renderToken;
+  clear(view).append(loginView(message));
+  view.querySelector("#login-username")?.focus();
+}
+
+function loginView(message) {
+  const error = h("p", { class: "form-error", role: "alert", id: "login-error" }, message || "");
+  error.hidden = !message;
+  const username = h("input", { id: "login-username", class: "input", name: "username", autocomplete: "username", required: true, autocapitalize: "none", spellcheck: "false", maxlength: "64" });
+  const password = h("input", { id: "login-password", class: "input", name: "password", type: "password", autocomplete: "current-password", required: true, maxlength: "256" });
+  const reveal = h("button", { class: "input-addon", type: "button", "aria-label": "Mostra password", "aria-pressed": "false" }, icon("eye"));
+  reveal.addEventListener("click", () => {
+    const show = password.type === "password";
+    password.type = show ? "text" : "password";
+    reveal.setAttribute("aria-pressed", String(show));
+    reveal.setAttribute("aria-label", show ? "Nascondi password" : "Mostra password");
+  });
+  const submit = h("button", { class: "btn btn-primary btn-block", type: "submit" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Accedi");
+  const form = h("form", { class: "form", novalidate: true },
+    h("div", { class: "form-field" }, h("label", { for: "login-username" }, "Username"), username),
+    h("div", { class: "form-field" }, h("label", { for: "login-password" }, "Password"), h("div", { class: "input-group" }, password, reveal)),
+    error, submit,
+  );
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!username.value.trim() || !password.value) {
+      error.textContent = "Inserisci username e password.";
+      error.hidden = false;
+      (username.value.trim() ? password : username).focus();
+      return;
+    }
+    setBusy(submit, true);
+    error.hidden = true;
+    try {
+      const info = await api("/auth/login", { method: "POST", body: { username: username.value, password: password.value }, handle401: false });
+      setSignedIn(info);
+      password.value = "";
+      const target = afterLogin && afterLogin !== window.location.hash ? afterLogin : null;
+      afterLogin = null;
+      await loadStatus();
+      if (target) window.location.hash = target;
+      else route();
+    } catch (err) {
+      error.textContent = err.message;
+      error.hidden = false;
+      password.select();
+      password.focus();
+      setBusy(submit, false);
+    }
+  });
+  return h("div", { class: "login-wrap" },
+    h("section", { class: "card login-card", "aria-labelledby": "login-title" },
+      h("div", { class: "login-head" }, h("span", { class: "login-icon" }, icon("lock")), h("div", {},
+        h("h1", { id: "login-title" }, "Accedi"),
+        h("p", { class: "secondary small" }, "Dashboard privata di News × Markets."),
+      )),
+      form,
+      h("p", { class: "muted small" }, "Non hai un account? Chiedi a chi gestisce il server di crearlo con ",
+        h("code", {}, "python -m backend.auth.cli create-user"), "."),
+    ),
+  );
+}
+
+async function logout() {
+  try {
+    await api("/auth/logout", { method: "POST", handle401: false });
+  } catch { /* the session is gone either way */ }
+  afterLogin = null;
+  showLogin("Sei uscito. A presto.");
+  window.history.replaceState(null, "", "#/opportunita");
+}
 
 // ---------- App shell ----------
 async function loadStatus() {
+  if (!me) return null;
   try {
     status = await api("/status");
   } catch {
@@ -77,6 +185,10 @@ async function runJob(btn, path, startedMessage) {
 
 function setupShell() {
   hydrateIcons();
+  document.getElementById("btn-logout").addEventListener("click", logout);
+  window.addEventListener("auth:required", () => {
+    if (me) showLogin("La sessione è scaduta. Accedi di nuovo.");
+  });
   const ingest = document.getElementById("btn-ingest");
   const sync = document.getElementById("btn-sync");
   ingest.addEventListener("click", () => runJob(ingest, "/ingest", "Aggiornamento notizie avviato. La pagina si aggiorna da sola."));
@@ -106,9 +218,11 @@ const routes = [
   [/^#\/mercati\/(.+)$/, "mercati", viewMarketDetail],
   [/^#\/notizie$/, "notizie", viewNews],
   [/^#\/calibrazione$/, "calibrazione", viewCalibration],
+  [/^#\/account$/, "account", viewAccount],
 ];
 
 async function route({ quiet = false } = {}) {
+  if (!me) return showLogin();
   const hash = window.location.hash || "#/opportunita";
   const match = routes.find(([re]) => re.test(hash));
   if (!match) {
@@ -132,7 +246,7 @@ async function route({ quiet = false } = {}) {
     clear(view).append(content);
     if (!quiet) view.focus({ preventScroll: true });
   } catch (e) {
-    if (token !== renderToken) return;
+    if (token !== renderToken || e.status === 401) return;
     clear(view).append(emptyState("Impossibile caricare la pagina", e.message,
       h("button", { class: "btn btn-ghost", type: "button", on: { click: () => route() } }, icon("refresh"), "Riprova")));
   }
@@ -207,12 +321,12 @@ async function viewOpportunities() {
 function opportunitiesEmpty() {
   if (!status) return emptyState("Nessun dato", "Il server non risponde.");
   if (status.open_markets === 0) {
-    return emptyState("Nessun mercato ancora", "Scarica i mercati Sì/No più scambiati da Polymarket per iniziare.",
-      h("button", { class: "btn btn-primary", type: "button", on: { click: () => document.getElementById("btn-sync").click() } }, icon("sync"), "Aggiorna mercati"));
+    return emptyState("Nessun mercato ancora", isAdmin() ? "Scarica i mercati Sì/No più scambiati da Polymarket per iniziare." : "Un amministratore deve scaricare i mercati da Polymarket.",
+      isAdmin() ? h("button", { class: "btn btn-primary", type: "button", on: { click: () => document.getElementById("btn-sync").click() } }, icon("sync"), "Aggiorna mercati") : null);
   }
   if (status.linked_markets === 0) {
     return emptyState("Nessuna notizia collegata ai mercati", "Le notizie recenti non somigliano ancora a nessuna domanda di mercato. Aggiorna le notizie o abbassa MARKET_MATCH_THRESHOLD nel file .env.",
-      h("button", { class: "btn btn-primary", type: "button", on: { click: () => document.getElementById("btn-ingest").click() } }, icon("refresh"), "Aggiorna notizie"));
+      isAdmin() ? h("button", { class: "btn btn-primary", type: "button", on: { click: () => document.getElementById("btn-ingest").click() } }, icon("refresh"), "Aggiorna notizie") : null);
   }
   if (!status.jev_enabled) {
     return emptyState("Previsioni non disponibili", "Configura TYPESAFE_API_KEY per ottenere le stime di Jev sui mercati con notizie collegate.");
@@ -331,7 +445,8 @@ async function viewMarketDetail(id) {
 
   const predictBtn = h("button", { class: "btn btn-primary", type: "button" }, h("span", { class: "spinner", "aria-hidden": "true" }), icon("refresh"), latest ? "Nuova previsione" : "Chiedi una previsione a Jev");
   let blocker = null;
-  if (!status?.jev_enabled) blocker = "Serve TYPESAFE_API_KEY nel file .env.";
+  if (!isAdmin()) blocker = "Solo gli amministratori possono chiedere previsioni (sono chiamate a pagamento).";
+  else if (!status?.jev_enabled) blocker = "Serve TYPESAFE_API_KEY nel file .env.";
   else if (market.closed) blocker = "Il mercato è chiuso.";
   else if (market.evidence.length === 0) blocker = "Nessuna notizia recente collegata a questo mercato.";
   predictBtn.disabled = Boolean(blocker);
@@ -443,8 +558,8 @@ async function viewNews() {
     list.append(...data.articles.map(articleCard));
     offset += data.articles.length;
     summary.textContent = data.total ? `${fmt.int(offset)} di ${fmt.int(data.total)} notizie, ordinate per punteggio` : "";
-    if (!data.total) list.replaceChildren(emptyState("Nessuna notizia", "Premi «Aggiorna notizie» o allenta i filtri.",
-      h("button", { class: "btn btn-primary", type: "button", on: { click: () => document.getElementById("btn-ingest").click() } }, icon("refresh"), "Aggiorna notizie")));
+    if (!data.total) list.replaceChildren(emptyState("Nessuna notizia", isAdmin() ? "Premi «Aggiorna notizie» o allenta i filtri." : "Allenta i filtri o attendi il prossimo aggiornamento automatico.",
+      isAdmin() ? h("button", { class: "btn btn-primary", type: "button", on: { click: () => document.getElementById("btn-ingest").click() } }, icon("refresh"), "Aggiorna notizie") : null));
     more.replaceChildren(offset < data.total ? h("button", { class: "btn btn-ghost", type: "button", on: { click: () => load(false) } }, "Carica altre") : "");
   };
   const reloadSoon = debounce(() => load(true).catch((e) => toast(e.message, { error: true })), 300);
@@ -536,7 +651,81 @@ async function viewCalibration() {
   );
 }
 
+// ---------- Account ----------
+async function viewAccount() {
+  const fields = {};
+  const field = (id, label, autocomplete, hint) => {
+    const input = h("input", { id, class: "input", type: "password", autocomplete, required: true, maxlength: "256", "aria-describedby": `${id}-msg` });
+    const msg = h("p", { class: "field-hint", id: `${id}-msg` }, hint || "");
+    fields[id] = { input, msg, hint: hint || "" };
+    return h("div", { class: "form-field" }, h("label", { for: id }, label), input, msg);
+  };
+  const setError = (id, text) => {
+    const f = fields[id];
+    f.msg.textContent = text || f.hint;
+    f.msg.classList.toggle("field-error", Boolean(text));
+    f.input.setAttribute("aria-invalid", text ? "true" : "false");
+  };
+  const submit = h("button", { class: "btn btn-primary", type: "submit" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Cambia password");
+  const form = h("form", { class: "form", novalidate: true },
+    field("pw-current", "Password attuale", "current-password"),
+    field("pw-new", "Nuova password", "new-password", "Almeno 12 caratteri, senza lo username. Una frase lunga è più sicura e più facile da ricordare."),
+    field("pw-confirm", "Ripeti la nuova password", "new-password"),
+    submit,
+  );
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const cur = fields["pw-current"].input.value, next = fields["pw-new"].input.value, confirm = fields["pw-confirm"].input.value;
+    Object.keys(fields).forEach((id) => setError(id, ""));
+    let first = null;
+    const fail = (id, text) => { setError(id, text); first = first || id; };
+    if (!cur) fail("pw-current", "Inserisci la password attuale.");
+    if (next.length < 12) fail("pw-new", "La nuova password deve avere almeno 12 caratteri.");
+    if (next && confirm !== next) fail("pw-confirm", "Le due password non coincidono.");
+    if (first) return fields[first].input.focus();
+    setBusy(submit, true);
+    try {
+      await api("/auth/password", { method: "POST", body: { current_password: cur, new_password: next } });
+      form.reset();
+      toast("Password aggiornata. Le sessioni aperte su altri dispositivi sono state chiuse.");
+    } catch (err) {
+      if (err.status === 400) { setError("pw-current", err.message); fields["pw-current"].input.focus(); }
+      else if (err.status === 422) { setError("pw-new", err.message); fields["pw-new"].input.focus(); }
+      else toast(err.message, { error: true });
+    } finally {
+      setBusy(submit, false);
+    }
+  });
+
+  return h("div", {},
+    pageHead("Account", "Il tuo profilo e la password di accesso."),
+    h("div", { class: "grid-2" },
+      h("section", { class: "card", "aria-labelledby": "h-profile", style: { alignSelf: "start" } },
+        h("h2", { id: "h-profile" }, "Profilo"),
+        h("dl", { class: "dl" },
+          h("dt", {}, "Username"), h("dd", { class: "mono" }, me.username),
+          h("dt", {}, "Ruolo"), h("dd", {}, isAdmin()
+            ? h("span", { class: "badge badge-outline" }, "Amministratore")
+            : h("span", { class: "badge badge-outline" }, "Sola lettura")),
+          h("dt", {}, "Permessi"), h("dd", { class: "secondary" }, isAdmin()
+            ? "Consulta i dati, aggiorna notizie e mercati, chiede previsioni a Jev."
+            : "Consulta notizie, mercati, previsioni e calibrazione."),
+        ),
+        h("button", { class: "btn btn-ghost", type: "button", style: { marginTop: "16px" }, on: { click: logout } }, icon("logout"), "Esci"),
+      ),
+      h("section", { class: "card", "aria-labelledby": "h-password" },
+        h("h2", { id: "h-password", style: { marginBottom: "12px" } }, "Cambia password"),
+        form,
+      ),
+    ),
+  );
+}
+
 // ---------- Boot ----------
 setupShell();
 window.addEventListener("hashchange", () => route());
-loadStatus().then(() => route());
+checkSession().then(async (ok) => {
+  if (!ok) return showLogin();
+  await loadStatus();
+  route();
+});

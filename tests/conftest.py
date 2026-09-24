@@ -5,6 +5,8 @@ import os
 import re
 import sys
 
+import contextlib
+
 import pytest
 
 # Tests use a dedicated database: set before any backend import (the engine is created at import)
@@ -81,3 +83,58 @@ def jev_client():
 
     yield install
     jev.set_client(None)
+
+
+@pytest.fixture
+async def db(monkeypatch):
+    """Fresh schema on the test database, fake embeddings, clean login limiter."""
+    from sqlalchemy import text
+    from backend.config import settings
+    from backend.db.database import engine
+    from backend.db.models import Base
+    from backend.ingestor import scheduler
+    from backend.markets import service
+    from backend.auth.deps import login_limiter
+
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:  # pragma: no cover
+        pytest.skip(f"Test database not available: {e}")
+    monkeypatch.setattr(service, "get_title_embedding", fake_embedding)
+    monkeypatch.setattr(scheduler, "get_title_embedding", fake_embedding)
+    monkeypatch.setattr(settings, "MARKET_MATCH_THRESHOLD", 0.5)
+    login_limiter.clear()
+    yield
+    await engine.dispose()
+
+
+TEST_PASSWORD = "correct-horse-battery"
+
+
+def api_client():
+    """ASGI test client on a localhost URL (so the auto Secure cookie flag stays off)."""
+    import httpx
+    from backend.main import app
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost")
+
+
+async def ensure_user(username: str, role: str, password: str = TEST_PASSWORD):
+    from backend.auth import service
+    from backend.db.database import SessionLocal
+    async with SessionLocal() as session:
+        if await service.get_user(session, username) is None:
+            await service.create_user(session, username, password, role=role)
+
+
+@contextlib.asynccontextmanager
+async def login_client(role: str):
+    """Signed-in client (user named after the role) sending the CSRF header on every request."""
+    await ensure_user(role, role)
+    async with api_client() as client:
+        r = await client.post("/auth/login", json={"username": role, "password": TEST_PASSWORD})
+        assert r.status_code == 200, r.text
+        client.headers["X-CSRF-Token"] = r.json()["csrf_token"]
+        yield client
