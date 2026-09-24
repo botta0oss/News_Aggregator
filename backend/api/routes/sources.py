@@ -93,7 +93,7 @@ async def _stats(db: AsyncSession, ids: list) -> dict:
 
 async def _get(db: AsyncSession, source_id: uuid.UUID) -> Source:
     source = await db.get(Source, source_id)
-    if source is None:
+    if source is None or source.kind != "feed":  # the targeted-search source is managed automatically
         raise HTTPException(status_code=404, detail="Fonte non trovata")
     return source
 
@@ -104,7 +104,7 @@ def _bad_request(e: ValueError):
 
 @router.get("", response_model=list[SourceOut])
 async def list_sources(db: AsyncSession = Depends(get_db)):
-    sources = (await db.execute(select(Source).order_by(Source.active.desc(), Source.name))).scalars().all()
+    sources = (await db.execute(select(Source).where(Source.kind == "feed").order_by(Source.active.desc(), Source.name))).scalars().all()
     stats = await _stats(db, [s.id for s in sources])
     return [_out(s, *stats.get(s.id, (0, None))) for s in sources]
 

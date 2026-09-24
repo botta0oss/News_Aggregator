@@ -582,24 +582,53 @@ async function viewMarketDetail(id) {
     market.predictions.length ? historyChart(market.predictions) : h("p", { class: "secondary" }, "Lo storico compare dopo la prima previsione."),
   );
 
+  const sentToJev = status?.market_max_articles ?? 8;
+  let searchBtn = null;
+  if (isAdmin() && !market.closed && status?.targeted_news_enabled) {
+    searchBtn = h("button", { class: "btn btn-ghost btn-sm", type: "button", title: "Cerca su Google News le notizie delle ultime ore su questo mercato" },
+      h("span", { class: "spinner", "aria-hidden": "true" }), icon("search"), "Cerca notizie");
+    searchBtn.addEventListener("click", async () => {
+      setBusy(searchBtn, true);
+      try {
+        const r = await api(`/markets/${encodeURIComponent(id)}/search-news`, { method: "POST" });
+        toast(r.added ? `${fmt.count(r.added, "notizia nuova", "notizie nuove")} trovate con «${r.query}».` : `Nessuna notizia nuova per «${r.query}».`);
+        route({ quiet: true });
+      } catch (e) {
+        toast(e.message, { error: true });
+        setBusy(searchBtn, false);
+      }
+    });
+  }
   const evidenceCard = h("section", { class: "card", "aria-labelledby": "h-evidence" },
     h("div", { class: "card-head" },
-      h("h2", { id: "h-evidence" }, "Notizie collegate"),
-      h("span", { class: "muted small" }, "Somiglianza tra titolo e domanda; rilevanza e impatto secondo Jev"),
+      h("div", {},
+        h("h2", { id: "h-evidence" }, "Notizie collegate"),
+        h("p", { class: "muted small" }, `Una per storia, dalla più utile. Le prime ${sentToJev} vengono lette da Jev.`),
+      ),
+      h("div", { class: "actions" },
+        infoTip("Pertinenza: somiglianza di significato tra notizia e domanda, più la presenza dei termini chiave (nomi, sigle, numeri). Utilità: pertinenza × affidabilità della fonte × freschezza × giudizio di Jev. Rilevanza e impatto: il giudizio di Jev dopo l'ultima previsione.", "Come sono ordinate?"),
+        searchBtn),
     ),
     market.evidence.length
-      ? h("div", {}, market.evidence.map((ev) => h("div", { class: "ev" },
+      ? h("div", {}, market.evidence.map((ev, i) => h("div", { class: `ev${i >= sentToJev ? " ev-extra" : ""}` },
         h("div", {},
           externalLink(ev.url, h("span", { class: "ev-title" }, ev.title)),
-          h("div", { class: "article-meta", style: { margin: "4px 0 0" } }, h("span", {}, ev.source_name), h("span", { title: fmt.dateTime(ev.published_at) }, fmt.ago(ev.published_at))),
+          h("div", { class: "article-meta", style: { margin: "4px 0 0" } },
+            h("span", {}, ev.source_name),
+            h("span", { title: fmt.dateTime(ev.published_at) }, fmt.ago(ev.published_at)),
+            ev.corroboration > 1 ? h("span", { class: "badge badge-outline", title: "Fonti diverse che hanno riportato la stessa notizia" }, `${ev.corroboration} fonti`) : null,
+            ev.targeted ? h("span", { class: "badge badge-outline", title: "Trovata dalla ricerca mirata per questo mercato" }, icon("search"), "ricerca mirata") : null,
+          ),
+          ev.matched_terms?.length ? h("div", { class: "terms", "aria-label": "Termini chiave trovati" },
+            ev.matched_terms.map((t) => h("span", { class: "term" }, t))) : null,
         ),
         h("div", { class: "ev-stats" },
-          h("span", {}, "Somiglianza ", h("b", { class: "mono" }, fmt.pct(ev.similarity))),
+          h("span", {}, "Pertinenza ", h("b", { class: "mono" }, fmt.pct(ev.match_score ?? ev.similarity))),
           ev.relevance != null ? h("span", {}, "Rilevanza ", h("b", { class: "mono" }, fmt.pct(ev.relevance))) : null,
           impactBadge(ev.impact),
         ),
       )))
-      : h("p", { class: "secondary" }, "Nessuna notizia delle ultime ore somiglia a questo mercato."),
+      : h("p", { class: "secondary" }, "Nessuna notizia recente riguarda questo mercato."),
   );
 
   return h("div", {},

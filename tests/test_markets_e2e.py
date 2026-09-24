@@ -101,7 +101,10 @@ async def test_full_market_flow(db, monkeypatch, jev_client):
 
     async with SessionLocal() as session:
         assert await service.markets_needing_prediction(session, 10) == []
-        link = (await session.execute(select(MarketArticleLink))).scalars().first()
+        # The duplicate (same cluster) is not sent again: one item per story
+        judged = (await session.execute(select(MarketArticleLink).where(MarketArticleLink.relevance.is_not(None)))).scalars().all()
+        assert len(judged) == 1
+        link = judged[0]
         assert link.relevance == 0.8 and link.impact == "raises_yes"
 
     # 5. API

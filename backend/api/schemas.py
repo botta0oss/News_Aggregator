@@ -92,6 +92,12 @@ class MarketEvidenceResponse(BaseModel):
     source_name: str
     published_at: Optional[datetime]
     similarity: float
+    match_score: Optional[float] = None       # similarity + key terms
+    matched_terms: List[str] = []
+    evidence_score: Optional[float] = None    # match x source quality x recency x Jev relevance
+    source_quality: Optional[float] = None
+    corroboration: int = 1                    # sources that reported the same story
+    targeted: bool = False                    # found by the per-market news search
     relevance: Optional[float]
     impact: Optional[str]
     impact_confidence: Optional[float]
@@ -115,6 +121,7 @@ class StatusResponse(BaseModel):
     jev_enabled: bool
     polymarket_enabled: bool
     prediction_auto: bool
+    targeted_news_enabled: bool = False
     min_edge: float
     min_evidence: float
     model_weight_max: float

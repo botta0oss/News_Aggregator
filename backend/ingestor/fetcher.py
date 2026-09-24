@@ -111,11 +111,14 @@ def parse_feed(content: bytes) -> FeedResult:
         if parsed_time:
             # feedparser returns UTC struct_time: timegm (not mktime, which assumes local time)
             published_at = datetime.fromtimestamp(timegm(parsed_time), tz=timezone.utc)
+        source = entry.get("source") or {}
         entries.append({
             "title": title,
             "url": link,
             "content_raw": clean_html(entry.get("summary", entry.get("description", ""))),
             "published_at": published_at,
+            # Aggregators (Google News) name the original outlet in <source>
+            "publisher": clean_html(source.get("title", "")) or None if hasattr(source, "get") else None,
         })
     return FeedResult(title=clean_html(feed.feed.get("title", "")) or None, entries=entries)
 

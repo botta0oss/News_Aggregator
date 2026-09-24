@@ -175,7 +175,7 @@ def _article_dict(article, processed, source, cluster) -> dict:
         "title": article.title,
         "url": article.url,
         "source_id": source.id,
-        "source_name": source.name,
+        "source_name": article.publisher or source.name,
         "published_at": article.published_at,
         "summary": processed.summary,
         "category": processed.category,

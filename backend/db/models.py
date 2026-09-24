@@ -22,6 +22,8 @@ class Source(Base):
     last_status: Mapped[Optional[str]] = mapped_column(Text, nullable=True)   # ok / error
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     last_new_items: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # "feed": fetched on schedule; "targeted": results of the per-market news search
+    kind: Mapped[str] = mapped_column(Text, default="feed", server_default="feed")
 
 class Cluster(Base):
     __tablename__ = 'clusters'
@@ -42,6 +44,9 @@ class Article(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     url_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     title_embedding = mapped_column(Vector(384))
+    # Title + opening of the text: matches markets even when the headline is vague
+    content_embedding = mapped_column(Vector(384), nullable=True)
+    publisher: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # original outlet (aggregated results)
     
     source = relationship("Source")
     cluster = relationship("Cluster")
@@ -101,6 +106,7 @@ class Market(Base):
     order_min_size: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     category: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # dominant category of the linked news
     question_embedding = mapped_column(Vector(384), nullable=True)
+    targeted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)  # last news search
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
@@ -113,6 +119,8 @@ class MarketArticleLink(Base):
     market_id: Mapped[str] = mapped_column(ForeignKey('markets.id', ondelete='CASCADE'), index=True)
     article_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('articles.id', ondelete='CASCADE'), index=True)
     similarity: Mapped[float] = mapped_column(Float, nullable=False)
+    match_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)       # similarity + key terms
+    matched_terms: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)      # key terms found in the article
     # Filled by Jev at prediction time
     relevance: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # P(article is relevant)
     impact: Mapped[Optional[str]] = mapped_column(Text, nullable=True)        # raises_yes / lowers_yes / neutral

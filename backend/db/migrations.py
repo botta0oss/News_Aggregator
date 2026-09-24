@@ -35,6 +35,13 @@ STATEMENTS = [
        USING gin (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(content_raw, '')))""",
     "CREATE INDEX IF NOT EXISTS ix_articles_source_id ON articles (source_id)",
     "CREATE INDEX IF NOT EXISTS ix_articles_fetched_at ON articles (fetched_at)",
+    # Better news <-> market matching and targeted news search
+    "ALTER TABLE sources ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'feed'",
+    "ALTER TABLE articles ADD COLUMN IF NOT EXISTS content_embedding vector(384)",
+    "ALTER TABLE articles ADD COLUMN IF NOT EXISTS publisher TEXT",
+    "ALTER TABLE markets ADD COLUMN IF NOT EXISTS targeted_at TIMESTAMPTZ",
+    "ALTER TABLE market_article_links ADD COLUMN IF NOT EXISTS match_score DOUBLE PRECISION",
+    "ALTER TABLE market_article_links ADD COLUMN IF NOT EXISTS matched_terms JSONB",
 ]
 
 

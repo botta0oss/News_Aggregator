@@ -16,6 +16,7 @@ from backend.config import settings
 from backend.db.database import SessionLocal
 from backend.db.models import Article, Market, MarketArticleLink
 from backend.markets import service
+from backend.markets.targeted import run_targeted_search
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,9 @@ async def _refresh_markets(session: AsyncSession) -> None:
         except Exception as e:
             await session.rollback()
             logger.warning(f"Bulk prediction: market sync failed, using last prices: {e}")
+        job.message = "Ricerca di notizie mirate…"
+        await run_targeted_search(session)
+        job.message = "Collegamento delle notizie ai mercati…"
         await service.refresh_links(session)
 
 

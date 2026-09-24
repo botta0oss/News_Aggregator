@@ -21,3 +21,16 @@ def hash_url(url: str) -> str:
 
 def get_title_embedding(title: str) -> list[float]:
     return _get_model().encode(title).tolist()
+
+
+def embedding_text(title: str, content: str | None, max_chars: int = 600) -> str:
+    """Headline plus the opening of the text: what the article is actually about."""
+    lead = " ".join((content or "").split())[:max_chars]
+    return f"{title}. {lead}" if lead and lead.lower() not in title.lower() else title
+
+
+def get_embeddings(texts: list[str]) -> list[list[float]]:
+    """Batch encoding (much faster than one call per text)."""
+    if not texts:
+        return []
+    return [v.tolist() for v in _get_model().encode(texts)]

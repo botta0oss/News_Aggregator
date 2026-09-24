@@ -259,6 +259,21 @@ function catalogCard(ctx, catalog, onAdded) {
     }
   });
 
+  const boxes = new Map(); // url -> checkbox
+  const setChecked = (items, on) => {
+    for (const item of items) {
+      const box = boxes.get(item.url);
+      if (!box || box.disabled) continue;
+      box.checked = on;
+      on ? selected.add(item.url) : selected.delete(item.url);
+    }
+    paintBtn();
+  };
+  const toggleAll = (items) => {
+    const free = items.filter((i) => !i.added);
+    setChecked(free, !free.every((i) => selected.has(i.url)));
+  };
+
   const groups = new Map();
   for (const item of catalog) {
     const key = item.category_hint || "";
@@ -274,14 +289,20 @@ function catalogCard(ctx, catalog, onAdded) {
           ? `${available.length} fonti selezionate per i temi più scambiati su Polymarket, non ancora aggiunte.`
           : "Hai già aggiunto tutte le fonti consigliate."),
       ),
-      available.length ? addBtn : null,
+      available.length ? h("div", { class: "actions" },
+        h("button", { class: "btn btn-ghost", type: "button", on: { click: () => toggleAll(catalog) } }, "Seleziona tutte"),
+        addBtn) : null,
     ),
     h("div", { class: "catalog" },
       [...groups.entries()].map(([cat, items]) => h("fieldset", { class: "catalog-group" },
-        h("legend", {}, cat ? CATEGORY_LABELS[cat] || cat : "Generaliste"),
+        h("legend", {}, cat ? CATEGORY_LABELS[cat] || cat : "Generaliste",
+          items.some((i) => !i.added)
+            ? h("button", { class: "btn-link small", type: "button", on: { click: () => toggleAll(items) } }, "tutte")
+            : null),
         items.map((item, i) => {
           const id = `cat-${cat || "gen"}-${i}`.replace(/\W/g, "-");
           const box = h("input", { type: "checkbox", id, disabled: item.added, checked: item.added });
+          boxes.set(item.url, box);
           box.addEventListener("change", () => { box.checked ? selected.add(item.url) : selected.delete(item.url); paintBtn(); });
           return h("label", { class: `catalog-item${item.added ? " added" : ""}`, for: id },
             box,
@@ -333,7 +354,7 @@ function parametersCard(ctx) {
     h("h2", { id: "h-params" }, "Parametri di previsione"),
     h("p", { class: "muted small", style: { margin: "6px 0 10px" } }, "Si cambiano nel file .env del server e valgono al riavvio. ", h("a", { href: "#/metodo" }, "Cosa significano")),
     h("dl", { class: "dl params" },
-      row("Similarità minima notizia–mercato", fmt.pct(st.market_match_threshold), "MARKET_MATCH_THRESHOLD"),
+      row("Pertinenza minima notizia–mercato", fmt.pct(st.market_match_threshold), "MARKET_MATCH_THRESHOLD"),
       row("Finestra delle notizie", `${st.market_news_window_hours ?? "–"} ore`, "MARKET_NEWS_WINDOW_HOURS"),
       row("Peso massimo di Jev", fmt.pct(st.model_weight_max), "MODEL_WEIGHT_MAX"),
       row("Edge minimo", st.min_edge != null ? `${Math.round(st.min_edge * 100)} pt` : "–", "MIN_EDGE"),
