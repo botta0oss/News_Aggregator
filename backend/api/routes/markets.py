@@ -12,9 +12,9 @@ from backend.api.schemas import (
 from backend.db.database import get_db, SessionLocal
 from backend.db.models import Market, MarketArticleLink, MarketPrediction
 from backend.config import settings
-from backend.markets import bulk, polymarket
+from backend.markets import bulk, polymarket, targeted
 from backend.markets.forecast import brier_score
-from backend.markets.service import get_market_evidence, predict_market, run_market_pipeline
+from backend.markets.service import get_market_evidence, predict_market, refresh_links, run_market_pipeline
 
 router = APIRouter(prefix="/markets", tags=["markets"])
 predictions_router = APIRouter(prefix="/predictions", tags=["predictions"])
@@ -176,14 +176,21 @@ async def get_market(market_id: str, db: AsyncSession = Depends(get_db)):
             "article_id": article.id,
             "title": article.title,
             "url": article.url,
-            "source_name": source.name,
+            "source_name": article.publisher or source.name,
             "published_at": article.published_at,
             "similarity": link.similarity,
+            "match_score": link.match_score,
+            "matched_terms": link.matched_terms or [],
+            "evidence_score": item.score,
+            "source_quality": item.quality,
+            "corroboration": item.corroboration,
+            "targeted": source.kind == "targeted",
             "relevance": link.relevance,
             "impact": link.impact,
             "impact_confidence": link.impact_confidence,
         }
-        for link, article, _processed, source in evidence
+        for item in evidence
+        for link, article, _processed, source in [tuple(item)]
     ]
     data["predictions"] = [PredictionResponse.model_validate(p) for p in predictions]
     return data
@@ -219,6 +226,26 @@ async def predict(market_id: str, refresh_price: bool = Query(True), db: AsyncSe
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return prediction
+
+
+@router.post("/{market_id}/search-news", dependencies=[Depends(require_admin)])
+async def search_news(market_id: str, db: AsyncSession = Depends(get_db)):
+    """Searches news about this market now (Google News) and links what matches."""
+    market = await db.get(Market, market_id)
+    if not market:
+        raise HTTPException(status_code=404, detail="Market not found")
+    if not settings.TARGETED_NEWS_ENABLED:
+        raise HTTPException(status_code=503, detail="La ricerca mirata è disattivata (TARGETED_NEWS_ENABLED=false)")
+    try:
+        added = await targeted.search_market(db, market)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=502, detail=f"Ricerca non riuscita: {e}")
+    await refresh_links(db, market_ids=[market_id])
+    linked = (await db.execute(
+        select(func.count()).select_from(MarketArticleLink).where(MarketArticleLink.market_id == market_id)
+    )).scalar() or 0
+    return {"query": targeted.build_query(market.question), "added": added, "linked": linked}
 
 
 @predictions_router.get("/opportunities", response_model=list[OpportunityResponse])

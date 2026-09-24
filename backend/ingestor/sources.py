@@ -71,7 +71,7 @@ async def get_by_url(session: AsyncSession, url: str) -> Optional[Source]:
 
 async def seed_sources_if_empty(session: AsyncSession) -> int:
     """First run: adds the catalog feeds marked active. Later changes are made in the dashboard."""
-    if (await session.execute(select(func.count(Source.id)))).scalar():
+    if (await session.execute(select(func.count(Source.id)).where(Source.kind == "feed"))).scalar():
         return 0
     added = 0
     for feed in load_catalog():

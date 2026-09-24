@@ -3,16 +3,18 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.ai import jev
 from backend.ai.ratelimit import RateLimited
 from backend.config import settings
-from backend.db.models import Article, Market, MarketArticleLink, MarketPrediction, ProcessedArticle, Source
-from backend.ingestor.deduplicator import get_title_embedding
+from backend.db.models import Article, Cluster, Market, MarketArticleLink, MarketPrediction, ProcessedArticle, Source
+from backend.ingestor.deduplicator import embedding_text, get_title_embedding
 from backend.markets import polymarket
 from backend.markets.forecast import compute_signal
+from backend.markets.targeted import run_targeted_search
+from backend.markets.matching import EvidenceItem, extract_terms, match_score, rank_evidence, term_overlap
 
 logger = logging.getLogger(__name__)
 
@@ -97,48 +99,102 @@ async def sync_markets(session: AsyncSession, client=None) -> dict:
     return {"synced": len(fetched), "created": created, "checked": len(stale), "resolved": resolved}
 
 
-async def refresh_links(session: AsyncSession) -> int:
-    """Links each open market to semantically similar recent articles (pgvector cosine distance)."""
-    since = datetime.now(timezone.utc) - timedelta(hours=settings.MARKET_NEWS_WINDOW_HOURS)
-    max_distance = 1.0 - settings.MARKET_MATCH_THRESHOLD
-    markets = (await session.execute(
-        select(Market).where(Market.closed == False, Market.question_embedding.is_not(None))  # noqa: E712
+async def backfill_content_embeddings(session: AsyncSession, since: datetime, limit: int = 500) -> int:
+    """Articles saved before content embeddings existed get one (recent ones only)."""
+    articles = (await session.execute(
+        select(Article).where(Article.fetched_at >= since, Article.content_embedding.is_(None)).limit(limit)
     )).scalars().all()
-
-    inserted = 0
-    for market in markets:
-        distance = Article.title_embedding.cosine_distance(market.question_embedding)
-        rows = (await session.execute(
-            select(Article.id, distance.label("distance"))
-            .where(Article.fetched_at >= since, Article.title_embedding.is_not(None), distance <= max_distance)
-            .order_by(distance)
-            .limit(settings.MARKET_MAX_ARTICLES * 2)
-        )).all()
-        if not rows:
-            continue
-        result = await session.execute(
-            pg_insert(MarketArticleLink)
-            .values([{"market_id": market.id, "article_id": aid, "similarity": round(1.0 - float(d), 4)} for aid, d in rows])
-            .on_conflict_do_nothing(constraint="uq_market_article")
-        )
-        inserted += result.rowcount or 0
+    if not articles:
+        return 0
+    texts = [embedding_text(a.title, a.content_raw) for a in articles]
+    vectors = await asyncio.to_thread(lambda: [get_title_embedding(t) for t in texts])
+    for article, vector in zip(articles, vectors):
+        article.content_embedding = vector
     await session.commit()
-    return inserted
+    return len(articles)
 
 
-async def get_market_evidence(session: AsyncSession, market_id: str, limit: Optional[int] = None):
-    """Returns (link, article, processed, source) rows for the most similar recent articles."""
+def _candidate_distance(question_embedding):
+    """Best cosine distance between the question and the article's title or title + text."""
+    d_title = Article.title_embedding.cosine_distance(question_embedding)
+    d_content = Article.content_embedding.cosine_distance(question_embedding)
+    return func.least(d_title, func.coalesce(d_content, d_title))
+
+
+async def refresh_links(session: AsyncSession, market_ids: Optional[list[str]] = None) -> int:
+    """Links each open market to recent articles about the same subject.
+
+    Candidates come from pgvector (semantic similarity of title or title + text); each one
+    is then scored with the key terms of the question (see matching.py). Existing links are
+    re-scored, keeping Jev's relevance and impact. Returns the number of new or changed links.
+    """
     since = datetime.now(timezone.utc) - timedelta(hours=settings.MARKET_NEWS_WINDOW_HOURS)
+    await backfill_content_embeddings(session, since)
+    floor = max(0.0, settings.MARKET_MATCH_THRESHOLD - settings.MARKET_CANDIDATE_MARGIN)
+    stmt = select(Market).where(Market.closed == False, Market.question_embedding.is_not(None))  # noqa: E712
+    if market_ids is not None:
+        stmt = stmt.where(Market.id.in_(market_ids))
+    markets = (await session.execute(stmt)).scalars().all()
+
+    changed = 0
+    for market in markets:
+        distance = _candidate_distance(market.question_embedding)
+        rows = (await session.execute(
+            select(Article.id, Article.title, Article.content_raw, distance.label("distance"))
+            .where(Article.fetched_at >= since, Article.title_embedding.is_not(None), distance <= 1.0 - floor)
+            .order_by(distance)
+            .limit(settings.MARKET_MAX_ARTICLES * 6)
+        )).all()
+        terms = extract_terms(market.question)
+        values = []
+        for article_id, title, content, dist in rows:
+            similarity = round(1.0 - float(dist), 4)
+            overlap = term_overlap(terms, f"{title}\n{(content or '')[:3000]}")
+            score = match_score(similarity, overlap)
+            if score >= settings.MARKET_MATCH_THRESHOLD:
+                values.append({"market_id": market.id, "article_id": article_id, "similarity": similarity,
+                               "match_score": score, "matched_terms": overlap.matched})
+        if not values:
+            continue
+        insert = pg_insert(MarketArticleLink).values(values)
+        result = await session.execute(
+            insert.on_conflict_do_update(
+                constraint="uq_market_article",
+                set_={"similarity": insert.excluded.similarity, "match_score": insert.excluded.match_score,
+                      "matched_terms": insert.excluded.matched_terms},
+                where=MarketArticleLink.match_score.is_distinct_from(insert.excluded.match_score),
+            )
+        )
+        changed += result.rowcount or 0
+    await session.commit()
+    return changed
+
+
+async def get_market_evidence(session: AsyncSession, market_id: str, limit: Optional[int] = None) -> list[EvidenceItem]:
+    """Best recent evidence for a market: ranked by match, source quality, recency and Jev's
+    past relevance judgements, one article per story. Items unpack as (link, article, processed, source)."""
+    since = datetime.now(timezone.utc) - timedelta(hours=settings.MARKET_NEWS_WINDOW_HOURS)
+    threshold = settings.MARKET_MATCH_THRESHOLD
     stmt = (
         select(MarketArticleLink, Article, ProcessedArticle, Source)
         .join(Article, Article.id == MarketArticleLink.article_id)
         .join(Source, Source.id == Article.source_id)
         .outerjoin(ProcessedArticle, ProcessedArticle.article_id == Article.id)
         .where(MarketArticleLink.market_id == market_id, Article.fetched_at >= since)
-        .order_by(MarketArticleLink.similarity.desc())
-        .limit(limit or settings.MARKET_MAX_ARTICLES)
+        # Links made before match scores existed are kept if they were similar enough
+        .where(or_(MarketArticleLink.match_score >= threshold,
+                   and_(MarketArticleLink.match_score.is_(None), MarketArticleLink.similarity >= threshold)))
+        .order_by(func.coalesce(MarketArticleLink.match_score, MarketArticleLink.similarity).desc())
+        .limit(300)
     )
-    return (await session.execute(stmt)).all()
+    rows = (await session.execute(stmt)).all()
+    cluster_ids = {article.cluster_id for _l, article, _p, _s in rows if article.cluster_id}
+    cluster_sources = {}
+    if cluster_ids:
+        cluster_sources = dict((await session.execute(
+            select(Cluster.id, Cluster.source_count).where(Cluster.id.in_(cluster_ids))
+        )).all())
+    return rank_evidence(rows, limit or settings.MARKET_MAX_ARTICLES, cluster_sources)
 
 
 def build_jev_request(market: Market, evidence: list, now: Optional[datetime] = None):
@@ -151,13 +207,19 @@ def build_jev_request(market: Market, evidence: list, now: Optional[datetime] = 
 
     now = now or datetime.now(timezone.utc)
     news = []
-    for i, (link, article, processed, source) in enumerate(evidence):
+    for i, item in enumerate(evidence):
+        link, article, processed, source = item
         published = article.published_at or article.fetched_at
+        is_opinion = processed is not None and (processed.is_opinion or 0.0) >= 0.6
         news.append({
             "id": f"n{i}",
             "title": article.title,
-            "source": source.name,
+            "source": article.publisher or source.name,
             "published_at": published.isoformat() if published else None,
+            "age_hours": round((now - published).total_seconds() / 3600, 1) if published else None,
+            "type": "opinion/analysis" if is_opinion else "news report",
+            "source_reliability": round(getattr(item, "quality", 0.75), 2),
+            "reported_by_sources": getattr(item, "corroboration", 1),
             "summary": (processed.summary if processed and processed.summary else (article.content_raw or ""))[:1200],
         })
 
@@ -167,15 +229,23 @@ def build_jev_request(market: Market, evidence: list, now: Optional[datetime] = 
             "question": market.question,
             "resolution_rules": (market.description or "")[:3000],
             "end_date": market.end_date.isoformat() if market.end_date else None,
+            "days_left": round((market.end_date - now).total_seconds() / 86400, 1) if market.end_date else None,
         },
         "news": news,
+        "how_to_weigh_news": (
+            "News items are ordered from most to least useful. Weigh recent news reports from reliable "
+            "or primary sources more than opinion pieces; a story reported by several sources is more "
+            "credible. Check each item against the exact resolution rules and the time left: a development "
+            "that does not satisfy the rules before the end date does not resolve the market."
+        ),
     }
 
     questions = {
         "resolves_yes": Noul(
             instructions=(
-                "Considering the market's resolution rules, its end date, today's date, the news items "
-                "and general world knowledge, will this market resolve YES?"
+                "Considering the market's resolution rules, its end date and the days left, today's date, "
+                "the news items (weighted as described in how_to_weigh_news), the base rate of similar "
+                "events and general world knowledge, will this market resolve YES?"
             ),
             criteria={
                 "true": "The market resolves YES according to its resolution rules",
@@ -288,6 +358,7 @@ async def _run_market_pipeline(session: AsyncSession) -> dict:
     from backend.betting.portfolio import settle_bets
     stats = await sync_markets(session)
     stats["settled_bets"] = await settle_bets(session)
+    stats["targeted"] = await run_targeted_search(session)
     stats["links"] = await refresh_links(session)
     stats["predictions"] = 0
     if settings.PREDICTION_AUTO and jev.is_enabled():

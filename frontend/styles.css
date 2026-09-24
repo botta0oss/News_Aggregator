@@ -306,6 +306,9 @@ details.tuning[open] summary { margin-bottom: 10px; }
 .ev:last-child { border-bottom: 0; }
 .ev-title { color: var(--text-primary); font-weight: 500; }
 .ev-stats { display: flex; gap: 14px; font-size: 0.8rem; color: var(--text-muted); align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.ev-extra { opacity: .72; }
+.terms { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.term { font-family: var(--mono); font-size: 0.72rem; padding: 1px 6px; border-radius: 4px; background: var(--surface-2); color: var(--text-secondary); border: 1px solid var(--border); }
 @media (max-width: 640px) { .ev { grid-template-columns: minmax(0, 1fr); } .ev-stats { justify-content: flex-start; } }
 
 /* ---------- Charts ---------- */
@@ -555,6 +558,10 @@ mark { background: color-mix(in srgb, var(--warning) 35%, transparent); color: i
 .catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px 24px; }
 .catalog-group { border: 0; padding: 0; margin: 0; display: grid; gap: 4px; align-content: start; }
 .catalog-group legend { font-size: 0.75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; }
+.catalog-group legend .btn-link { margin-left: 8px; text-transform: none; letter-spacing: 0; }
+.btn-link { background: none; border: 0; padding: 2px 4px; color: var(--accent-text); cursor: pointer; font: inherit; border-radius: 4px; }
+.btn-link:hover { text-decoration: underline; }
+.btn-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .catalog-item { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; align-items: start; padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer; }
 .catalog-item:hover { background: var(--surface-2); }
 .catalog-item.added { cursor: default; opacity: .6; }

@@ -29,9 +29,23 @@ class Settings(BaseSettings):
     POLYMARKET_MIN_VOLUME: float = 10000.0    # ignore illiquid markets (USD)
 
     # News -> market matching
-    MARKET_MATCH_THRESHOLD: float = 0.55      # cosine similarity article title vs market question
+    MARKET_MATCH_THRESHOLD: float = 0.5       # minimum match score (semantic similarity + key terms), 0-1
+    MARKET_CANDIDATE_MARGIN: float = 0.15     # candidates: semantic similarity >= threshold - margin
+    MARKET_MATCH_TERM_WEIGHT: float = 0.3     # weight of the key-term overlap in the match score
+    MARKET_MATCH_NO_ENTITY_PENALTY: float = 0.6  # score multiplier when no name of the question appears
     MARKET_NEWS_WINDOW_HOURS: int = 72
     MARKET_MAX_ARTICLES: int = 8              # articles passed to Jev per prediction
+    EVIDENCE_HALF_LIFE_HOURS: float = 48.0    # news weight halves every N hours (floor 25%)
+    EVIDENCE_MIN_JEV_RELEVANCE: float = 0.25  # articles Jev judged less relevant than this are dropped
+
+    # Targeted news search per market (Google News RSS)
+    TARGETED_NEWS_ENABLED: bool = True
+    TARGETED_NEWS_URL: str = "https://news.google.com/rss/search"
+    TARGETED_NEWS_LOCALE: str = "hl=en-US&gl=US&ceid=US:en"
+    TARGETED_NEWS_MAX_MARKETS: int = 25       # markets searched per pipeline run (most traded first)
+    TARGETED_NEWS_REFRESH_HOURS: float = 6.0  # a market is searched again after N hours
+    TARGETED_NEWS_MAX_RESULTS: int = 10       # articles kept per search
+    TARGETED_NEWS_DAYS: int = 7               # only news from the last N days
 
     # Forecasting / betting signals
     PREDICTION_AUTO: bool = False             # run Jev predictions automatically after each ingest

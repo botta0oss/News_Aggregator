@@ -19,6 +19,7 @@ opportunità.
 - [Dashboard](#dashboard)
 - [Accesso e sicurezza](#accesso-e-sicurezza)
 - [Configurazione](#configurazione)
+- [Come le notizie vengono collegate ai mercati](#come-le-notizie-vengono-collegate-ai-mercati)
 - [Come nasce una previsione](#come-nasce-una-previsione)
 - [API](#api)
 - [Flusso di lavoro consigliato](#flusso-di-lavoro-consigliato)
@@ -40,7 +41,9 @@ opportunità.
 | **Classificazione** | Jev assegna categoria (8, allineate ai temi di Polymarket), regione, opinione o notizia, rilevanza per i mercati, clickbait, autorevolezza, profondità e urgenza. Senza chiave usa parole chiave pesate. |
 | **Ricerca** | Ricerca full-text su titolo, testo e riassunto, con evidenziazione e filtri. |
 | **Mercati** | Sincronizza in sola lettura i mercati Sì/No più scambiati di Polymarket. |
-| **Collegamento** | Associa ogni mercato alle notizie recenti più simili (pgvector). |
+| **Ricerca mirata** | Per i mercati più scambiati cerca su Google News le notizie con i termini chiave della domanda, anche su temi che le fonti abituali non coprono. |
+| **Collegamento** | Associa ogni mercato alle notizie recenti sullo stesso soggetto: somiglianza semantica (pgvector) più termini chiave (nomi, sigle, numeri, sinonimi). |
+| **Selezione delle evidenze** | Jev legge le notizie più utili: pertinenti, di fonti affidabili, recenti, una per storia con il numero di fonti che la confermano. |
 | **Previsione** | Jev stima la probabilità del SÌ a partire da regole del mercato e notizie. |
 | **Segnale** | Confronta la stima con il prezzo: `BUY_YES`, `BUY_NO` o `HOLD`. |
 | **Valutazione economica** | Decide se conviene davvero e quanto puntare: prezzo reale dal book, commissioni, incertezza della stima, rendimento annualizzato, Kelly sul book e limiti di rischio. |
@@ -228,9 +231,20 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | `POLYMARKET_ENABLED` | `true` | Attiva sync e collegamento dei mercati |
 | `POLYMARKET_SYNC_LIMIT` | `200` | Numero massimo di mercati aperti seguiti |
 | `POLYMARKET_MIN_VOLUME` | `10000` | Volume minimo (USD): esclude i mercati poco liquidi |
-| `MARKET_MATCH_THRESHOLD` | `0.55` | Similarità minima notizia ↔ domanda del mercato |
+| `MARKET_MATCH_THRESHOLD` | `0.5` | Pertinenza minima notizia ↔ mercato (significato + termini chiave), 0–1 |
+| `MARKET_CANDIDATE_MARGIN` | `0.15` | Candidati: similarità semantica ≥ soglia − margine |
+| `MARKET_MATCH_TERM_WEIGHT` | `0.3` | Peso dei termini chiave nella pertinenza |
+| `MARKET_MATCH_NO_ENTITY_PENALTY` | `0.6` | Moltiplicatore se la notizia non cita nessun nome della domanda |
 | `MARKET_NEWS_WINDOW_HOURS` | `72` | Solo notizie delle ultime N ore |
 | `MARKET_MAX_ARTICLES` | `8` | Notizie passate a Jev per ogni previsione |
+| `EVIDENCE_HALF_LIFE_HOURS` | `48` | Il peso di una notizia si dimezza ogni N ore (minimo 25 %) |
+| `EVIDENCE_MIN_JEV_RELEVANCE` | `0.25` | Notizie che Jev ha giudicato meno rilevanti di così per un mercato non gli vengono più passate |
+| `TARGETED_NEWS_ENABLED` | `true` | Ricerca mirata su Google News per ogni mercato |
+| `TARGETED_NEWS_MAX_MARKETS` | `25` | Mercati cercati a ogni giro (i più scambiati) |
+| `TARGETED_NEWS_REFRESH_HOURS` | `6` | Ogni quanto ripetere la ricerca per lo stesso mercato |
+| `TARGETED_NEWS_MAX_RESULTS` | `10` | Notizie tenute per ricerca |
+| `TARGETED_NEWS_DAYS` | `7` | Solo risultati degli ultimi N giorni |
+| `TARGETED_NEWS_LOCALE` | `hl=en-US&gl=US&ceid=US:en` | Lingua e paese dei risultati |
 | `PREDICTION_AUTO` | `false` | Previsioni automatiche dopo ogni raccolta (ogni previsione è una chiamata a pagamento) |
 | `PREDICTION_MAX_PER_RUN` | `10` | Tetto di previsioni automatiche per esecuzione |
 | `MODEL_WEIGHT_MAX` | `0.5` | Peso massimo di Jev rispetto al prezzo di mercato |
@@ -320,6 +334,53 @@ dal classificatore. Per sicurezza il server rifiuta i feed che puntano a reti in
 (localhost, 10.x, 192.168.x, metadati cloud), anche dopo un reindirizzamento: altrimenti
 chi aggiunge una fonte potrebbe far interrogare al server la rete interna. Se ti serve un
 feed interno imposta `ALLOW_PRIVATE_FEEDS=true`.
+
+Il catalogo contiene 85 fonti, raggruppate per i temi scambiati su Polymarket:
+- esteri e conflitti;
+- politica USA ed europea, compresi sondaggi, Corte suprema ed elezioni;
+- economia, con fonti primarie come Fed, BCE, Bank of England, BLS, BEA e SEC;
+- crypto;
+- tecnologia e AI, compresi gli annunci ufficiali di OpenAI e Google;
+- scienza, spazio, salute e meteo (NASA, OMS, NOAA per gli uragani);
+- sport;
+- cultura e spettacolo (premi, box office, musica);
+- testate italiane.
+
+In *Impostazioni* puoi aggiungerle tutte, oppure per categoria, con «Seleziona tutte» e «tutte».
+Prima di attivare molte fonti nuove prova i feed con «Prova»: gli indirizzi RSS a volte
+cambiano.
+
+## Come le notizie vengono collegate ai mercati
+
+1. **Candidati.** pgvector trova le notizie recenti simili alla domanda del mercato. Confronta sia
+   il titolo sia il titolo con l'inizio del testo, perché molti titoli sono vaghi.
+2. **Termini chiave.** Dalla domanda si estraggono nomi e sigle (peso 2), parole distintive e
+   numeri (peso 1), anni, mesi e giorni (peso 0,5). Contano anche i sinonimi più comuni: Fed =
+   Federal Reserve = Powell, BTC = Bitcoin, 100k = 100.000 = $100,000. Le sigle corte si
+   confrontano rispettando le maiuscole, così «US» non corrisponde a «us».
+3. **Pertinenza.** Si calcola `0,7 × somiglianza + 0,3 × termini trovati`. Se la notizia non
+   cita nessun nome della domanda la pertinenza scende al 60 %: è lo stesso tema su un altro
+   soggetto, per esempio una notizia sulla BCE per un mercato sulla Fed. Si tengono le notizie
+   con pertinenza ≥ `MARKET_MATCH_THRESHOLD`.
+4. **Utilità per Jev.** L'utilità di ogni notizia è `pertinenza × affidabilità della fonte ×
+   freschezza × giudizio di Jev`.
+   - L'affidabilità dipende da autorevolezza, clickbait e articoli d'opinione.
+   - La freschezza si dimezza ogni `EVIDENCE_HALF_LIFE_HOURS`.
+   - Le notizie che Jev ha già giudicato non rilevanti per quel mercato vengono tolte.
+
+   Jev legge le `MARKET_MAX_ARTICLES` più utili: una per storia, al massimo 3 per fonte. Per ogni
+   notizia riceve età, tipo (cronaca o opinione), affidabilità della fonte e numero di testate che
+   l'hanno riportata, oltre ai giorni che mancano alla scadenza del mercato.
+5. **Ricerca mirata.** A ogni giro, per i `TARGETED_NEWS_MAX_MARKETS` mercati più scambiati non
+   cercati nelle ultime `TARGETED_NEWS_REFRESH_HOURS` ore, i termini chiave vengono cercati su
+   Google News. I risultati vengono salvati come notizie della fonte automatica «Ricerca mirata»,
+   con il nome della testata originale, e seguono lo stesso percorso: deduplicazione,
+   classificazione, collegamento. Si può lanciare anche a mano dal dettaglio di un mercato
+   («Cerca notizie»). Se il servizio non risponde per 3 mercati di fila, la ricerca si ferma
+   fino al giro successivo.
+
+Nel dettaglio di un mercato ogni notizia mostra la pertinenza, i termini chiave trovati, il
+numero di fonti che la confermano e se arriva dalla ricerca mirata.
 
 ## Come nasce una previsione
 
@@ -429,6 +490,7 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 | GET | `/markets` | Mercati con ultima previsione. Filtri: `q`, `only_linked`, `include_closed`. Ordinamento: `sort` = `volume`, `end_date`, `price`, `signal` (ultima previsione), `edge`, `news`, `liquidity`, `question`; `order` = `asc`/`desc` (default sensato per ogni campo, valori mancanti sempre in fondo) |
 | GET | `/markets/{id}` | Notizie collegate (rilevanza e impatto) e storico previsioni |
 | POST | `/markets/{id}/predict` | Previsione Jev immediata (aggiorna prima il prezzo) |
+| POST | `/markets/{id}/search-news` | Ricerca mirata su Google News per questo mercato; restituisce `{query, added, linked}` (admin) |
 | POST | `/markets/predict-all` | Avvia in background la previsione Jev su tutti i mercati aperti con notizie recenti. `only_new=true`: solo mai valutati o con notizie nuove; `refresh_first=false`: salta l'aggiornamento dei prezzi. `409` se è già in corso (admin) |
 | GET | `/markets/predict-all` | Avanzamento (`total`, `done`, `skipped`, `failed`, `current`, `message`) e mercati valutabili `eligible: {all, new}` (admin) |
 | POST | `/markets/predict-all/stop` | Interrompe dopo il mercato in corso (admin) |
@@ -484,7 +546,8 @@ Esempio di risposta di `/predictions/opportunities` (valori illustrativi):
 2. Guarda quali mercati hanno notizie collegate:
    `GET /markets?only_linked=true`
 3. Controlla che le notizie siano pertinenti: `GET /markets/{id}`. Se i collegamenti sono
-   rumorosi alza `MARKET_MATCH_THRESHOLD`, se sono troppo pochi abbassala.
+   rumorosi alza `MARKET_MATCH_THRESHOLD`, se sono troppo pochi abbassala. Nel dettaglio del
+   mercato «Cerca notizie» lancia subito la ricerca mirata.
 4. Chiedi una previsione sui mercati che ti interessano (`POST /markets/{id}/predict`),
    oppure su tutti con **Valuta tutti con Jev** (`POST /markets/predict-all`)
 5. Consulta le opportunità: `GET /predictions/opportunities?min_edge=0.08`
@@ -592,6 +655,8 @@ backend/
 ├── markets/
 │   ├── polymarket.py       # client Gamma API (sola lettura)
 │   ├── service.py          # sync, collegamento notizie, previsioni Jev
+│   ├── matching.py         # termini chiave, pertinenza e classifica delle evidenze
+│   ├── targeted.py         # ricerca mirata su Google News per mercato
 │   └── forecast.py         # blending, edge, Kelly, Brier
 ├── betting/
 │   ├── profiles.py         # preset di rischio
@@ -625,8 +690,12 @@ secondi la pagina lo dice e propone di ricaricarla.
 - **Formati dell'API CLOB e delle commissioni non verificati dal vivo**: il codice segue i
   formati documentati (`/book`, `clobTokenIds`, `takerBaseFee`); se Polymarket li cambia,
   la valutazione usa il prezzo stimato e lo segnala.
-- **Collegamento per similarità dei titoli**: notizie rilevanti con titoli diversi dalla
-  domanda del mercato possono sfuggire.
+- **Termini chiave e sinonimi in inglese**: i mercati Polymarket sono in inglese. Le notizie
+  in italiano si collegano solo per significato, quindi con meno precisione. La lista dei
+  sinonimi (`ALIASES` in `matching.py`) copre i casi più comuni e si può ampliare.
+- **Ricerca mirata via Google News RSS**: è un servizio non ufficiale e senza garanzie di
+  disponibilità. I link puntano a pagine di reindirizzamento di Google e i risultati
+  contengono solo titolo e testata, non il testo.
 - **Nessun recupero password via email**: un admin reimposta la password da riga di
   comando con `set-password`.
 

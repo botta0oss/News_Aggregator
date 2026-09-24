@@ -9,7 +9,7 @@ from sqlalchemy import select
 from backend.db.crud import article_exists_by_hash, find_similar_article, get_unprocessed_articles
 from backend.ingestor.fetcher import FeedError, fetch_and_parse_feed
 from backend.ingestor.sources import seed_sources_if_empty
-from backend.ingestor.deduplicator import hash_url, get_title_embedding
+from backend.ingestor.deduplicator import embedding_text, hash_url, get_title_embedding
 from backend.ai.summarizer import summarize_article
 from backend.ai.ratelimit import RateLimited
 from backend.ai.typesafe_evaluator import evaluate_article_dimensions
@@ -32,11 +32,12 @@ async def process_ai_queue():
         unprocessed = await get_unprocessed_articles(session, limit=settings.AI_BATCH_SIZE)
         # Snapshot plain values: a rollback expires ORM instances, and lazy-loading
         # expired attributes is not allowed in async sessions
-        pending = [(a.id, a.title, a.content_raw or "", a.source_id) for a in unprocessed]
-        for article_id, title, content_raw, source_id in pending:
+        pending = [(a.id, a.title, a.content_raw or "", a.source_id, a.publisher) for a in unprocessed]
+        for article_id, title, content_raw, source_id, publisher in pending:
             try:
                 source = await session.get(Source, source_id)
-                source_name = source.name if source else "Unknown Source"
+                # Aggregated results (targeted search): judge the original outlet
+                source_name = publisher or (source.name if source else "Unknown Source")
                 source_hint = source.category_hint if source else None
                 
                 # 1. TypeSafe Jev evaluation first: if Jev is rate limited the batch stops here,
@@ -49,7 +50,8 @@ async def process_ai_queue():
                 )
 
                 # 2. Text summary
-                summary = await summarize_article(title, content_raw[:2500])
+                # Headline-only items (targeted search) have nothing to summarise: no API call
+                summary = await summarize_article(title, content_raw[:2500]) if content_raw.strip() else title
                 
                 composite = eval_res["composite_score"]
                 legacy_score = max(1, min(10, int(round(composite * 10))))
@@ -96,49 +98,66 @@ async def ingest_source(session, source: Source) -> int:
     except Exception as e:
         await _record_fetch(session, source_id, error=f"Errore imprevisto: {e.__class__.__name__}")
         raise
-    added = 0
     try:
-        for entry in entries:
-            url_h = hash_url(entry["url"])
-            if await article_exists_by_hash(session, url_h):
-                continue  # L1 Deduplication skipped
-        
-            embedding = await asyncio.to_thread(get_title_embedding, entry["title"])
-            similar_article = await find_similar_article(session, embedding, settings.SIMILARITY_THRESHOLD)
-        
-            cluster_id = None
-            if similar_article:
-                if not similar_article.cluster_id:
-                    new_cluster = Cluster(canonical_title=similar_article.title)
-                    session.add(new_cluster)
-                    await session.flush()
-                    similar_article.cluster_id = new_cluster.id
-                    cluster_id = new_cluster.id
-                else:
-                    cluster_id = similar_article.cluster_id
-                
-                # Increment source count
-                cluster = await session.get(Cluster, cluster_id)
-                if cluster:
-                    cluster.source_count += 1
-        
-            new_article = Article(
-                source_id=source_id,
-                cluster_id=cluster_id,
-                title=entry["title"],
-                url=entry["url"],
-                content_raw=entry["content_raw"],
-                published_at=entry["published_at"],
-                url_hash=url_h,
-                title_embedding=embedding
-            )
-            session.add(new_article)
-            await session.commit()
-            added += 1
+        added = len(await store_entries(session, source_id, entries))
     except Exception as e:
         await _record_fetch(session, source_id, error=f"Salvataggio non riuscito: {e.__class__.__name__}")
         raise
     await _record_fetch(session, source_id, new_items=added)
+    return added
+
+
+async def store_entries(session, source_id, entries, publisher_in_title: bool = False) -> list[Article]:
+    """Saves new articles (L1 URL-hash and L2 embedding deduplication); returns the ones added.
+
+    publisher_in_title: aggregated results ("Headline - Outlet") keep the outlet separately.
+    """
+    added = []
+    for entry in entries:
+        url_h = hash_url(entry["url"])
+        if await article_exists_by_hash(session, url_h):
+            continue  # L1 Deduplication skipped
+        title, publisher = entry["title"], entry.get("publisher")
+        if publisher_in_title and " - " in title:
+            head, tail = (part.strip() for part in title.rsplit(" - ", 1))
+            if not publisher or tail.lower() == publisher.lower():
+                title, publisher = head, publisher or tail
+
+        embedding = await asyncio.to_thread(get_title_embedding, title)
+        content_embedding = await asyncio.to_thread(get_title_embedding, embedding_text(title, entry.get("content_raw")))
+        similar_article = await find_similar_article(session, embedding, settings.SIMILARITY_THRESHOLD)
+
+        cluster_id = None
+        if similar_article:
+            if not similar_article.cluster_id:
+                new_cluster = Cluster(canonical_title=similar_article.title)
+                session.add(new_cluster)
+                await session.flush()
+                similar_article.cluster_id = new_cluster.id
+                cluster_id = new_cluster.id
+            else:
+                cluster_id = similar_article.cluster_id
+
+            # Increment source count
+            cluster = await session.get(Cluster, cluster_id)
+            if cluster:
+                cluster.source_count += 1
+
+        new_article = Article(
+            source_id=source_id,
+            cluster_id=cluster_id,
+            title=title,
+            url=entry["url"],
+            content_raw=entry.get("content_raw"),
+            published_at=entry.get("published_at"),
+            url_hash=url_h,
+            title_embedding=embedding,
+            content_embedding=content_embedding,
+            publisher=publisher,
+        )
+        session.add(new_article)
+        await session.commit()
+        added.append(new_article)
     return added
 
 
@@ -177,7 +196,7 @@ async def run_ingestion_pipeline():
 async def _run_pipeline():
     async with SessionLocal() as session:
         await seed_sources_if_empty(session)
-        sources = (await session.execute(select(Source).where(Source.active == True))).scalars().all()  # noqa: E712
+        sources = (await session.execute(select(Source).where(Source.active == True, Source.kind == "feed"))).scalars().all()  # noqa: E712
         pending = [(s.id, s.name) for s in sources]
         for source_id, name in pending:
             # A broken feed must not abort ingestion of the others
@@ -232,7 +251,7 @@ async def reclassify_articles(limit: int = 200) -> int:
             else:
                 stmt = stmt.where(or_(ProcessedArticle.classifier.is_(None), ProcessedArticle.market_relevance.is_(None)))
             rows = (await session.execute(stmt.order_by(Article.fetched_at.desc()).limit(limit))).all()
-            items = [(p.id, a.title, a.content_raw or "", s.name, s.category_hint) for p, a, s in rows]
+            items = [(p.id, a.title, a.content_raw or "", a.publisher or s.name, s.category_hint) for p, a, s in rows]
             done = 0
             for processed_id, title, content, source_name, hint in items:
                 try:

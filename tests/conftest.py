@@ -112,6 +112,7 @@ async def db(monkeypatch):
     monkeypatch.setattr(service, "get_title_embedding", fake_embedding)
     monkeypatch.setattr(scheduler, "get_title_embedding", fake_embedding)
     monkeypatch.setattr(settings, "MARKET_MATCH_THRESHOLD", 0.5)
+    monkeypatch.setattr(settings, "TARGETED_NEWS_ENABLED", False)  # no network in tests; enabled where tested
     login_limiter.clear()
     yield
     await engine.dispose()
