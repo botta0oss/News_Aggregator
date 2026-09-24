@@ -7,6 +7,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.ai import jev
+from backend.ai.ratelimit import RateLimited
 from backend.config import settings
 from backend.db.models import Article, Market, MarketArticleLink, MarketPrediction, ProcessedArticle, Source
 from backend.ingestor.deduplicator import get_title_embedding
@@ -197,7 +198,7 @@ def build_jev_request(market: Market, evidence: list, now: Optional[datetime] = 
     return state, questions
 
 
-async def predict_market(session: AsyncSession, market: Market) -> MarketPrediction:
+async def predict_market(session: AsyncSession, market: Market, max_wait: Optional[float] = None) -> MarketPrediction:
     """Runs a Jev forecast for one market and stores it together with the betting signal."""
     if not jev.is_enabled():
         raise jev.JevUnavailableError("TYPESAFE_API_KEY is not configured")
@@ -209,7 +210,7 @@ async def predict_market(session: AsyncSession, market: Market) -> MarketPredict
         raise LookupError("No related news found for this market")
 
     state, questions = build_jev_request(market, evidence)
-    response = await jev.get_client().system_one(state=state, questions=questions)
+    response = await jev.system_one(state, questions, max_wait=max_wait)
 
     model_p = float(response.nouls["resolves_yes"].noul)
     evidence_strength = float(response.scores["evidence_strength"].score) / (len(EVIDENCE_CRITERIA) - 1)
@@ -294,6 +295,10 @@ async def _run_market_pipeline(session: AsyncSession) -> dict:
             try:
                 await predict_market(session, market)
                 stats["predictions"] += 1
+            except RateLimited as e:
+                logger.warning(f"Automatic predictions paused: {e}")
+                await session.rollback()
+                break
             except Exception as e:
                 logger.error(f"Prediction failed for market {market.id}: {e}")
                 await session.rollback()

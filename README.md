@@ -234,7 +234,7 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | Variabile | Default | Descrizione |
 |---|---|---|
 | `INGEST_INTERVAL_MINUTES` | `60` | Intervallo della pipeline |
-| `AI_BATCH_SIZE` | `100` | Notizie riassunte e classificate a ogni esecuzione |
+| `AI_BATCH_SIZE` | `25` | Notizie riassunte e classificate a ogni esecuzione |
 | `FEED_TIMEOUT_SECONDS` | `20` | Tempo massimo per scaricare un feed |
 | `FEED_MAX_BYTES` | `5000000` | Dimensione massima di un feed |
 | `ALLOW_PRIVATE_FEEDS` | `false` | Permette feed su indirizzi interni (vedi sotto) |
@@ -255,6 +255,34 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | `MODEL_PSEUDO_COUNT` | `20` | Quante "osservazioni" vale una stima Jev con evidenze piene (regola l'incertezza) |
 | `PAPER_BANKROLL` | `1000` | Capitale iniziale simulato (modificabile dalla dashboard) |
 | `PAPER_PRESET` | `bilanciato` | Preset iniziale: `prudente`, `bilanciato`, `aggressivo` |
+
+</details>
+
+<details>
+<summary><b>Limiti delle API AI</b></summary>
+
+Ogni fornitore ha un limitatore lato client: distanzia le richieste, limita quelle
+contemporanee e, quando l'API risponde 429, mette in pausa quel fornitore per il tempo
+indicato da `Retry-After`. Imposta i valori del tuo piano (li trovi nelle console di Groq,
+Google AI Studio e TypeSafe).
+
+| Variabile | Default | Descrizione |
+|---|---|---|
+| `GROQ_RPM` | `20` | Richieste al minuto verso Groq |
+| `GEMINI_RPM` | `10` | Richieste al minuto verso Gemini |
+| `JEV_RPM` | `30` | Richieste al minuto verso TypeSafe Jev |
+| `JEV_CONCURRENCY` | `2` | Chiamate Jev contemporanee |
+| `OLLAMA_CONCURRENCY` | `1` | Richieste contemporanee a Ollama locale |
+| `AI_MAX_WAIT_SECONDS` | `90` | Attesa massima di un lavoro in background per il suo turno |
+
+- **Pausa di Jev:** se Jev è in pausa, la classificazione si ferma e le notizie restanti
+  vengono riprese al giro successivo (non vengono declassate all'euristica). La previsione
+  manuale dalla dashboard aspetta al massimo 10 secondi, poi risponde "riprova tra N secondi".
+- **Pausa di Groq o Gemini:** si passa al fornitore successivo; senza nessun fornitore
+  disponibile il riassunto è un estratto del testo.
+- **Modelli di ragionamento:** con i modelli Groq di ragionamento (`openai/gpt-oss-20b`,
+  `openai/gpt-oss-120b`) l'app chiede un ragionamento breve (`reasoning_effort=low`) e limita
+  i token della risposta, per non esaurire il limite di token al minuto.
 
 </details>
 
@@ -527,6 +555,7 @@ pytest
 | `tests/test_search.py` | Ricerca su titolo, testo e riassunto, prefissi, sintassi, evidenziazioni, filtri, uso dell'indice |
 | `tests/test_economics.py` | Book, commissioni, Kelly sul book, incertezza, annualizzazione, verdetti e limiti dei preset |
 | `tests/test_markets_sort.py` | Ordinamento dei mercati per ogni campo e direzione, valori mancanti in fondo, paginazione stabile |
+| `tests/test_ratelimit.py` | Limitatore (distanziamento, pausa, concorrenza), Groq sotto rate limit e con modelli di ragionamento, coda che riprende, 429 sulla previsione manuale, file senza cache |
 | `tests/test_portfolio.py` | Scommesse automatiche, esclusioni, chiusura, profitti e perdite, curva, API e permessi |
 
 ## Struttura del progetto
@@ -559,6 +588,17 @@ frontend/                   # dashboard: app.js, ui.js, charts.js, explain.js, v
 scripts/check_env.py        # verifica chiavi e database
 feeds.yaml                  # catalogo delle fonti consigliate
 ```
+
+## Se la dashboard non si apre
+
+Se la pagina resta vuota con solo il logo, il JavaScript dell'app non è partito. Dopo 8
+secondi la pagina lo dice e propone di ricaricarla.
+
+1. **Ricarica forzata** (Ctrl+F5 o Cmd+Shift+R). Dopo un aggiornamento il browser può avere
+   in cache file vecchi; ora i file della dashboard sono serviti con `Cache-Control: no-cache`,
+   quindi dal prossimo aggiornamento non dovrebbe più succedere.
+2. **Se persiste**, apri gli strumenti per sviluppatori del browser (F12 → Console e Rete) e
+   controlla i log del container: una richiesta che non risponde indica un server bloccato.
 
 ## Limiti noti
 

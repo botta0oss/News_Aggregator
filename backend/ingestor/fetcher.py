@@ -121,7 +121,9 @@ def parse_feed(content: bytes) -> FeedResult:
 
 
 async def fetch_feed(url: str) -> FeedResult:
-    return parse_feed(await download(url))
+    content = await download(url)
+    # Parsing is CPU work: keep it off the event loop so the web server stays responsive
+    return await asyncio.to_thread(parse_feed, content)
 
 
 async def fetch_and_parse_feed(url: str) -> list[dict]:

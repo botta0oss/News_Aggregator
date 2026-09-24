@@ -2,6 +2,7 @@ import logging
 import re
 from typing import Any, Dict, Optional
 from backend.ai import jev
+from backend.ai.ratelimit import RateLimited
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +154,7 @@ async def evaluate_article_dimensions(
     if jev.is_enabled():
         try:
             state, questions = build_jev_request(title, source_name, content, source_hint)
-            response = await jev.get_client().system_one(state=state, questions=questions)
+            response = await jev.system_one(state, questions)
 
             # Score answers are expected values over 0..(levels-1): normalize to 0..1
             def norm(name: str) -> float:
@@ -186,7 +187,11 @@ async def evaluate_article_dimensions(
                 "market_relevance": round(norm("market_relevance"), 3),
                 "source": "jev",
             }
+        except RateLimited:
+            raise  # the caller retries this article on the next run instead of downgrading it
         except Exception as e:
+            if getattr(e, "status_code", None) == 429 or type(e).__name__ == "TypeSafeRateLimitError":
+                raise RateLimited("jev", 30)
             logger.warning(f"TypeSafe evaluation error, falling back to heuristic: {e}")
 
     return _heuristic_evaluation(title, source_name, content, source_hint)

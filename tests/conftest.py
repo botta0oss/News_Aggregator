@@ -17,6 +17,10 @@ os.environ["DATABASE_URL"] = os.environ.get(
 for key in ("TYPESAFE_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY"):
     os.environ[key] = ""
 os.environ["OLLAMA_BASE_URL"] = "http://127.0.0.1:9"
+# Fast client-side rate limits in tests (test_ratelimit.py sets its own)
+os.environ["JEV_RPM"] = "6000"
+os.environ["GROQ_RPM"] = "6000"
+os.environ["GEMINI_RPM"] = "6000"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -140,3 +144,12 @@ async def login_client(role: str):
         assert r.status_code == 200, r.text
         client.headers["X-CSRF-Token"] = r.json()["csrf_token"]
         yield client
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """Limiters keep state (cooldowns) across calls: start every test clean."""
+    from backend.ai import ratelimit
+    ratelimit.reset_limiters()
+    yield
+    ratelimit.reset_limiters()
