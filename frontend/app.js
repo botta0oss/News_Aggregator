@@ -7,6 +7,8 @@ import { explainCard, explainSentence } from "./explain.js";
 import { viewNews } from "./views/news.js";
 import { viewSettings } from "./views/settings.js";
 import { viewMethod } from "./views/method.js";
+import { viewPortfolio } from "./views/portfolio.js";
+import { economicsCard, verdictBadge } from "./economics.js";
 
 const view = document.getElementById("view");
 let status = null;
@@ -225,6 +227,7 @@ const routes = [
   [/^#\/account$/, "account", viewAccount],
   [/^#\/impostazioni$/, "impostazioni", () => viewSettings(ctx)],
   [/^#\/metodo$/, "metodo", () => viewMethod(ctx)],
+  [/^#\/portafoglio$/, "portafoglio", () => viewPortfolio(ctx)],
 ];
 
 async function route({ quiet = false } = {}) {
@@ -370,8 +373,12 @@ function opportunityCard({ market, prediction: p }) {
       ),
       h("div", { class: "opp-figures" },
         h("div", {}, h("div", { class: "fig-label" }, "Edge", infoTip(GLOSSARY.edge)), h("div", { class: `fig-value ${edgeCls}` }, fmt.pts(p.edge))),
-        h("div", {}, h("div", { class: "fig-label" }, "Puntata suggerita", infoTip(GLOSSARY.kelly)), h("div", { class: "fig-value" }, p.kelly_fraction > 0 ? `${fmt.pct(p.kelly_fraction)}` : "–"),
-          p.kelly_fraction > 0 ? h("div", { class: "fig-label" }, "del bankroll") : null),
+        p.economics
+          ? h("div", {}, h("div", { class: "fig-label" }, "Conviene?", infoTip("Valutazione economica al momento della previsione: prezzo reale dal book, costi, incertezza, tempo e limiti del preset.")),
+            verdictBadge(p.economics.verdict),
+            p.economics.verdict !== "NO" ? h("div", { class: "fig-label", style: { marginTop: "4px" } }, `Puntata ${fmt.money(p.economics.outlay)}`) : null)
+          : h("div", {}, h("div", { class: "fig-label" }, "Puntata suggerita", infoTip(GLOSSARY.kelly)), h("div", { class: "fig-value" }, p.kelly_fraction > 0 ? `${fmt.pct(p.kelly_fraction)}` : "–"),
+            p.kelly_fraction > 0 ? h("div", { class: "fig-label" }, "del bankroll") : null),
       ),
       h("div", {}, h("div", { class: "fig-label" }, "Forza delle evidenze", infoTip(GLOSSARY.evidence)), meter(p.evidence_strength, "Forza delle evidenze")),
     ),
@@ -533,6 +540,7 @@ async function viewMarketDetail(id) {
     ),
     h("div", { class: "grid-2", style: { marginBottom: "16px" } }, forecastCard, historyCard),
     h("div", { class: "stack" },
+      latest ? economicsCard(ctx, market) : null,
       latest ? explainCard(latest, market, market.evidence, status) : null,
       evidenceCard,
       market.description ? h("details", { class: "card rules" }, h("summary", {}, "Regole di risoluzione"), h("p", { class: "rules-text" }, market.description)) : null,

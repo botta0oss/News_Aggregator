@@ -525,7 +525,7 @@ mark { background: color-mix(in srgb, var(--warning) 35%, transparent); color: i
 .row-actions { white-space: nowrap; }
 .row-actions > .btn + .btn { margin-left: 4px; }
 .btn-sm { min-height: 32px; padding: 0 10px; font-size: 0.85rem; }
-.btn-sm.btn-icon, .row-actions .btn-sm:first-child { width: 32px; padding: 0; }
+.btn-sm.btn-icon, .btn-sm.btn-square { width: 32px; padding: 0; }
 .btn-danger { color: var(--critical-text); }
 .btn-danger-solid { background: var(--critical); color: #fff; }
 .btn-danger-solid:hover:not(:disabled) { filter: brightness(1.1); }
@@ -569,3 +569,49 @@ mark { background: color-mix(in srgb, var(--warning) 35%, transparent); color: i
   .dl { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .dl dd { margin-bottom: 10px; }
 }
+
+/* ---------- Economics ("Conviene?") ---------- */
+.econ { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.badge-lg { font-size: 0.92rem; padding: 6px 12px; }
+.badge-lg .icon-svg { width: 16px; height: 16px; }
+.econ-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.econ-headline { font-size: 1.02rem; font-weight: 500; }
+.reasons { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.reasons li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; font-size: 0.9rem; color: var(--text-secondary); }
+.reasons li .icon-svg { color: var(--critical-text); margin-top: 2px; }
+.reasons.info li .icon-svg { color: var(--warning-text); }
+.econ-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px 20px; margin-top: 16px;
+  padding: 14px 16px; background: var(--surface-2); border-radius: var(--radius-sm); }
+.econ-fig .fig-value { font-size: 1.02rem; }
+.econ-details { margin-top: 14px; }
+.econ-details > summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+.caps { width: auto; min-width: 280px; margin-top: 8px; font-size: 0.86rem; }
+.caps td { padding: 4px 12px 4px 0; border-bottom: 1px solid var(--grid); }
+.caps tr.limiting td { color: var(--text-primary); font-weight: 600; }
+.econ-portfolio { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: grid; gap: 10px; font-size: 0.92rem; color: var(--text-secondary); }
+.econ-portfolio p { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.econ-portfolio .form-actions { flex-wrap: wrap; }
+.segmented { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; }
+.seg { border: 0; background: var(--surface); color: var(--text-secondary); padding: 0 12px; min-height: 34px; cursor: pointer; font-size: 0.86rem; }
+.seg + .seg { border-left: 1px solid var(--border-strong); }
+.seg[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.seg:hover:not([aria-pressed="true"]) { background: var(--surface-2); }
+
+/* ---------- Portfolio ---------- */
+.presets { display: grid; gap: 8px; }
+.preset { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); cursor: pointer; transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease); }
+.preset:hover { background: var(--surface-2); }
+.preset:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.preset input { margin-top: 3px; accent-color: var(--accent); width: 16px; height: 16px; }
+.preset-body { display: grid; gap: 2px; }
+.preset-name { font-weight: 600; }
+.preset-desc { font-size: 0.86rem; color: var(--text-secondary); }
+.preset-params { font-size: 0.74rem; color: var(--text-muted); }
+.reset-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.plain-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 0; }
+.plain-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--grid); }
+.plain-list li:last-child { border-bottom: 0; }
+td.pos, td.neg { font-weight: 500; }
+.field input.switch { width: 38px; height: 22px; flex: none; }
+.nowrap { white-space: nowrap; }

@@ -47,6 +47,10 @@ def _apply_market(market: Market, data: polymarket.PolymarketMarket) -> None:
     market.active = data.active
     market.closed = data.closed
     market.resolved_yes = data.resolved_yes
+    for field in ("yes_token_id", "no_token_id", "best_bid", "best_ask", "taker_fee_bps", "order_min_size"):
+        value = getattr(data, field)
+        if value is not None:
+            setattr(market, field, value)
     market.updated_at = datetime.now(timezone.utc)
 
 
@@ -239,6 +243,9 @@ async def predict_market(session: AsyncSession, market: Market) -> MarketPredict
         f"Jev forecast {market.id}: model={model_p:.3f} market={market.yes_price:.3f} "
         f"evidence={evidence_strength:.2f} -> {signal.signal} (edge {signal.edge:+.3f})"
     )
+    # Is it worth betting, and how much? Stores the evaluation and places the simulated bet.
+    from backend.betting.portfolio import apply_economics
+    await apply_economics(session, market, prediction)
     return prediction
 
 
@@ -277,7 +284,9 @@ async def run_market_pipeline(session: AsyncSession) -> dict:
 
 
 async def _run_market_pipeline(session: AsyncSession) -> dict:
+    from backend.betting.portfolio import settle_bets
     stats = await sync_markets(session)
+    stats["settled_bets"] = await settle_bets(session)
     stats["links"] = await refresh_links(session)
     stats["predictions"] = 0
     if settings.PREDICTION_AUTO and jev.is_enabled():

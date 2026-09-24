@@ -30,6 +30,13 @@ class PolymarketMarket:
     active: bool
     closed: bool
     resolved_yes: Optional[bool]
+    # Trading data (CLOB): token ids of the YES/NO shares, top of book, fees, minimum order
+    yes_token_id: Optional[str] = None
+    no_token_id: Optional[str] = None
+    best_bid: Optional[float] = None
+    best_ask: Optional[float] = None
+    taker_fee_bps: Optional[float] = None
+    order_min_size: Optional[float] = None
 
     @property
     def url(self) -> Optional[str]:
@@ -88,6 +95,11 @@ def parse_market(raw: dict) -> Optional[PolymarketMarket]:
         elif yes_price <= 0.01:
             resolved_yes = False
 
+    token_ids = [str(t) for t in _json_list(raw.get("clobTokenIds"))]
+    best_bid = _float(raw.get("bestBid"), default=-1.0)
+    best_ask = _float(raw.get("bestAsk"), default=-1.0)
+    fee = raw.get("takerBaseFee")
+
     events = raw.get("events") or []
     event_slug = events[0].get("slug") if events and isinstance(events[0], dict) else None
 
@@ -104,6 +116,12 @@ def parse_market(raw: dict) -> Optional[PolymarketMarket]:
         active=bool(raw.get("active", True)),
         closed=closed,
         resolved_yes=resolved_yes,
+        yes_token_id=token_ids[0] if len(token_ids) == 2 else None,
+        no_token_id=token_ids[1] if len(token_ids) == 2 else None,
+        best_bid=best_bid if 0.0 <= best_bid <= 1.0 else None,
+        best_ask=best_ask if 0.0 < best_ask <= 1.0 else None,
+        taker_fee_bps=_float(fee) if fee is not None else None,
+        order_min_size=_float(raw.get("orderMinSize")) or None,
     )
 
 
@@ -160,6 +178,48 @@ async def fetch_market(market_id: str, client: Optional[httpx.AsyncClient] = Non
             return None
         res.raise_for_status()
         return parse_market(res.json())
+    finally:
+        if own_client:
+            await client.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Order book (CLOB, public read-only endpoint)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class OrderBook:
+    """Asks sorted from cheapest, bids from highest; each level is (price, size in shares)."""
+    asks: list
+    bids: list
+
+    @property
+    def best_ask(self) -> Optional[float]:
+        return self.asks[0][0] if self.asks else None
+
+    @property
+    def best_bid(self) -> Optional[float]:
+        return self.bids[0][0] if self.bids else None
+
+
+def parse_order_book(raw: dict) -> OrderBook:
+    def levels(key):
+        out = []
+        for level in raw.get(key) or []:
+            price, size = _float(level.get("price"), -1.0), _float(level.get("size"), 0.0)
+            if 0.0 < price < 1.0 and size > 0:
+                out.append((price, size))
+        return out
+    return OrderBook(asks=sorted(levels("asks")), bids=sorted(levels("bids"), reverse=True))
+
+
+async def fetch_order_book(token_id: str, client: Optional[httpx.AsyncClient] = None) -> OrderBook:
+    own_client = client is None
+    client = client or httpx.AsyncClient(base_url=settings.POLYMARKET_CLOB_URL, timeout=15.0)
+    try:
+        res = await client.get("/book", params={"token_id": token_id})
+        res.raise_for_status()
+        return parse_order_book(res.json())
     finally:
         if own_client:
             await client.aclose()

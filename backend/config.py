@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     # Polymarket (read-only market data via the public Gamma API)
     POLYMARKET_ENABLED: bool = True
     POLYMARKET_GAMMA_URL: str = "https://gamma-api.polymarket.com"
+    POLYMARKET_CLOB_URL: str = "https://clob.polymarket.com"
     POLYMARKET_SYNC_LIMIT: int = 200          # max active markets kept in sync
     POLYMARKET_MIN_VOLUME: float = 10000.0    # ignore illiquid markets (USD)
 
@@ -39,6 +40,14 @@ class Settings(BaseSettings):
     MIN_EDGE: float = 0.05                    # minimum |edge| to emit a BUY signal
     MIN_EVIDENCE: float = 0.5                 # minimum normalized evidence strength to emit a signal
     KELLY_FRACTION: float = 0.25              # fractional Kelly sizing
+
+    # Betting economics (simulated portfolio)
+    RISK_FREE_RATE: float = 0.04              # annual return of the risk-free alternative (e.g. T-bills)
+    DEFAULT_FEE_BPS: float = 0.0              # taker fee when the market does not report one
+    DEFAULT_SPREAD: float = 0.02              # assumed bid-ask spread when the order book is unavailable
+    MODEL_PSEUDO_COUNT: float = 20.0          # how many "observations" a fully-evidenced Jev estimate is worth
+    PAPER_BANKROLL: float = 1000.0            # initial simulated bankroll (USD), editable in the dashboard
+    PAPER_PRESET: str = "bilanciato"          # prudente / bilanciato / aggressivo
 
     # Feed fetching
     FEED_TIMEOUT_SECONDS: float = 20.0

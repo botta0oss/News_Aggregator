@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Boolean, Integer, Float, Text, ForeignKey, DateTime, UniqueConstraint, Index
 from typing import Optional
 from sqlalchemy.orm import declarative_base, relationship, Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from pgvector.sqlalchemy import Vector
 
 Base = declarative_base()
@@ -92,6 +92,14 @@ class Market(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     closed: Mapped[bool] = mapped_column(Boolean, default=False)
     resolved_yes: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)  # set once resolved
+    # Trading data for the economics engine
+    yes_token_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    no_token_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    best_bid: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    best_ask: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    taker_fee_bps: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    order_min_size: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    category: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # dominant category of the linked news
     question_embedding = mapped_column(Vector(384), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -131,6 +139,7 @@ class MarketPrediction(Base):
     signal: Mapped[str] = mapped_column(Text, nullable=False)                  # BUY_YES / BUY_NO / HOLD
     kelly_fraction: Mapped[float] = mapped_column(Float, default=0.0)          # suggested bankroll fraction
     article_count: Mapped[int] = mapped_column(Integer, default=0)
+    economics: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)  # economic evaluation at prediction time
 
 
 class User(Base):
@@ -159,3 +168,51 @@ class UserSession(Base):
     user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     user = relationship("User")
+
+
+
+class BettingSettings(Base):
+    """Settings of the simulated portfolio (single row, id = 1)."""
+    __tablename__ = 'betting_settings'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    bankroll: Mapped[float] = mapped_column(Float, nullable=False)        # initial capital (USD)
+    preset: Mapped[str] = mapped_column(Text, nullable=False)
+    auto_paper: Mapped[bool] = mapped_column(Boolean, default=True)       # bet automatically on every GO/SMALL
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class PaperBet(Base):
+    """A simulated bet, placed at the executable price of the moment and settled at resolution."""
+    __tablename__ = 'paper_bets'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    market_id: Mapped[str] = mapped_column(ForeignKey('markets.id', ondelete='CASCADE'), index=True)
+    prediction_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('market_predictions.id', ondelete='SET NULL'), nullable=True)
+    side: Mapped[str] = mapped_column(Text, nullable=False)                # YES / NO
+    shares: Mapped[float] = mapped_column(Float, nullable=False)
+    avg_price: Mapped[float] = mapped_column(Float, nullable=False)
+    stake: Mapped[float] = mapped_column(Float, nullable=False)            # USD spent on shares
+    fee: Mapped[float] = mapped_column(Float, default=0.0)
+    p_side: Mapped[float] = mapped_column(Float, nullable=False)           # blended P(side wins) at entry
+    p_conservative: Mapped[float] = mapped_column(Float, nullable=False)
+    expected_profit: Mapped[float] = mapped_column(Float, default=0.0)
+    preset: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, default="open", index=True)  # open / won / lost / excluded
+    placed_by: Mapped[str] = mapped_column(Text, default="auto")          # auto / manual
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    settled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    payout: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    market = relationship("Market")
+
+
+class PaperExclusion(Base):
+    """Markets, events or categories the automatic simulated betting must skip."""
+    __tablename__ = 'paper_exclusions'
+    __table_args__ = (UniqueConstraint('kind', 'value', name='uq_paper_exclusion'),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)    # market / event / category
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

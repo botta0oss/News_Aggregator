@@ -91,7 +91,7 @@ function sourceRow(ctx, s, { admin, onEdit, onChange }) {
 
   const actions = h("td", { class: "row-actions" });
   const paintActions = () => actions.replaceChildren(
-    h("button", { class: "btn btn-ghost btn-sm", type: "button", title: "Scarica subito le notizie di questa fonte", disabled: !s.active,
+    h("button", { class: "btn btn-ghost btn-sm btn-square", type: "button", title: "Scarica subito le notizie di questa fonte", disabled: !s.active,
       on: { click: (e) => fetchNow(e.currentTarget, s, onChange) } }, icon("refresh"), h("span", { class: "sr-only" }, `Aggiorna ${s.name}`)),
     h("button", { class: "btn btn-ghost btn-sm", type: "button", on: { click: () => onEdit(s) } }, "Modifica"),
     h("button", { class: "btn btn-ghost btn-sm btn-danger", type: "button", on: { click: confirmDelete } }, "Elimina"),

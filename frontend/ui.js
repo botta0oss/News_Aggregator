@@ -113,6 +113,8 @@ const pctFmt = new Intl.NumberFormat("it-IT", { style: "percent", maximumFractio
 const centFmt = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 1 });
 const usdFmt = new Intl.NumberFormat("it-IT", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 });
 const intFmt = new Intl.NumberFormat("it-IT");
+const moneyFmt = new Intl.NumberFormat("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const sharesFmt = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 1 });
 const numFmt = new Intl.NumberFormat("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 const rtf = new Intl.RelativeTimeFormat("it", { numeric: "auto" });
 
@@ -122,6 +124,9 @@ export const fmt = {
   cents: (p) => (p == null ? "–" : `${centFmt.format(p * 100)}¢`),
   pts: (edge) => (edge == null ? "–" : `${edge > 0 ? "+" : edge < 0 ? "−" : ""}${Math.abs(edge * 100).toFixed(1).replace(".", ",")} pt`),
   usd: (v) => (v == null ? "–" : usdFmt.format(v)),
+  money: (v) => (v == null ? "–" : `${moneyFmt.format(v)} $`),
+  signedMoney: (v) => (v == null ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${moneyFmt.format(Math.abs(v))} $`),
+  shares: (v) => (v == null ? "–" : sharesFmt.format(v)),
   int: (v) => (v == null ? "–" : intFmt.format(v)),
   num3: (v) => (v == null ? "–" : numFmt.format(v)),
   date: (d) => (d ? new Date(d).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" }) : "–"),

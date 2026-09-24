@@ -66,6 +66,7 @@ class PredictionResponse(BaseModel):
     signal: str
     kelly_fraction: float
     article_count: int
+    economics: Optional[dict] = None
 
 class MarketResponse(BaseModel):
     id: str
