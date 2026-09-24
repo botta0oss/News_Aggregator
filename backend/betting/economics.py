@@ -244,7 +244,7 @@ def evaluate(
     reasons: list[Reason] = []
     notes: list[str] = []
     if quote.source == "estimate":
-        notes.append("Book non disponibile: prezzo stimato come prezzo medio + metà spread, profondità dalla liquidità dichiarata.")
+        notes.append("Book non disponibile: book stimato a 4 livelli, da prezzo medio + metà spread in su, con la profondità dalla liquidità dichiarata.")
 
     if signal == "HOLD":
         reasons.append(Reason("no_signal", "Il modello non vede una differenza sufficiente rispetto al prezzo."))

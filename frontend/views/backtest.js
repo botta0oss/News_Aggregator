@@ -258,7 +258,8 @@ async function resultsView(ctx, run, params) {
   const cases = allCases.filter((c) => c.kind !== "multi");
   const multiCases = allCases.filter((c) => c.kind === "multi");
   if (!o.n) return h("div", { class: "stack" }, multiCard(run, s.multi, multiCases), casesCard([], s.skipped));
-  const small = o.markets < 30;
+  const nMarkets = o.markets ?? o.n;  // runs saved by an earlier version count cases only
+  const small = nMarkets < 30;
   const lf = s.leak_free;
   const sources = s.news_sources || {};
   return h("div", { class: "stack" },
@@ -269,15 +270,15 @@ async function resultsView(ctx, run, params) {
         infoTip("Brier score: errore medio al quadrato tra probabilità prevista ed esito (0 = perfetto, 0,25 = dire sempre 50%). Più basso è meglio.")),
       h("p", { style: { margin: "4px 0 4px" } }, verdictLine(o)),
       gainVerdict(o.gain_blended, "Il blended") ? h("p", { class: "secondary small", style: { margin: "0 0 12px" } }, gainVerdict(o.gain_blended, "Il blended")) : null,
-      small ? h("p", { class: "notice small" }, icon("alert"), `Solo ${fmt.count(o.markets, "mercato", "mercati")} diversi: i numeri possono cambiare molto con altri mercati. Ne servono almeno 30, meglio 100.`) : null,
+      small ? h("p", { class: "notice small" }, icon("alert"), `Solo ${fmt.count(nMarkets, "mercato", "mercati")} diversi: i numeri possono cambiare molto con altri mercati. Ne servono almeno 30, meglio 100.`) : null,
       h("div", { class: "kpis" },
-        statTile("Casi valutati", fmt.int(o.n), `${fmt.count(o.markets, "mercato", "mercati")} · ${fmt.int(run.skipped)} saltati`),
+        statTile("Casi valutati", fmt.int(o.n), o.markets != null ? `${fmt.count(o.markets, "mercato", "mercati")} · ${fmt.int(run.skipped)} saltati` : `${fmt.int(run.skipped)} saltati`),
         statTile("Brier Jev", b3(o.brier_model), `prezzo ${b3(o.brier_market)} · blended ${b3(o.brier_blended)}`),
         statTile("Vantaggio del blended sul prezzo", gainText(o.gain_blended), "Brier del prezzo − Brier del blended; > 0 è meglio"),
         statTile("Segnali giusti", o.signal_hit_rate == null ? "–" : fmt.pct(o.signal_hit_rate), `${fmt.count(o.signals, "segnale", "segnali")}`),
         statTile("Scommesse simulate", o.bets ? fmt.signedMoney(o.pnl) : "–", o.bets ? `${o.bets_won} vinte su ${o.bets} · ROI ${fmt.pct(o.roi)}` : "nessuna scommessa"),
       ),
-      h("p", { class: "muted small", style: { marginTop: "10px" } },
+      s.news_sources == null ? null : h("p", { class: "muted small", style: { marginTop: "10px" } },
         `Notizie: ${fmt.int(sources.archive || 0)} casi dall'archivio, ${fmt.int(sources.google || 0)} da Google News. `,
         lf ? `Solo archivio (nessun senno di poi): ${fmt.count(lf.n, "caso", "casi")}, Brier Jev ${b3(lf.brier_model)} contro prezzo ${b3(lf.brier_market)}, vantaggio del blended ${gainText(lf.gain_blended)}.`
           : "Nessun caso con le sole notizie dell'archivio: i risultati possono risentire del senno di poi."),
@@ -335,6 +336,13 @@ function multiCard(run, m, cases) {
 
 function suggestionCard(ctx, sg, params) {
   if (!sg) return null;
+  if (!sg.calibration) {
+    // Summary saved by an earlier version: its suggestions were not checked out of sample
+    return h("section", { class: "card", "aria-labelledby": "h-bt-sug" },
+      h("h2", { id: "h-bt-sug" }, "Parametri suggeriti"),
+      h("p", { class: "secondary", style: { marginTop: "6px" } },
+        "Questo backtest è stato eseguito con una versione precedente, senza la verifica sui mercati più recenti né la calibrazione di Jev. Avvia un nuovo backtest per avere suggerimenti verificati."));
+  }
   const w = sg.model_weight_max;
   const e = sg.min_edge;
   const c = sg.calibration;
