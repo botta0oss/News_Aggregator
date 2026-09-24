@@ -121,7 +121,11 @@ def annualize(roi: float, days: float) -> float:
     if roi <= -1:
         return -1.0
     years = max(days, 1.0) / 365.0
-    return min(MAX_APR, (1 + roi) ** (1 / years) - 1)
+    # In logs: (1 + roi) ** 365 overflows for cheap shares close to expiry (e.g. roi 10 in 1 day)
+    growth = math.log1p(roi) / years
+    if growth >= math.log1p(MAX_APR):
+        return MAX_APR
+    return math.expm1(growth)
 
 
 def _growth(p: float, shares: float, spent: float, fee: float, equity: float) -> float:

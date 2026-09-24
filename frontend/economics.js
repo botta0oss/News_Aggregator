@@ -46,16 +46,26 @@ export function economicsCard(ctx, market) {
   const presetSwitch = h("div", { class: "segmented", role: "group", "aria-label": "Preset di rischio" });
   const paintSwitch = (active) => presetSwitch.replaceChildren(...["prudente", "bilanciato", "aggressivo"].map((key) => h("button", {
     type: "button", class: "seg", "aria-pressed": String(key === active),
-    on: { click: () => { preset = key; load(); } },
+    on: { click: () => { preset = key; paintSwitch(key); load(); } },
   }, key[0].toUpperCase() + key.slice(1))));
 
   async function load() {
+    body.setAttribute("aria-busy", "true");
+    body.classList.add("is-loading");
     try {
       const data = await api(`/markets/${encodeURIComponent(market.id)}/economics`, { params: { preset } });
       paintSwitch(data.preset.key);
       body.replaceChildren(render(data));
     } catch (e) {
-      body.replaceChildren(h("p", { class: "secondary" }, e.status === 409 ? "Serve prima una previsione di Jev." : e.message));
+      if (!presetSwitch.childElementCount) paintSwitch(preset);
+      body.replaceChildren(e.status === 409
+        ? h("p", { class: "secondary" }, "Serve prima una previsione di Jev.")
+        : h("div", { class: "econ-error", role: "alert" },
+          h("p", { class: "secondary" }, `Valutazione non disponibile: ${e.message}`),
+          h("button", { class: "btn btn-ghost btn-sm", type: "button", on: { click: load } }, icon("refresh"), "Riprova")));
+    } finally {
+      body.removeAttribute("aria-busy");
+      body.classList.remove("is-loading");
     }
   }
 

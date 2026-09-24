@@ -679,3 +679,5 @@ th.num .th-sort { flex-direction: row-reverse; }
 .inline { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .chip input { margin: 0 6px 0 0; }
 .chip:has(input:checked) { border-color: var(--accent); color: var(--text-primary); }
+.econ-body.is-loading { opacity: .55; transition: opacity var(--dur) var(--ease); }
+.econ-error { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
