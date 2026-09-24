@@ -5,12 +5,14 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from backend.config import settings
+from backend import overrides
+from backend.backtest import engine as backtest_engine
 from backend.db.database import init_db, SessionLocal
 from backend.ingestor.scheduler import start_scheduler, shutdown_scheduler
 from backend.ai import jev
 from backend.auth.deps import require_user
 from backend.auth.service import ensure_bootstrap_admin
-from backend.api.routes import alerts, articles, auth, categories, ingest, markets, portfolio, sources, status
+from backend.api.routes import alerts, articles, auth, backtest, categories, ingest, markets, multi, portfolio, sources, status
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -22,6 +24,8 @@ async def lifespan(app: FastAPI):
     await init_db()
     async with SessionLocal() as db:
         await ensure_bootstrap_admin(db)
+        await overrides.load(db)  # forecast parameters changed from the dashboard
+    await backtest_engine.recover_interrupted()
     start_scheduler()
     yield
     shutdown_scheduler()
@@ -83,6 +87,8 @@ app.include_router(sources.router, dependencies=protected)
 app.include_router(portfolio.router, dependencies=protected)
 app.include_router(portfolio.markets_router, dependencies=protected)
 app.include_router(alerts.router, dependencies=protected)
+app.include_router(backtest.router, dependencies=protected)
+app.include_router(multi.router, dependencies=protected)
 
 # Static dashboard files are public (they contain no data); the data comes from the API above.
 # Mounted only if present: StaticFiles raises at startup on a missing directory.

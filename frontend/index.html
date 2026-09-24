@@ -16,51 +16,72 @@
 </head>
 <body>
   <a class="skip-link" href="#view">Vai al contenuto</a>
-  <header class="topbar">
-    <div class="topbar-inner">
-      <a class="brand" href="#/opportunita" aria-label="News × Markets, vai alle opportunità">
-        <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--series-blended)"/><path d="M7 22l6-7 5 4 7-9" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>News <span class="brand-x">×</span> Markets</span>
-      </a>
-      <nav class="tabs" id="tabs" aria-label="Sezioni" hidden>
-        <a href="#/opportunita" data-tab="opportunita">Opportunità</a>
-        <a href="#/mercati" data-tab="mercati">Mercati</a>
-        <a href="#/notizie" data-tab="notizie">Notizie</a>
-        <a href="#/allerte" data-tab="allerte">Allerte</a>
-        <a href="#/portafoglio" data-tab="portafoglio">Portafoglio</a>
-        <a href="#/calibrazione" data-tab="calibrazione">Calibrazione</a>
-      </nav>
-      <div class="actions" id="actions" hidden>
-        <button class="btn btn-ghost admin-only" id="btn-ingest" type="button" aria-label="Aggiorna notizie" title="Scarica le nuove notizie e aggiorna classificazioni, mercati e collegamenti">
-          <span data-icon="refresh"></span><span class="spinner" aria-hidden="true"></span><span class="btn-label job-label" aria-hidden="true">Aggiorna notizie</span>
-        </button>
-        <button class="btn btn-ghost admin-only" id="btn-sync" type="button" aria-label="Aggiorna mercati" title="Aggiorna mercati e prezzi da Polymarket e collega le notizie">
-          <span data-icon="sync"></span><span class="spinner" aria-hidden="true"></span><span class="btn-label job-label" aria-hidden="true">Aggiorna mercati</span>
-        </button>
-        <a class="btn btn-ghost btn-icon" id="settings-link" href="#/impostazioni" aria-label="Impostazioni e fonti" title="Impostazioni e fonti">
-          <span data-icon="settings"></span>
+  <div class="shell" id="shell">
+    <!-- Desktop: sidebar with the sections grouped by purpose -->
+    <aside class="sidebar" id="sidebar" aria-label="Menu principale" hidden>
+      <div class="sidebar-head">
+        <a class="brand" href="#/opportunita" aria-label="News × Markets, vai alle opportunità">
+          <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--series-blended)"/><path d="M7 22l6-7 5 4 7-9" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="brand-text">News <span class="brand-x">×</span> Markets</span>
         </a>
-        <a class="btn btn-ghost user-link" id="user-link" href="#/account" title="Account e password">
-          <span data-icon="user"></span><span class="btn-label" id="user-name"></span>
-        </a>
-        <button class="btn btn-ghost btn-icon" id="btn-logout" type="button" aria-label="Esci" title="Esci">
-          <span data-icon="logout"></span>
+        <button class="btn btn-ghost btn-sm btn-icon btn-bare" id="btn-collapse" type="button" aria-label="Riduci il menu" aria-expanded="true" aria-controls="sidebar">
+          <span data-icon="sidebar"></span>
         </button>
       </div>
-      <button class="btn btn-ghost btn-icon" id="btn-theme" type="button" aria-label="Passa al tema chiaro">
-        <span data-icon="sun"></span>
-      </button>
+      <nav class="side-nav" id="side-nav" aria-label="Sezioni"></nav>
+      <div class="sidebar-foot" id="side-foot"></div>
+    </aside>
+
+    <div class="main-col">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="brand brand-mobile" href="#/opportunita" aria-label="News × Markets, vai alle opportunità">
+            <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--series-blended)"/><path d="M7 22l6-7 5 4 7-9" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="brand-text">News <span class="brand-x">×</span> Markets</span>
+          </a>
+          <p class="topbar-status" id="topbar-status" aria-live="polite"></p>
+          <div class="actions" id="actions" hidden>
+            <div class="menu-wrap admin-only" id="jobs">
+              <button class="btn btn-ghost" id="btn-jobs" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="jobs-menu">
+                <span data-icon="refresh"></span><span class="spinner" aria-hidden="true"></span><span class="btn-label">Aggiorna</span><span class="chev" aria-hidden="true"><span data-icon="chevron"></span></span>
+              </button>
+              <div class="menu" id="jobs-menu" role="menu" aria-labelledby="btn-jobs" hidden>
+                <button class="menu-item" id="btn-ingest" role="menuitem" type="button">
+                  <span data-icon="news"></span><span><b>Aggiorna notizie</b><span class="muted small">Scarica le fonti, classifica e collega ai mercati</span></span>
+                </button>
+                <button class="menu-item" id="btn-sync" role="menuitem" type="button">
+                  <span data-icon="sync"></span><span><b>Aggiorna mercati</b><span class="muted small">Prezzi da Polymarket e collegamento delle notizie</span></span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-ghost btn-icon" id="btn-theme" type="button" aria-label="Passa al tema chiaro">
+            <span data-icon="sun"></span>
+          </button>
+        </div>
+      </header>
+
+      <div id="banner" class="banner" role="note" hidden></div>
+
+      <main id="view" class="container" tabindex="-1"></main>
+
+      <footer class="footer container" id="footer" hidden>
+        <p>Segnali indicativi, non consulenza finanziaria. L'app non piazza ordini su Polymarket.</p>
+      </footer>
     </div>
-  </header>
+  </div>
 
-  <div id="banner" class="banner" role="note" hidden></div>
-
-  <main id="view" class="container" tabindex="-1"></main>
-
-  <footer class="footer container" id="footer" hidden>
-    <p id="footer-status"></p>
-    <p>Segnali indicativi, non consulenza finanziaria. L'app non piazza ordini su Polymarket.</p>
-  </footer>
+  <!-- Mobile: the four sections used most, the rest under "Altro" -->
+  <nav class="bottom-nav" id="bottom-nav" aria-label="Sezioni principali" hidden></nav>
+  <div class="sheet-backdrop" id="more-sheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="more-title">
+      <div class="sheet-head">
+        <h2 id="more-title">Tutte le sezioni</h2>
+        <button class="btn btn-ghost btn-icon btn-bare" id="btn-more-close" type="button" aria-label="Chiudi"><span data-icon="x"></span></button>
+      </div>
+      <nav id="sheet-nav" aria-label="Tutte le sezioni"></nav>
+    </div>
+  </div>
 
   <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
   <div id="tooltip" class="tooltip" role="tooltip" hidden></div>

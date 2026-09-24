@@ -111,6 +111,8 @@ async def db(monkeypatch):
         pytest.skip(f"Test database not available: {e}")
     monkeypatch.setattr(service, "get_title_embedding", fake_embedding)
     monkeypatch.setattr(scheduler, "get_title_embedding", fake_embedding)
+    from backend.multi import service as multi_service
+    monkeypatch.setattr(multi_service, "get_title_embedding", fake_embedding)
     monkeypatch.setattr(settings, "MARKET_MATCH_THRESHOLD", 0.5)
     monkeypatch.setattr(settings, "TARGETED_NEWS_ENABLED", False)  # no network in tests; enabled where tested
     login_limiter.clear()

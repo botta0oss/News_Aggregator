@@ -115,7 +115,7 @@ async def list_markets(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(Market)
+    query = select(Market).where(Market.multi_event_id.is_(None))  # multi-outcome events: /multi
     if not include_closed:
         query = query.where(Market.closed == False)  # noqa: E712
     if q:
@@ -267,7 +267,7 @@ async def list_opportunities(
         select(Market, MarketPrediction)
         .join(latest, latest.c.market_id == Market.id)
         .join(MarketPrediction, MarketPrediction.id == latest.c.id)
-        .where(Market.closed == False)  # noqa: E712
+        .where(Market.closed == False, Market.multi_event_id.is_(None))  # noqa: E712
         .where(func.abs(MarketPrediction.edge) >= min_edge)
         .where(MarketPrediction.evidence_strength >= min_evidence)
     )

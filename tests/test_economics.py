@@ -113,3 +113,29 @@ def test_min_order_and_estimated_quote():
     assert q.source == "estimate" and q.asks[0][0] == pytest.approx(0.36)
     ev = run(quote=q)
     assert ev.quote_source == "estimate" and ev.notes
+
+
+def test_annualize_does_not_overflow():
+    """Regression: a 1¢ share with a day left gave OverflowError (500 on /economics)."""
+    from backend.betting.economics import MAX_APR, annualize
+    assert annualize(99.0, 1.0) == MAX_APR
+    assert annualize(10.0, 0.2) == MAX_APR
+    assert annualize(-1.0, 1.0) == -1.0
+    assert annualize(0.1, 365.0) == pytest.approx(0.1)
+    assert annualize(-0.5, 1.0) == pytest.approx(-1.0, abs=1e-9)
+
+
+def test_evaluate_never_crashes_on_extreme_books():
+    import json, random
+    from backend.betting.profiles import PROFILES
+    rng = random.Random(7)
+    for _ in range(3000):
+        mid = rng.choice([0.001, 0.01, 0.5, 0.99, rng.uniform(0.001, 0.999)])
+        asks = sorted((round(min(0.999, max(0.001, mid + rng.uniform(-0.05, 0.2))), 3), rng.choice([1e-3, 5, 1e5]))
+                      for _ in range(rng.randint(0, 5)))
+        ev = evaluate(signal=rng.choice(["BUY_YES", "BUY_NO", "HOLD"]), p_yes=rng.uniform(0, 1), sigma=rng.uniform(0, 0.2),
+                      quote=Quote(asks=asks, mid=mid, fee_bps=rng.choice([0, 1000]), min_order_shares=5, source="book"),
+                      days=rng.choice([1.0, 30.0, 2000.0]), profile=get_profile(rng.choice(list(PROFILES))),
+                      equity=rng.choice([0.0, 1000.0]), available_cash=500.0, exposure=Exposure(0, 0, 0, 0),
+                      liquidity=rng.choice([0.0, 1e6]), risk_free_rate=0.045)
+        json.dumps(ev.as_dict(), allow_nan=False)  # the API response must be valid JSON

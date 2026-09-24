@@ -45,6 +45,9 @@ STATEMENTS = [
     # Alerts: links that existed before are marked as already checked, new ones start unchecked
     "ALTER TABLE market_article_links ADD COLUMN IF NOT EXISTS alert_checked BOOLEAN NOT NULL DEFAULT true",
     "ALTER TABLE market_article_links ALTER COLUMN alert_checked SET DEFAULT false",
+    # Multi-outcome events are kept apart from the YES/NO markets
+    "ALTER TABLE markets ADD COLUMN IF NOT EXISTS multi_event_id TEXT",
+    "CREATE INDEX IF NOT EXISTS ix_markets_multi_event_id ON markets (multi_event_id)",
 ]
 
 

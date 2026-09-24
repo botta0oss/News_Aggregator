@@ -83,7 +83,7 @@ async def markets_to_search(session: AsyncSession, limit: int, market_ids: Optio
     stale = datetime.now(timezone.utc) - timedelta(hours=settings.TARGETED_NEWS_REFRESH_HOURS)
     stmt = (
         select(Market)
-        .where(Market.closed == False)  # noqa: E712
+        .where(Market.closed == False, Market.multi_event_id.is_(None))  # noqa: E712
         .where((Market.targeted_at.is_(None)) | (Market.targeted_at < stale))
         .order_by(Market.volume.desc().nulls_last(), Market.id)
         .limit(limit)

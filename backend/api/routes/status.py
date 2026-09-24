@@ -16,7 +16,7 @@ async def get_status(db: AsyncSession = Depends(get_db)):
     async def count(stmt):
         return (await db.execute(stmt)).scalar() or 0
 
-    open_markets = select(Market.id).where(Market.closed == False)  # noqa: E712
+    open_markets = select(Market.id).where(Market.closed == False, Market.multi_event_id.is_(None))  # noqa: E712
     return {
         "jev_enabled": jev.is_enabled(),
         "polymarket_enabled": settings.POLYMARKET_ENABLED,
