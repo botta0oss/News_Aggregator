@@ -8,11 +8,12 @@ from backend.config import settings
 from backend.db.database import init_db
 from backend.ingestor.scheduler import start_scheduler, shutdown_scheduler
 from backend.ai import jev
-from backend.api.routes import articles, categories, ingest, markets
+from backend.api.routes import articles, categories, ingest, markets, status
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-FRONTEND_DIR = "frontend"
+# Resolved from the repo root, so it works regardless of the working directory
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,6 +38,7 @@ app.include_router(categories.router)
 app.include_router(ingest.router)
 app.include_router(markets.router)
 app.include_router(markets.predictions_router)
+app.include_router(status.router)
 
 # Mount frontend files at root (only if present: StaticFiles raises at startup on a missing directory)
 if os.path.isdir(FRONTEND_DIR):

@@ -96,3 +96,17 @@ class CalibrationResponse(BaseModel):
     brier_market: Optional[float]
     brier_model: Optional[float]
     brier_blended: Optional[float]
+
+class StatusResponse(BaseModel):
+    jev_enabled: bool
+    polymarket_enabled: bool
+    prediction_auto: bool
+    min_edge: float
+    min_evidence: float
+    articles: int
+    processed_articles: int
+    last_article_at: Optional[datetime]
+    open_markets: int
+    linked_markets: int
+    predictions: int
+    last_prediction_at: Optional[datetime]

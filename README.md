@@ -16,6 +16,7 @@ opportunità.
 - [Cosa fa](#cosa-fa)
 - [Architettura](#architettura)
 - [Avvio rapido](#avvio-rapido)
+- [Dashboard](#dashboard)
 - [Configurazione](#configurazione)
 - [Come nasce una previsione](#come-nasce-una-previsione)
 - [API](#api)
@@ -69,8 +70,8 @@ cp .env.example .env        # inserisci almeno TYPESAFE_API_KEY
 docker compose up --build
 ```
 
-Il compose avvia anche Postgres con pgvector. API su http://localhost:8000, documentazione
-interattiva su http://localhost:8000/docs.
+Il compose avvia anche Postgres con pgvector. Dashboard su http://localhost:8000,
+documentazione interattiva delle API su http://localhost:8000/docs.
 
 ### In locale
 
@@ -87,6 +88,30 @@ uvicorn backend.main:app --reload
 
 Le tabelle vengono create all'avvio. Quelle già esistenti **non** vengono modificate: se
 cambi lo schema di una tabella esistente, aggiornala a mano.
+
+## Dashboard
+
+L'interfaccia web è servita dalla stessa app su `/`: HTML, CSS e JavaScript senza
+dipendenze né build, nella cartella `frontend/`.
+
+| Sezione | Cosa mostra |
+|---|---|
+| **Opportunità** | Mercati con segnale attivo ordinati per edge: prezzo, stima Jev e probabilità blended sulla stessa scala 0–100 %, puntata suggerita e forza delle evidenze. Filtri per edge ed evidenze minime. |
+| **Mercati** | Tabella dei mercati con ricerca, prezzo in centesimi, volume, scadenza, notizie collegate e ultimo segnale. |
+| **Dettaglio mercato** | Ultima previsione, pulsante per chiederne una nuova, storico (prezzo contro blended), notizie collegate con rilevanza e impatto, regole di risoluzione. |
+| **Notizie** | Notizie riassunte con i punteggi Jev, filtro per categoria e pesi dell'ordinamento regolabili. |
+| **Calibrazione** | Brier score di prezzo, Jev e blended sui mercati risolti, con avviso se il campione è piccolo. |
+
+I pulsanti in alto avviano l'aggiornamento di notizie e mercati. La pagina si aggiorna da
+sola mentre il lavoro procede in background.
+
+Scelte di design:
+- **Tema scuro predefinito**, con tema chiaro dal pulsante in alto. La scelta viene ricordata.
+- **Colori fissi per ogni serie in tutti i grafici:** prezzo arancio, Jev acqua, blended blu. Verde e rosso sono riservati ai segnali e sono sempre accompagnati da icona e testo.
+- **Palette verificata** per il daltonismo su entrambi i temi.
+- **Forme distinte:** cerchio e rombo, linea continua e tratteggiata. Ogni grafico ha legenda con valori e tabella alternativa.
+- **Numeri in carattere monospazio** (Fira Code) e prezzi in centesimi, come su Polymarket.
+- **Accessibilità:** navigabile da tastiera, target touch di 44 px, rispetta la riduzione del movimento, nessuno scroll orizzontale da 375 px in su.
 
 ## Configurazione
 
@@ -218,6 +243,7 @@ curl "localhost:8000/articles?category=Economy&max_clickbait=0.3&w_urgency=0.6"
 | POST | `/markets/{id}/predict` | Previsione Jev immediata (aggiorna prima il prezzo) |
 | GET | `/predictions/opportunities` | Mercati con edge maggiore. Filtri: `min_edge`, `min_evidence`, `include_hold` |
 | GET | `/predictions/calibration` | Brier score sui mercati risolti |
+| GET | `/status` | Configurazione (Jev attivo, soglie) e contatori per la dashboard |
 
 Codici di errore di `/markets/{id}/predict`: `503` chiave TypeSafe mancante, `422` nessuna
 notizia collegata, `409` mercato chiuso o senza prezzo, `404` mercato sconosciuto.
@@ -314,6 +340,7 @@ backend/
 │   └── forecast.py         # blending, edge, Kelly, Brier
 ├── db/                     # modelli SQLAlchemy e query
 └── api/                    # schemi e route FastAPI
+frontend/                   # dashboard (index.html, styles.css, app.js, ui.js, charts.js)
 scripts/check_env.py        # verifica chiavi e database
 feeds.yaml                  # elenco dei feed
 ```
@@ -326,6 +353,7 @@ feeds.yaml                  # elenco dei feed
 - **Commissioni e spread** non sono modellati: `MIN_EDGE` deve coprirli.
 - **Collegamento per similarità dei titoli**: notizie rilevanti con titoli diversi dalla
   domanda del mercato possono sfuggire.
-- **Nessun frontend** incluso: se esiste una cartella `frontend/` viene servita su `/`.
+- **Dashboard senza autenticazione**: non esporla su internet così com'è, perché chiunque
+  potrebbe avviare aggiornamenti e previsioni a pagamento.
 
 [Polymarket]: https://polymarket.com
