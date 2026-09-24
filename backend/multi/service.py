@@ -96,10 +96,22 @@ async def _apply_outcomes(session: AsyncSession, event: MultiEvent, data) -> Non
         row.label, row.question, row.yes_price = o.group_title, o.question, o.yes_price
         row.volume, row.closed, row.resolved_yes, row.yes_token_id = o.volume, o.closed, o.resolved_yes, o.yes_token_id
         row.updated_at = _now()
-        # The same Polymarket market may have been synced as a YES/NO market before: hide it there
-        binary = await session.get(Market, o.id)
-        if binary is not None and binary.multi_event_id is None:
-            binary.multi_event_id = event.id
+        # Each outcome is also a row of the markets table, flagged with multi_event_id (hidden from the
+        # YES/NO lists): order book, economic evaluation, simulated bets and settlement work unchanged,
+        # and bets on several outcomes of one event share the per-event exposure cap (event_slug).
+        m = await session.get(Market, o.id)
+        if m is None:
+            m = Market(id=o.id, question=o.question)
+            session.add(m)
+        m.question, m.slug, m.event_slug, m.description = o.question, o.slug, event.slug, event.description
+        m.end_date = o.end_date or event.end_date
+        m.yes_price, m.volume, m.liquidity = o.yes_price, o.volume, o.liquidity or 0.0
+        m.active, m.closed, m.resolved_yes = o.active, o.closed, o.resolved_yes
+        for f in ("yes_token_id", "no_token_id", "best_bid", "best_ask", "taker_fee_bps", "order_min_size"):
+            if getattr(o, f) is not None:
+                setattr(m, f, getattr(o, f))
+        m.multi_event_id = event.id
+        m.updated_at = _now()
 
 
 # ---------- Links ----------
@@ -286,7 +298,66 @@ async def predict_event(session: AsyncSession, event: MultiEvent, max_wait: Opti
     session.add(prediction)
     await session.commit()
     logger.info(f"Jev forecast for event {event.id}: {signal} {best_id} (edge {best_edge})")
+    await apply_economics(session, event, prediction)
     return prediction
+
+
+# ---------- Economics and simulated bets ----------
+
+def outcome_prediction(prediction: MultiPrediction, outcome_id: str):
+    """A YES/NO-style view of one outcome of a multi-outcome forecast, for the economic evaluation."""
+    from types import SimpleNamespace
+    entry = next((o for o in prediction.outcomes if o["id"] == outcome_id), None)
+    if entry is None:
+        return None
+    strong = entry["edge"] >= settings.MIN_EDGE and prediction.evidence_strength >= settings.MIN_EVIDENCE
+    return SimpleNamespace(
+        id=None, market_id=outcome_id, created_at=prediction.created_at, signal="BUY_YES" if strong else "HOLD",
+        market_probability=entry.get("price", entry["market"]), model_probability=entry["model"],
+        blended_probability=entry["blended"], evidence_strength=prediction.evidence_strength,
+        model_weight=prediction.model_weight, edge=entry["edge"], multi_prediction_id=prediction.id,
+    )
+
+
+async def event_category(session: AsyncSession, event_id: str) -> Optional[str]:
+    """Dominant category of the news linked to the event (for the per-category cap and exclusions)."""
+    from collections import Counter
+    rows = (await session.execute(
+        select(ProcessedArticle.category).join(MultiArticleLink, MultiArticleLink.article_id == ProcessedArticle.article_id)
+        .where(MultiArticleLink.event_id == event_id, ProcessedArticle.category.is_not(None))
+    )).scalars().all()
+    return Counter(rows).most_common(1)[0][0] if rows else None
+
+
+MAX_EVALUATED_OUTCOMES = 3
+
+
+async def apply_economics(session: AsyncSession, event: MultiEvent, prediction: MultiPrediction) -> dict:
+    """Evaluates the most underpriced outcomes (up to 3) and places the simulated bet on the best one."""
+    from backend.betting import portfolio
+    from backend.db.models import Market
+    results = {}
+    try:
+        category = await event_category(session, event.id)
+        candidates = sorted((o for o in prediction.outcomes if o["id"] != OTHER_ID and o["edge"] > 0),
+                            key=lambda o: o["edge"], reverse=True)[:MAX_EVALUATED_OUTCOMES]
+        for entry in candidates:
+            market = await session.get(Market, entry["id"])
+            if market is None or market.closed:
+                continue
+            if category:
+                market.category = category
+            pred = outcome_prediction(prediction, entry["id"])
+            ev = await portfolio.evaluate_prediction(session, market, pred)
+            results[entry["id"]] = ev.as_dict()
+            if entry["id"] == prediction.best_outcome_id and prediction.signal == "BUY_YES":
+                await portfolio.maybe_place_bet(session, market, pred, ev)
+        prediction.economics = results
+        await session.commit()
+    except Exception as e:
+        logger.error(f"Economic evaluation failed for event {event.id}: {e}")
+        await session.rollback()
+    return results
 
 
 async def run_pipeline(session: AsyncSession) -> dict:

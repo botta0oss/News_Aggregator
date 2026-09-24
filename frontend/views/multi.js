@@ -1,6 +1,7 @@
 // "Più esiti": Polymarket events with several mutually exclusive outcomes, shown as a distribution.
 // Series identity as everywhere: market price = orange bar, Jev = aqua diamond, blended = blue circle.
 import { h, api, fmt, toast, icon, emptyState, infoTip, externalLink, debounce, withTooltip, ttRows } from "../ui.js";
+import { economicsCard, verdictBadge } from "../economics.js";
 
 const filters = { q: "", sort: "volume" };
 const SORTS = [["volume", "Volume"], ["edge", "Edge più alto"], ["signal", "Ultima previsione"], ["end_date", "Scadenza"], ["news", "Notizie collegate"]];
@@ -40,7 +41,11 @@ function signalLine(pred, outcomes) {
   if (!pred) return h("span", { class: "muted small" }, "Nessuna previsione");
   const best = pred.outcomes.find((o) => o.id === pred.best_outcome_id) || outcomes.find((o) => o.id === pred.best_outcome_id);
   if (pred.signal === "BUY_YES" && best) {
-    return h("span", { class: "badge badge-good" }, icon("up"), `Compra SÌ su ${best.label} · ${fmt.pts(pred.best_edge)}`);
+    const ev = pred.economics?.[best.id];
+    return h("span", { class: "signal-line" },
+      h("span", { class: "badge badge-good" }, icon("up"), `Compra SÌ su ${best.label} · ${fmt.pts(pred.best_edge)}`),
+      ev ? verdictBadge(ev.verdict) : null,
+      ev && ev.verdict !== "NO" ? h("span", { class: "muted small" }, `${fmt.money(ev.outlay)} a max ${fmt.cents(ev.limit_price)}`) : null);
   }
   return h("span", { class: "badge" }, icon("pause"), "Attendi");
 }
@@ -74,7 +79,7 @@ export async function viewMultiList(ctx) {
     summary, list);
 }
 
-function eventCard(e) {
+export function eventCard(e) {
   const pred = e.latest_prediction;
   const shown = e.outcomes.slice(0, 4);
   const values = shown.flatMap((o) => { const p = pred?.outcomes.find((x) => x.id === o.id); return p ? [p.market, p.model, p.blended] : [o.price]; });
@@ -157,6 +162,7 @@ export async function viewMultiDetail(ctx, id) {
         pred?.signal === "BUY_YES" && pred.best_outcome_id === r.id))),
       table,
       h("div", { class: "predict-bar" }, predictBtn, h("span", { class: "muted small" }, blocker || "Una chiamata all'API TypeSafe per tutto l'evento."))),
+    pred ? economicsSection(ctx, pred) : null,
     h("section", { class: "card", "aria-labelledby": "h-mx-news", style: { marginBottom: "16px" } },
       h("div", { class: "card-head" }, h("h2", { id: "h-mx-news" }, "Notizie collegate"),
         h("span", { class: "muted small" }, "Una per storia, dalla più utile")),
@@ -184,4 +190,23 @@ export async function viewMultiDetail(ctx, id) {
         }))))) : null,
     e.description ? h("details", { class: "card rules" }, h("summary", {}, "Regole di risoluzione"), h("p", { class: "secondary", style: { whiteSpace: "pre-line", marginTop: "10px" } }, e.description)) : null,
   );
+}
+
+/** "Conviene?" for one outcome: the same evaluation as YES/NO markets, on that outcome's YES share. */
+function economicsSection(ctx, pred) {
+  const candidates = pred.outcomes.filter((o) => o.id !== "other" && o.edge > 0).sort((a, b) => b.edge - a.edge);
+  if (!candidates.length) return null;
+  let selected = pred.best_outcome_id && candidates.some((o) => o.id === pred.best_outcome_id) ? pred.best_outcome_id : candidates[0].id;
+  const holder = h("div", {});
+  const paint = () => {
+    const o = candidates.find((c) => c.id === selected);
+    holder.replaceChildren(economicsCard(ctx, { id: o.id, question: `${o.label} (SÌ)` }));
+  };
+  const select = h("select", { id: "mx-outcome", class: "select", style: { minWidth: "260px", maxWidth: "100%" } },
+    candidates.map((o) => h("option", { value: o.id, selected: o.id === selected }, `${o.label} · edge ${fmt.pts(o.edge)}`)));
+  select.addEventListener("change", () => { selected = select.value; paint(); });
+  paint();
+  return h("div", { style: { marginBottom: "16px" } },
+    h("label", { class: "field", for: "mx-outcome", style: { marginBottom: "8px" } }, "Esito da valutare", select),
+    holder);
 }

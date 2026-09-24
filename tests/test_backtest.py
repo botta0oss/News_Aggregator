@@ -184,3 +184,61 @@ async def test_parameters_apply_and_reset(db, monkeypatch):
         assert settings.MODEL_WEIGHT_MAX == 0.3
         r = await api.post("/backtest/parameters/reset")
         assert r.json()["parameters"]["MODEL_WEIGHT_MAX"]["overridden"] is False and settings.MODEL_WEIGHT_MAX == 0.5
+
+
+# ---------- Multi-outcome events ----------
+
+def resolved_event():
+    from backend.markets.polymarket import parse_event
+    from tests.test_multi import TEAMS, gamma_event
+    teams = [(t, "1" if t == "Arsenal" else "0") for t, _ in TEAMS]
+    raw = gamma_event(teams=teams, closed=True)
+    raw["endDate"] = (NOW - timedelta(days=20)).isoformat()
+    for i, m in enumerate(raw["markets"]):
+        m["clobTokenIds"] = f'["t{i}", "n{i}"]'
+        m["volumeNum"] = 100_000 - i
+    return parse_event(raw)
+
+
+async def test_multi_outcome_backtest(db, jev_client, monkeypatch):
+    event = resolved_event()
+    assert event.winner_id == "101"
+    prices = {"t0": 0.45, "t1": 0.20, "t2": 0.15, "t3": 0.12, "t4": 0.08}  # Arsenal underpriced at the time
+
+    async def events(after, before, limit, min_volume, client=None):
+        return [event]
+
+    async def history(token, start, end, client=None):
+        points, t = [], start
+        while t <= end:
+            points.append((t, prices[token]))
+            t += timedelta(hours=6)
+        return points
+
+    async def feed(url):
+        as_of = event.end_date - timedelta(days=7)
+        return parse_feed(rss([("Arsenal favourites after beating Real Madrid in Champions League", "BBC", as_of - timedelta(days=1))]))
+
+    monkeypatch.setattr(engine.polymarket, "fetch_resolved_events", events)
+    monkeypatch.setattr(engine.polymarket, "fetch_price_history", history)
+    monkeypatch.setattr(engine, "fetch_feed", feed)
+    monkeypatch.setattr(engine, "get_title_embedding", fake_embedding)
+    jev_client(noul_value=0.9, score_value=3.0, choice_index=1)  # Jev favours Arsenal (2nd by price)
+
+    async with login_client("admin") as api:
+        r = await api.post("/backtest/runs", json={
+            "resolved_after": (NOW - timedelta(days=60)).date().isoformat(),
+            "resolved_before": (NOW - timedelta(days=1)).date().isoformat(), "horizons": [7], "kinds": ["multi"]})
+        assert r.status_code == 202, r.text
+        await engine.wait()
+        run = (await api.get(f"/backtest/runs/{r.json()['id']}")).json()
+        assert run["status"] == "done" and run["done"] == 1
+        m = run["summary"]["multi"]
+        assert m["n"] == 1 and m["brier_model"] < m["brier_market"]
+        assert m["favourite_right_model"] == 1.0 and m["favourite_right_market"] == 0.0
+        assert run["summary"]["overall"]["n"] == 0  # no YES/NO case mixed in
+        case = (await api.get(f"/backtest/runs/{r.json()['id']}/cases")).json()[0]
+        assert case["kind"] == "multi" and case["details"]["winner"] == "Arsenal" and case["details"]["best"] == "Arsenal"
+        assert case["signal"] == "BUY_YES"
+        assert (await api.post("/backtest/runs", json={"resolved_after": "2026-01-01", "resolved_before": "2026-02-01",
+                                                        "kinds": []})).status_code == 422

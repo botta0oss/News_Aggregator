@@ -251,6 +251,7 @@ class Alert(Base):
     __tablename__ = 'alerts'
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     market_id: Mapped[str] = mapped_column(ForeignKey('markets.id', ondelete='CASCADE'), index=True)
+    multi_event_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)  # alert on a multi-outcome event
     article_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('articles.id', ondelete='SET NULL'), nullable=True)
     prediction_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('market_predictions.id', ondelete='SET NULL'), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
@@ -316,6 +317,10 @@ class BacktestCase(Base):
     outlay: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     news: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)   # titles and sources passed to Jev
+    # "binary" or "multi"; for multi-outcome events price / model / blended are those of the winner and
+    # `details` holds the whole distribution and the multi-class Brier scores
+    kind: Mapped[str] = mapped_column(Text, default="binary", server_default="binary")
+    details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -375,6 +380,7 @@ class MultiArticleLink(Base):
     relevance: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     impact: Mapped[Optional[str]] = mapped_column(Text, nullable=True)       # outcome favoured by the news, if any
     impact_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    alert_checked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -392,6 +398,7 @@ class MultiPrediction(Base):
     best_edge: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     signal: Mapped[str] = mapped_column(Text, default="HOLD")   # BUY_YES (on best_outcome_id) / HOLD
     article_count: Mapped[int] = mapped_column(Integer, default=0)
+    economics: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)  # {outcome_id: evaluation}
 
 
 class ApiUsage(Base):

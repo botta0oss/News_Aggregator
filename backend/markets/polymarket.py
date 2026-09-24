@@ -216,6 +216,37 @@ async def fetch_multi_events(limit: Optional[int] = None, min_volume: Optional[f
     return events[:limit]
 
 
+async def fetch_resolved_events(resolved_after: datetime, resolved_before: datetime, limit: int = 50,
+                                min_volume: float = 50_000.0, client: Optional[httpx.AsyncClient] = None) -> list[PolymarketEvent]:
+    """Closed multi-outcome events with a single winner, most traded first (for backtests)."""
+    own_client = client is None
+    client = client or _client()
+    events: list[PolymarketEvent] = []
+    try:
+        offset = 0
+        for _ in range(20):
+            res = await client.get("/events", params={
+                "closed": "true", "order": "volume", "ascending": "false",
+                "end_date_min": resolved_after.date().isoformat(), "end_date_max": resolved_before.date().isoformat(),
+                "limit": PAGE_SIZE, "offset": offset,
+            })
+            res.raise_for_status()
+            page = res.json()
+            if not isinstance(page, list) or not page:
+                break
+            for raw in page:
+                event = parse_event(raw) if isinstance(raw, dict) else None
+                if event and event.winner_id and event.volume >= min_volume and event.end_date:
+                    events.append(event)
+            if len(events) >= limit or len(page) < PAGE_SIZE:
+                break
+            offset += PAGE_SIZE
+    finally:
+        if own_client:
+            await client.aclose()
+    return events[:limit]
+
+
 async def fetch_event(event_id: str, client: Optional[httpx.AsyncClient] = None) -> Optional[PolymarketEvent]:
     own_client = client is None
     client = client or _client()

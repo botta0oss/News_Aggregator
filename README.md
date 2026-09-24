@@ -539,7 +539,7 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 
 | Metodo | Path | Descrizione |
 |---|---|---|
-| GET · POST | `/backtest/runs` | Elenco dei backtest; avvio `{resolved_after, resolved_before, max_markets, min_volume, horizons, max_calls, exclude_decided}` (POST admin, `409` se uno è già in corso) |
+| GET · POST | `/backtest/runs` | Elenco dei backtest; avvio `{resolved_after, resolved_before, max_markets, min_volume, horizons, max_calls, exclude_decided, kinds}` (`kinds`: `binary` e/o `multi`) (POST admin, `409` se uno è già in corso) |
 | GET | `/backtest/runs/{id}` | Avanzamento e riepilogo (metriche, calibrazione, suggerimenti) |
 | GET | `/backtest/runs/{id}/cases` | Casi: `status` = `ok`, `skipped`, `all` |
 | POST | `/backtest/runs/{id}/stop` · DELETE `/backtest/runs/{id}` | Ferma o elimina (admin) |
@@ -558,6 +558,7 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 
 | Metodo | Path | Descrizione |
 |---|---|---|
+| GET | `/multi/opportunities` | Eventi con un esito sottovalutato (`min_edge`, `min_evidence`, `include_hold`), con la valutazione economica |
 | GET | `/multi` | Eventi con i primi esiti e l'ultima previsione. `q` (titolo o nome di un esito), `sort` = `volume`, `edge`, `signal`, `end_date`, `news` |
 | GET | `/multi/{id}` | Tutti gli esiti, notizie collegate, storico delle previsioni |
 | POST | `/multi/{id}/predict` | Previsione Jev della distribuzione (admin; `422` senza notizie) |
@@ -762,8 +763,31 @@ nella sezione **Più esiti**, perché si leggono come una distribuzione.
   marcatori di Jev (rombo) e blended (cerchio). Nel dettaglio: tutti gli esiti, la tabella,
   le notizie (con l'esito che ciascuna favorisce) e lo storico.
 
-Per ora la valutazione economica, il portafoglio simulato e le allerte riguardano solo i
-mercati Sì/No.
+**Economia, portafoglio, allerte e backtest.** Per gli esiti vale tutto quello che vale per i
+mercati Sì/No:
+- **Valutazione economica.** Dopo ogni previsione vengono valutati i 3 esiti più sottovalutati
+  sulla loro quota SÌ: prezzo reale del book, commissioni, incertezza, rendimento annualizzato,
+  Kelly e limiti del preset. Nel dettaglio dell'evento la scheda «Conviene?» permette di
+  scegliere l'esito.
+- **Portafoglio simulato.** L'esito migliore diventa una scommessa simulata, se conviene. Il
+  limite per evento vale per tutti gli esiti insieme, così non si punta su tre candidati della
+  stessa elezione oltre il rischio del preset. Esclusioni per evento e categoria e chiusura alla
+  risoluzione funzionano come per i mercati Sì/No.
+- **Opportunità.** Gli eventi con un esito sottovalutato compaiono in un blocco a parte, sotto i
+  mercati Sì/No.
+- **Allerte.** Una notizia fresca e pertinente collegata a un evento fa ricalcolare subito la
+  distribuzione (una chiamata). Se conviene arriva una notifica «Compra SÌ su …» e il prezzo
+  successivo viene misurato come per i mercati Sì/No.
+- **Backtest.** Scegli «Più esiti» tra i tipi di mercato. Per ogni evento risolto vengono
+  ricostruiti i prezzi storici dei 12 esiti più scambiati. Il risultato riporta:
+  - il Brier a più esiti (0 = perfetto, 2 = certo e sbagliato);
+  - la probabilità data al vincitore;
+  - quante volte il favorito ha vinto, per Jev e per il mercato;
+  - le scommesse simulate.
+
+Tecnicamente ogni esito è anche una riga della tabella dei mercati, segnata con
+`multi_event_id` e nascosta dagli elenchi Sì/No: book, valutazione economica, scommesse e
+chiusura usano lo stesso codice.
 
 ## Backtest
 

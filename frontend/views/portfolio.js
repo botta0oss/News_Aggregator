@@ -43,7 +43,7 @@ export async function viewPortfolio(ctx) {
     });
     return btn;
   };
-  const marketLink = (b) => h("a", { href: `#/mercati/${encodeURIComponent(b.market_id)}` }, b.question);
+  const marketLink = (b) => h("a", { href: b.multi_event_id ? `#/multi/${encodeURIComponent(b.multi_event_id)}` : `#/mercati/${encodeURIComponent(b.market_id)}` }, b.question);
 
   const openTable = open.length ? h("div", { class: "table-wrap" }, h("table", {},
     h("thead", {}, h("tr", {},

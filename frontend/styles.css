@@ -828,3 +828,5 @@ th.num .th-sort { flex-direction: row-reverse; }
 }
 .dist-track .pmark { width: 12px; height: 12px; }
 .dist-track .pmark.jev { width: 9px; height: 9px; }
+.opps-multi { margin-top: 24px; }
+.signal-line { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }

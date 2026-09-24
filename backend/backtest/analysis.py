@@ -109,12 +109,43 @@ def suggest(cases: list[dict]) -> Optional[dict]:
     }
 
 
+def multi_metrics(cases: list[dict]) -> Optional[dict]:
+    """Multi-outcome events: multi-class Brier, how often the favourite won, simulated bets."""
+    if not cases:
+        return None
+    d = [c["details"] for c in cases]
+    signals = [c for c in cases if c.get("signal") == "BUY_YES"]
+    hits = [c for c in signals if c["details"].get("best") == c["details"].get("winner")]
+    bets = [c for c in cases if c.get("verdict") in ("GO", "SMALL") and c.get("outlay")]
+    staked = sum(c["outlay"] for c in bets)
+    pnl = sum(c["pnl"] or 0.0 for c in bets)
+    return {
+        "n": len(cases),
+        "brier_market": _mean([x["brier_market"] for x in d]),
+        "brier_model": _mean([x["brier_model"] for x in d]),
+        "brier_blended": _mean([x["brier_blended"] for x in d]),
+        "winner_prob_market": _mean([c["price"] for c in cases]),
+        "winner_prob_model": _mean([c["model_probability"] for c in cases]),
+        "winner_prob_blended": _mean([c["blended_probability"] for c in cases]),
+        "favourite_right_market": round(sum(1 for x in d if x["market_top_right"]) / len(d), 4),
+        "favourite_right_model": round(sum(1 for x in d if x["model_top_right"]) / len(d), 4),
+        "signals": len(signals),
+        "signal_hit_rate": round(len(hits) / len(signals), 4) if signals else None,
+        "bets": len(bets),
+        "bets_won": sum(1 for c in bets if (c["pnl"] or 0) > 0),
+        "staked": round(staked, 2), "pnl": round(pnl, 2), "roi": round(pnl / staked, 4) if staked else None,
+    }
+
+
 def summarize(cases: list[dict]) -> dict:
+    multi = [c for c in cases if c.get("kind") == "multi" and c["status"] == "ok"]
+    cases_all = cases
+    cases = [c for c in cases if c.get("kind", "binary") == "binary"]
     ok = [c for c in cases if c["status"] == "ok"]
     horizons = sorted({c["horizon_days"] for c in ok})
     categories = sorted({c["category"] or "Altro" for c in ok})
     skipped = {}
-    for c in cases:
+    for c in cases_all:
         if c["status"] != "ok":
             skipped[c["note"] or c["status"]] = skipped.get(c["note"] or c["status"], 0) + 1
     return {
@@ -126,4 +157,5 @@ def summarize(cases: list[dict]) -> dict:
                         "market": calibration_bins(ok, "price")},
         "suggestion": suggest(ok),
         "skipped": skipped,
+        "multi": multi_metrics(multi),
     }

@@ -22,7 +22,8 @@ def _prediction_out(p: Optional[MultiPrediction]) -> Optional[dict]:
         return None
     return {"id": p.id, "created_at": p.created_at, "model_name": p.model_name, "evidence_strength": p.evidence_strength,
             "model_weight": p.model_weight, "outcomes": p.outcomes, "best_outcome_id": p.best_outcome_id,
-            "best_edge": p.best_edge, "signal": p.signal, "article_count": p.article_count}
+            "best_edge": p.best_edge, "signal": p.signal, "article_count": p.article_count,
+            "economics": p.economics or {}}
 
 
 async def _latest(db: AsyncSession, ids: list[str]) -> dict:
@@ -80,6 +81,30 @@ async def list_events(
     }[sort]
     events = sorted(events, key=key)[:limit]
     return {"total": len(ids), "events": [_event_out(e, outcomes.get(e.id, []), links.get(e.id, 0), preds.get(e.id), top=5) for e in events]}
+
+
+@router.get("/opportunities")
+async def opportunities(
+    min_edge: float = Query(0.05, ge=0.0, le=1.0),
+    min_evidence: float = Query(0.0, ge=0.0, le=1.0),
+    include_hold: bool = Query(False),
+    limit: int = Query(30, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """Open events whose latest forecast finds an underpriced outcome, largest edge first."""
+    events = (await db.execute(select(MultiEvent).where(MultiEvent.closed == False))).scalars().all()  # noqa: E712
+    preds = await _latest(db, [e.id for e in events])
+    chosen = [e for e in events if e.id in preds
+              and (preds[e.id].best_edge or 0) >= min_edge and preds[e.id].evidence_strength >= min_evidence
+              and (include_hold or preds[e.id].signal == "BUY_YES")]
+    chosen.sort(key=lambda e: -(preds[e.id].best_edge or 0))
+    chosen = chosen[:limit]
+    out = []
+    for e in chosen:
+        outcomes = await service.outcomes_of(db, e.id)
+        links = (await db.execute(select(func.count()).select_from(MultiArticleLink).where(MultiArticleLink.event_id == e.id))).scalar() or 0
+        out.append(_event_out(e, outcomes, links, preds[e.id], top=5))
+    return out
 
 
 @router.get("/{event_id}")

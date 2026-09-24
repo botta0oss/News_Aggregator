@@ -25,6 +25,7 @@ class RunIn(BaseModel):
     horizons: list[int] = Field(default_factory=lambda: [7])
     max_calls: int = Field(60, ge=1, le=1000)
     exclude_decided: bool = True
+    kinds: list[Literal["binary", "multi"]] = Field(default_factory=lambda: ["binary"])
 
 
 class ParametersIn(BaseModel):
@@ -56,7 +57,7 @@ async def start_run(body: RunIn):
         resolved_after=datetime.combine(body.resolved_after, time.min, tzinfo=timezone.utc),
         resolved_before=datetime.combine(body.resolved_before, time.max, tzinfo=timezone.utc),
         max_markets=body.max_markets, min_volume=body.min_volume, horizons=body.horizons,
-        max_calls=body.max_calls, exclude_decided=body.exclude_decided,
+        max_calls=body.max_calls, exclude_decided=body.exclude_decided, kinds=list(body.kinds),
     )
     try:
         run = await engine.start(params)
