@@ -386,72 +386,143 @@ function opportunityCard({ market, prediction: p }) {
 }
 
 // ---------- Mercati ----------
-const marketFilters = { q: "", onlyLinked: null, includeClosed: false };
+// key -> label, default direction, direction wording (what "asc" and "desc" mean for this field)
+const MARKET_SORTS = {
+  volume: { label: "Volume", dir: "desc", asc: "dal più basso", desc: "dal più alto" },
+  end_date: { label: "Scadenza", dir: "asc", asc: "prima i più vicini", desc: "prima i più lontani" },
+  price: { label: "Prezzo SÌ", dir: "desc", asc: "dal più basso", desc: "dal più alto" },
+  signal: { label: "Ultimo segnale", dir: "desc", asc: "prima i meno recenti", desc: "prima i più recenti" },
+  edge: { label: "Edge", dir: "desc", asc: "dal più piccolo", desc: "dal più grande" },
+  news: { label: "Notizie collegate", dir: "desc", asc: "prima le meno", desc: "prima le più" },
+  liquidity: { label: "Liquidità", dir: "desc", asc: "dalla più bassa", desc: "dalla più alta" },
+  question: { label: "Nome", dir: "asc", asc: "A → Z", desc: "Z → A" },
+};
+const marketFilters = { q: "", onlyLinked: null, includeClosed: false, sort: "volume", order: null };
+try {
+  const saved = JSON.parse(localStorage.getItem("markets-sort") || "null");
+  if (saved && MARKET_SORTS[saved.sort]) Object.assign(marketFilters, { sort: saved.sort, order: saved.order === "asc" || saved.order === "desc" ? saved.order : null });
+} catch { /* storage unavailable: keep the default */ }
 const PAGE = 50;
+
+const sortDir = () => marketFilters.order || MARKET_SORTS[marketFilters.sort].dir;
+
+function setMarketSort(key, order = null) {
+  marketFilters.sort = key;
+  marketFilters.order = order;
+  try { localStorage.setItem("markets-sort", JSON.stringify({ sort: key, order })); } catch { /* ignore */ }
+}
 
 async function viewMarkets() {
   await loadStatus();
   if (marketFilters.onlyLinked == null) marketFilters.onlyLinked = (status?.linked_markets ?? 0) > 0;
 
   const tbody = h("tbody", {});
-  const summary = h("p", { class: "muted small", role: "status" });
+  const summary = h("p", { class: "muted small", role: "status", "aria-live": "polite" });
   const more = h("div", { class: "more" });
+  const headRow = h("tr", {});
+  const sortControls = h("div", { class: "sort-controls" });
   let offset = 0;
+  let loadToken = 0;
 
   const load = async (reset) => {
+    const token = ++loadToken;
     if (reset) offset = 0;
     const data = await api("/markets", {
-      params: { q: marketFilters.q, only_linked: marketFilters.onlyLinked, include_closed: marketFilters.includeClosed, limit: PAGE, offset },
+      params: {
+        q: marketFilters.q, only_linked: marketFilters.onlyLinked, include_closed: marketFilters.includeClosed,
+        sort: marketFilters.sort, order: marketFilters.order, limit: PAGE, offset,
+      },
     });
+    if (token !== loadToken) return;
     if (reset) clear(tbody);
     tbody.append(...data.markets.map(marketRow));
     offset += data.markets.length;
-    summary.textContent = data.total ? `${fmt.int(offset)} di ${fmt.int(data.total)} mercati, ordinati per volume` : "";
+    const s = MARKET_SORTS[marketFilters.sort];
+    summary.textContent = data.total
+      ? `${fmt.int(offset)} di ${fmt.count(data.total, "mercato", "mercati")}, ordinati per ${s.label.charAt(0).toLowerCase() + s.label.slice(1)} (${s[sortDir()]})` : "";
     more.replaceChildren(offset < data.total
       ? h("button", { class: "btn btn-ghost", type: "button", on: { click: () => load(false) } }, "Carica altri")
       : "");
     tableWrap.hidden = data.total === 0;
     empty.hidden = data.total !== 0;
   };
-  const reloadSoon = debounce(() => load(true).catch((e) => toast(e.message, { error: true })), 300);
+  const reload = () => { paintSort(); return load(true).catch((e) => toast(e.message, { error: true })); };
+  const reloadSoon = debounce(reload, 300);
+
+  // Column headers: click sorts, a second click on the same column reverses the direction
+  const COLUMNS = [
+    ["question", "Mercato", ""], ["price", "Prezzo SÌ", "num"], ["volume", "Volume", "num"], ["liquidity", "Liquidità", "num"],
+    ["end_date", "Scadenza", ""], ["news", "Notizie", "num"], ["signal", "Ultimo segnale", ""], ["edge", "Edge", "num"],
+  ];
+  function paintSort() {
+    const dir = sortDir();
+    headRow.replaceChildren(...COLUMNS.map(([key, label, cls]) => {
+      const active = marketFilters.sort === key;
+      const btn = h("button", { class: `th-sort${active ? " active" : ""}`, type: "button",
+        title: active ? `Ordinato per ${label.toLowerCase()}, ${MARKET_SORTS[key][dir]}. Clic per invertire` : `Ordina per ${label.toLowerCase()}` },
+      label, icon(active ? (dir === "asc" ? "arrowUp" : "arrowDown") : "sort", `icon-svg sort-icon${active ? "" : " sort-idle"}`));
+      btn.addEventListener("click", () => {
+        if (active) setMarketSort(key, dir === "asc" ? "desc" : "asc");
+        else setMarketSort(key, null);
+        reload();
+      });
+      return h("th", { class: cls, "aria-sort": active ? (dir === "asc" ? "ascending" : "descending") : "none" }, btn);
+    }));
+
+    const select = h("select", { id: "m-sort", class: "select" },
+      Object.entries(MARKET_SORTS).map(([key, s]) => h("option", { value: key, selected: key === marketFilters.sort }, s.label)));
+    select.addEventListener("change", () => { setMarketSort(select.value, null); reload(); });
+    const s = MARKET_SORTS[marketFilters.sort];
+    const flip = h("button", { class: "btn btn-ghost", type: "button", "aria-label": `Direzione: ${s[dir]}. Clic per invertire` },
+      icon(dir === "asc" ? "arrowUp" : "arrowDown"), s[dir]);
+    flip.addEventListener("click", () => { setMarketSort(marketFilters.sort, dir === "asc" ? "desc" : "asc"); reload(); });
+    sortControls.replaceChildren(h("label", { class: "field", for: "m-sort" }, "Ordina per", select), flip);
+  }
 
   const search = h("input", { id: "m-search", class: "search", type: "search", placeholder: "Cerca un mercato (es. Fed, elezioni, Bitcoin)", value: marketFilters.q, "aria-label": "Cerca un mercato" });
   search.addEventListener("input", () => { marketFilters.q = search.value.trim(); reloadSoon(); });
 
   const tableWrap = h("div", { class: "table-wrap" },
-    h("table", {},
-      h("thead", {}, h("tr", {},
-        h("th", {}, "Mercato"), h("th", { class: "num" }, "Prezzo SÌ"), h("th", { class: "num" }, "Volume"),
-        h("th", {}, "Scadenza"), h("th", { class: "num" }, "Notizie"), h("th", {}, "Ultimo segnale"),
-      )),
-      tbody,
-    ),
+    h("table", { class: "markets-table" }, h("thead", {}, headRow), tbody),
   );
   const empty = emptyState("Nessun mercato trovato",
     marketFilters.onlyLinked ? "Nessun mercato con notizie collegate corrisponde alla ricerca. Togli il filtro «Solo con notizie» per vederli tutti." : "Aggiorna i mercati da Polymarket o cambia la ricerca.");
   empty.hidden = true;
 
+  paintSort();
   await load(true);
   return h("div", {},
     pageHead("Mercati", "I mercati Sì/No più scambiati su Polymarket. Il prezzo in centesimi è la probabilità implicita del SÌ."),
-    h("div", { class: "filters", role: "group", "aria-label": "Filtri" },
+    h("div", { class: "filters", role: "group", "aria-label": "Filtri e ordinamento" },
       h("div", { class: "search-wrap" }, icon("search"), search),
       checkField("m-linked", "Solo con notizie", marketFilters.onlyLinked, (v) => { marketFilters.onlyLinked = v; reloadSoon(); }),
       checkField("m-closed", "Includi chiusi", marketFilters.includeClosed, (v) => { marketFilters.includeClosed = v; reloadSoon(); }),
+      sortControls,
     ),
     h("div", { class: "stack" }, summary, tableWrap, empty, more),
   );
 }
 
+function daysLeft(end) {
+  if (!end) return null;
+  const days = Math.ceil((new Date(end).getTime() - Date.now()) / 86_400_000);
+  return days < 0 ? "scaduto" : days === 0 ? "oggi" : days === 1 ? "domani" : `tra ${fmt.int(days)} gg`;
+}
+
 function marketRow(m) {
   const p = m.latest_prediction;
+  const left = daysLeft(m.end_date);
   const row = h("tr", { class: "clickable", on: { click: (e) => { if (!e.target.closest("a")) window.location.hash = marketHref(m.id); } } },
     h("td", { class: "q-cell" }, h("a", { href: marketHref(m.id) }, m.question)),
     h("td", { class: "num" }, fmt.cents(m.yes_price)),
     h("td", { class: "num" }, fmt.usd(m.volume)),
-    h("td", {}, fmt.date(m.end_date)),
+    h("td", { class: "num" }, fmt.usd(m.liquidity)),
+    h("td", { class: "nowrap" }, fmt.date(m.end_date), left ? h("div", { class: "muted small" }, left) : null),
     h("td", { class: "num" }, fmt.int(m.linked_articles)),
-    h("td", {}, p ? h("span", { style: { display: "inline-flex", gap: "8px", alignItems: "center" } }, signalBadge(p.signal), h("span", { class: "mono small" }, fmt.pts(p.edge))) : m.closed ? marketStateBadge(m) : h("span", { class: "muted small" }, "–")),
+    h("td", { class: "nowrap" }, p
+      ? [signalBadge(p.signal), h("div", { class: "muted small", title: fmt.dateTime(p.created_at) }, fmt.ago(p.created_at))]
+      : m.closed ? marketStateBadge(m) : h("span", { class: "muted small" }, "Nessuna previsione")),
+    h("td", { class: `num ${p ? (p.edge > 0 ? "pos" : p.edge < 0 ? "neg" : "") : ""}` }, p ? fmt.pts(p.edge) : "–"),
   );
   return row;
 }

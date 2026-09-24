@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,6 +81,9 @@ async def list_markets(
     q: Optional[str] = Query(None, description="Filtra per testo nella domanda del mercato"),
     only_linked: bool = Query(False, description="Solo mercati con notizie collegate"),
     include_closed: bool = Query(False),
+    sort: Literal["volume", "end_date", "price", "signal", "edge", "news", "liquidity", "question"] = Query(
+        "volume", description="Ordinamento: volume, scadenza, prezzo SÌ, ultimo segnale, edge, notizie collegate, liquidità, domanda"),
+    order: Optional[Literal["asc", "desc"]] = Query(None, description="Direzione; default sensato per ogni campo"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -94,7 +97,35 @@ async def list_markets(
         query = query.where(Market.id.in_(select(MarketArticleLink.market_id)))
 
     total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar() or 0
-    markets = (await db.execute(query.order_by(Market.volume.desc()).offset(offset).limit(limit))).scalars().all()
+
+    # Sorting in SQL so pagination covers the whole list
+    latest = (
+        select(MarketPrediction.market_id, MarketPrediction.created_at, MarketPrediction.edge)
+        .distinct(MarketPrediction.market_id)
+        .order_by(MarketPrediction.market_id, MarketPrediction.created_at.desc())
+        .subquery()
+    )
+    links = (
+        select(MarketArticleLink.market_id, func.count().label("n"))
+        .group_by(MarketArticleLink.market_id).subquery()
+    )
+    query = query.outerjoin(latest, latest.c.market_id == Market.id).outerjoin(links, links.c.market_id == Market.id)
+    columns = {
+        "volume": (Market.volume, "desc"),
+        "end_date": (Market.end_date, "asc"),          # soonest first
+        "price": (Market.yes_price, "desc"),
+        "signal": (latest.c.created_at, "desc"),       # most recent forecast first
+        "edge": (func.abs(latest.c.edge), "desc"),     # largest gap from the price first
+        "news": (func.coalesce(links.c.n, 0), "desc"),
+        "liquidity": (Market.liquidity, "desc"),
+        "question": (func.lower(Market.question), "asc"),
+    }
+    column, default_order = columns[sort]
+    direction = column.desc() if (order or default_order) == "desc" else column.asc()
+    # Markets without a value (no forecast, no end date) always go last; volume breaks ties
+    query = query.order_by(direction.nulls_last(), Market.volume.desc(), Market.id)
+
+    markets = (await db.execute(query.offset(offset).limit(limit))).scalars().all()
     ids = [m.id for m in markets]
     counts, preds = await _link_counts(db, ids), await _latest_predictions(db, ids)
     return {"total": total, "markets": [_market_dict(m, counts.get(m.id, 0), preds.get(m.id)) for m in markets]}

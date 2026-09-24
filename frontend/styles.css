@@ -615,3 +615,17 @@ mark { background: color-mix(in srgb, var(--warning) 35%, transparent); color: i
 td.pos, td.neg { font-weight: 500; }
 .field input.switch { width: 38px; height: 22px; flex: none; }
 .nowrap { white-space: nowrap; }
+
+/* ---------- Sortable table ---------- */
+.th-sort {
+  display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; padding: 4px 0; margin: 0;
+  font: inherit; color: inherit; cursor: pointer; white-space: nowrap;
+}
+.th-sort:hover { color: var(--text-primary); }
+.th-sort.active { color: var(--text-primary); font-weight: 600; }
+th.num .th-sort { flex-direction: row-reverse; }
+.sort-icon { width: 14px; height: 14px; }
+.sort-idle { opacity: .35; }
+.th-sort:hover .sort-idle { opacity: .8; }
+.sort-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+@media (max-width: 760px) { .sort-controls { margin-left: 0; } }
