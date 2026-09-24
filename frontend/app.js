@@ -10,6 +10,7 @@ import { viewMethod } from "./views/method.js";
 import { viewPortfolio } from "./views/portfolio.js";
 import { bulkPredict } from "./views/bulk.js";
 import { viewAlerts } from "./views/alerts.js";
+import { renderNav, markCurrent, setBadge, setupCollapse, setupMenu } from "./nav.js";
 import { economicsCard, verdictBadge } from "./economics.js";
 
 const view = document.getElementById("view");
@@ -24,9 +25,9 @@ const isAdmin = () => me?.role === "admin";
 function setSignedIn(info) {
   me = info.user;
   setCsrfToken(info.csrf_token);
-  for (const id of ["tabs", "actions", "footer"]) document.getElementById(id).hidden = false;
-  document.getElementById("user-name").textContent = me.username;
-  document.getElementById("user-link").setAttribute("title", `${me.username} (${me.role === "admin" ? "amministratore" : "sola lettura"}): account e password`);
+  for (const id of ["sidebar", "bottom-nav", "actions", "footer"]) document.getElementById(id).hidden = false;
+  document.body.classList.add("signed-in");
+  renderNav({ user: me, onLogout: logout });
   // Jobs and paid API calls are admin-only: viewers don't get the buttons
   document.querySelectorAll(".admin-only").forEach((el) => { el.hidden = !isAdmin(); });
 }
@@ -35,7 +36,9 @@ function setSignedOut() {
   me = null;
   status = null;
   setCsrfToken(null);
-  for (const id of ["tabs", "actions", "footer", "banner"]) document.getElementById(id).hidden = true;
+  for (const id of ["sidebar", "bottom-nav", "actions", "footer", "banner", "more-sheet"]) document.getElementById(id).hidden = true;
+  document.body.classList.remove("signed-in", "no-scroll");
+  document.getElementById("topbar-status").textContent = "";
 }
 
 async function checkSession() {
@@ -132,7 +135,8 @@ async function loadStatus() {
     status = null;
   }
   renderBanner();
-  renderFooter();
+  renderStatusLine();
+  refreshBadges();
   return status;
 }
 
@@ -153,17 +157,27 @@ function renderBanner() {
   }
 }
 
-function renderFooter() {
-  const el = document.getElementById("footer-status");
-  if (!status) return (el.textContent = "");
+/** One line in the top bar: is the data fresh and is Jev working? */
+function renderStatusLine() {
+  const el = document.getElementById("topbar-status");
+  if (!status) return el.replaceChildren(h("span", { class: "dot warn", "aria-hidden": "true" }), "Server non raggiungibile");
   const parts = [
-    `${fmt.int(status.articles)} notizie`,
-    status.last_article_at ? `ultima ${fmt.ago(status.last_article_at)}` : null,
+    status.last_article_at ? `Ultima notizia ${fmt.ago(status.last_article_at)}` : "Nessuna notizia ancora",
     `${fmt.int(status.open_markets)} mercati aperti`,
     `Jev ${status.jev_enabled ? "attivo" : "non configurato"}`,
-    status.prediction_auto ? "previsioni automatiche attive" : "previsioni manuali",
+    status.prediction_auto ? "previsioni automatiche" : "previsioni manuali",
   ];
-  el.textContent = parts.filter(Boolean).join(" · ");
+  el.replaceChildren(h("span", { class: `dot${status.jev_enabled ? "" : " warn"}`, "aria-hidden": "true" }), parts.join(" · "));
+  el.title = el.textContent;
+}
+
+/** Opportunities from the alerts of the last 24 hours, as a badge on "Allerte". */
+async function refreshBadges() {
+  try {
+    const items = await api("/alerts", { params: { kind: "opportunities", limit: 100 } });
+    const since = Date.now() - 86_400_000;
+    setBadge("allerte", items.filter((a) => new Date(a.created_at).getTime() >= since).length);
+  } catch { /* the badge is optional */ }
 }
 
 function setBusy(btn, busy) {
@@ -174,7 +188,9 @@ function setBusy(btn, busy) {
 
 /** Starts a background job, then refreshes the page a few times while it runs. */
 async function runJob(btn, path, startedMessage) {
+  const jobs = document.getElementById("btn-jobs");
   setBusy(btn, true);
+  setBusy(jobs, true);
   try {
     await api(path, { method: "POST" });
     toast(startedMessage);
@@ -188,6 +204,7 @@ async function runJob(btn, path, startedMessage) {
     toast(e.message, { error: true });
   } finally {
     setBusy(btn, false);
+    setBusy(jobs, false);
   }
 }
 
@@ -195,7 +212,8 @@ function setupShell() {
   window.__appStarted = true; // read by boot-check.js
   document.querySelector(".boot-error")?.remove();
   hydrateIcons();
-  document.getElementById("btn-logout").addEventListener("click", logout);
+  setupCollapse();
+  setupMenu(document.getElementById("btn-jobs"), document.getElementById("jobs-menu"));
   window.addEventListener("auth:required", () => {
     if (me) showLogin("La sessione è scaduta. Accedi di nuovo.");
   });
@@ -244,13 +262,7 @@ async function route({ quiet = false } = {}) {
     return;
   }
   const [re, tab, render] = match;
-  document.querySelectorAll(".tabs a").forEach((a) => {
-    if (a.dataset.tab === tab) a.setAttribute("aria-current", "page");
-    else a.removeAttribute("aria-current");
-  });
-  const settingsLink = document.getElementById("settings-link");
-  if (tab === "impostazioni") settingsLink.setAttribute("aria-current", "page");
-  else settingsLink.removeAttribute("aria-current");
+  markCurrent(tab);
   const token = ++renderToken;
   if (!quiet) {
     clear(view).append(skeleton(3));

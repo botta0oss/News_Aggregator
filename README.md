@@ -106,6 +106,16 @@ cambi lo schema di una tabella esistente, aggiornala a mano.
 L'interfaccia web è servita dalla stessa app su `/`: HTML, CSS e JavaScript senza
 dipendenze né build, nella cartella `frontend/`.
 
+**Navigazione.** Le sezioni sono raggruppate per quello che si sta facendo: *Segnali*
+(Opportunità, Allerte), *Mercati*, *Notizie*, *Risultati* (Portafoglio, Calibrazione).
+Impostazioni, «Come funziona» e account stanno in fondo.
+- **Da 1024 px in su:** menu laterale, che si può ridurre alle sole icone; la scelta viene
+  ricordata. In alto una riga di stato (ultima notizia, mercati aperti, Jev attivo) e il menu
+  «Aggiorna» con gli aggiornamenti di notizie e mercati (solo admin).
+- **Su tablet e telefono:** barra in basso con le quattro sezioni più usate e «Altro» per
+  tutte le altre.
+- Il numero su «Allerte» indica le opportunità delle ultime 24 ore.
+
 | Sezione | Cosa mostra |
 |---|---|
 | **Opportunità** | Mercati con segnale attivo ordinati per edge: prezzo, stima Jev e probabilità blended sulla stessa scala 0–100 %, puntata suggerita e forza delle evidenze. Filtri per edge ed evidenze minime. |
@@ -124,8 +134,8 @@ superati e puntata. I termini tecnici hanno una definizione al passaggio del mou
 La ricerca accetta frasi tra virgolette, `-parola` per escludere e `or` per alternative;
 l'ultima parola vale anche come prefisso. Il link `#/notizie?q=...` riapre la stessa ricerca.
 
-I pulsanti in alto avviano l'aggiornamento di notizie e mercati. La pagina si aggiorna da
-sola mentre il lavoro procede in background.
+Il menu «Aggiorna» avvia l'aggiornamento di notizie e mercati. La pagina si aggiorna da sola
+mentre il lavoro procede in background.
 
 **Valuta tutti con Jev** (in Opportunità e Mercati, solo admin) chiede una previsione per
 ogni mercato aperto con notizie recenti collegate. Prima di partire mostra quante chiamate a
