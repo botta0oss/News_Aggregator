@@ -49,6 +49,19 @@ class Settings(BaseSettings):
     TARGETED_NEWS_MAX_RESULTS: int = 10       # articles kept per search
     TARGETED_NEWS_DAYS: int = 7               # only news from the last N days
 
+    # Paid AI calls: daily limits (0 = no limit) and prices to estimate the cost.
+    # All editable from the dashboard (page "Uso e costi"); prices in USD per million tokens.
+    DAILY_JEV_CALL_LIMIT: int = 0
+    DAILY_AI_BUDGET_USD: float = 0.0
+    JEV_PRICE_PER_CALL: float = 0.0
+    JEV_PRICE_INPUT_MTOK: float = 0.0
+    JEV_PRICE_OUTPUT_MTOK: float = 0.0
+    GROQ_PRICE_INPUT_MTOK: float = 0.0
+    GROQ_PRICE_OUTPUT_MTOK: float = 0.0
+    GEMINI_PRICE_INPUT_MTOK: float = 0.0
+    GEMINI_PRICE_OUTPUT_MTOK: float = 0.0
+    USAGE_WARN_SHARE: float = 0.8             # warn when this share of a daily limit is used
+
     # News-vs-price alerts (the thresholds are edited in the dashboard)
     ALERT_SCAN_MINUTES: int = 10              # fast scan: new news -> links -> alerts, without AI summaries
     ALERT_FOLLOWUP_MINUTES: int = 5           # how often the price after each alert is recorded

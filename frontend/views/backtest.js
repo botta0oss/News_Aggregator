@@ -41,6 +41,10 @@ function newRunCard(ctx, params) {
   const volume = h("input", { id: "bt-volume", class: "input", type: "number", min: "0", step: "10000", value: "50000", inputmode: "numeric" });
   const calls = h("input", { id: "bt-calls", class: "input", type: "number", min: "1", max: "1000", value: "60", inputmode: "numeric" });
   const decided = h("input", { id: "bt-decided", type: "checkbox", checked: true });
+  const kinds = [["binary", "Sì / No"], ["multi", "Più esiti"]].map(([k, label]) => {
+    const box = h("input", { type: "checkbox", value: k, checked: k === "binary", id: `bt-k-${k}` });
+    return [box, h("label", { class: "chip", for: `bt-k-${k}` }, box, label)];
+  });
   const horizons = [[1, "1 giorno prima"], [7, "7 giorni prima"], [30, "30 giorni prima"]].map(([d, label]) => {
     const box = h("input", { type: "checkbox", value: String(d), checked: d === 7, id: `bt-h${d}` });
     return [box, h("label", { class: "chip", for: `bt-h${d}` }, box, label)];
@@ -61,11 +65,13 @@ function newRunCard(ctx, params) {
   go.addEventListener("click", async () => {
     const hs = horizons.filter(([b]) => b.checked).map(([b]) => Number(b.value));
     if (!hs.length) return toast("Scegli almeno un orizzonte", { error: true });
+    const ks = kinds.filter(([b]) => b.checked).map(([b]) => b.value);
+    if (!ks.length) return toast("Scegli almeno un tipo di mercato", { error: true });
     ctx.setBusy(go, true);
     try {
       await api("/backtest/runs", { method: "POST", body: {
         resolved_after: after.value, resolved_before: before.value, max_markets: Number(markets.value),
-        min_volume: Number(volume.value), horizons: hs, max_calls: Number(calls.value), exclude_decided: decided.checked,
+        min_volume: Number(volume.value), horizons: hs, max_calls: Number(calls.value), exclude_decided: decided.checked, kinds: ks,
       } });
       toast("Backtest avviato: puoi continuare a usare la dashboard.");
       ctx.rerender();
@@ -85,6 +91,9 @@ function newRunCard(ctx, params) {
       h("div", { class: "field-col" }, h("span", { class: "field-label" }, "Quando fare la previsione"),
         h("div", { class: "chips", role: "group", "aria-label": "Orizzonti" }, horizons.map(([, chip]) => chip))),
       field("bt-calls", "Limite di chiamate a Jev", calls),
+      h("div", { class: "field-col" }, h("span", { class: "field-label" }, "Tipo di mercati"),
+        h("div", { class: "chips", role: "group", "aria-label": "Tipo di mercati" }, kinds.map(([, chip]) => chip)),
+        h("span", { class: "muted small" }, "Più esiti: una chiamata per evento; prezzi storici dei 12 esiti più scambiati")),
     ),
     h("label", { class: "field", for: "bt-decided", style: { marginTop: "12px" } }, decided,
       "Salta i mercati già decisi dal prezzo (sotto il 3% o sopra il 97%)"),
@@ -207,13 +216,16 @@ function metricsTable(rows, firstLabel, firstValue) {
 
 async function resultsView(ctx, run, params) {
   const s = run.summary;
-  if (!s || !s.overall.n) {
+  if (!s || (!s.overall.n && !s.multi)) {
     return h("section", { class: "card" }, h("h2", {}, "Risultati"),
       h("p", { class: "secondary" }, run.message || "Nessun caso valutato con Jev in questo backtest."),
       s?.skipped && Object.keys(s.skipped).length ? skippedList(s.skipped) : null);
   }
   const o = s.overall;
-  const cases = await api(`/backtest/runs/${run.id}/cases`);
+  const allCases = await api(`/backtest/runs/${run.id}/cases`);
+  const cases = allCases.filter((c) => c.kind !== "multi");
+  const multiCases = allCases.filter((c) => c.kind === "multi");
+  if (!o.n) return h("div", { class: "stack" }, multiCard(run, s.multi, multiCases), casesCard([], s.skipped));
   const small = o.n < 30;
   return h("div", { class: "stack" },
     h("section", { class: "card", "aria-labelledby": "h-bt-res" },
@@ -241,7 +253,36 @@ async function resultsView(ctx, run, params) {
       reliabilityChart(s.calibration)),
     suggestionCard(ctx, s.suggestion, params),
     casesCard(cases, s.skipped),
+    s.multi ? multiCard(run, s.multi, multiCases) : null,
   );
+}
+
+function multiCard(run, m, cases) {
+  const b = (v) => (v == null ? "–" : fmt.num3(v));
+  const better = m.brier_model < m.brier_market - 0.005 ? "Jev ha previsto meglio del mercato"
+    : m.brier_model > m.brier_market + 0.005 ? "Il mercato ha previsto meglio di Jev" : "Jev e il mercato hanno previsto con la stessa accuratezza";
+  const rows = [...cases].sort((a, c) => Math.abs(c.pnl ?? 0) - Math.abs(a.pnl ?? 0)).slice(0, 30).map((c) => h("tr", {},
+    h("td", { class: "q-cell" }, c.url ? externalLink(c.url, c.question) : c.question),
+    h("td", { class: "num nowrap" }, `${c.horizon_days} gg`, h("div", { class: "muted small" }, fmt.date(c.as_of))),
+    h("td", {}, c.details?.winner || "–"),
+    h("td", { class: "num" }, fmt.pct(c.price)), h("td", { class: "num" }, fmt.pct(c.model_probability)),
+    h("td", {}, c.signal === "BUY_YES" ? h("span", { class: c.details?.best === c.details?.winner ? "pos" : "neg" },
+      icon(c.details?.best === c.details?.winner ? "check" : "x"), ` ${c.details?.best}`) : h("span", { class: "muted small" }, "Attendi")),
+    h("td", { class: `num ${c.pnl > 0 ? "pos" : c.pnl < 0 ? "neg" : ""}` }, c.pnl == null ? "–" : fmt.signedMoney(c.pnl))));
+  return h("section", { class: "card", "aria-labelledby": "h-bt-multi" },
+    h("div", { class: "card-head" }, h("h2", { id: "h-bt-multi" }, "Mercati a più esiti"),
+      infoTip("Brier a più esiti: somma degli errori al quadrato su tutti gli esiti (0 = perfetto, 2 = certo e sbagliato). «Favorito giusto»: quante volte l'esito più probabile ha vinto davvero.")),
+    h("p", { style: { margin: "4px 0 12px" } }, `${better} (Brier ${b(m.brier_model)} contro ${b(m.brier_market)}: più basso è meglio).`),
+    m.n < 30 ? h("p", { class: "notice small" }, icon("alert"), `Solo ${m.n} eventi: servono molti più casi per conclusioni affidabili.`) : null,
+    h("div", { class: "kpis" },
+      statTile("Eventi valutati", fmt.int(m.n), `blended ${b(m.brier_blended)}`),
+      statTile("Probabilità data al vincitore", fmt.pct(m.winner_prob_model), `Jev · mercato ${fmt.pct(m.winner_prob_market)}`),
+      statTile("Favorito giusto", fmt.pct(m.favourite_right_model), `Jev · mercato ${fmt.pct(m.favourite_right_market)}`),
+      statTile("Scommesse simulate", m.bets ? fmt.signedMoney(m.pnl) : "–", m.bets ? `${m.bets_won} vinte su ${m.bets} · ROI ${fmt.pct(m.roi)}` : "nessuna scommessa")),
+    cases.length ? h("div", { class: "table-wrap", style: { marginTop: "12px" } }, h("table", { class: "compact-table cases-table" },
+      h("thead", {}, h("tr", {}, ...["Evento", "Quando", "Ha vinto", "Mercato sul vincitore", "Jev sul vincitore", "Segnale", "Scommessa"]
+        .map((t, i) => h("th", { scope: "col", class: [1, 3, 4, 6].includes(i) ? "num" : null }, t)))),
+      h("tbody", {}, rows))) : null);
 }
 
 function suggestionCard(ctx, sg, params) {

@@ -27,6 +27,7 @@ opportunità.
 - [Allerte notizie–prezzo](#allerte-notizieprezzo)
 - [Backtest](#backtest)
 - [Mercati a più esiti](#mercati-a-più-esiti)
+- [Uso e costi delle API](#uso-e-costi-delle-api)
 - [Calibrazione](#calibrazione)
 - [Sviluppo e test](#sviluppo-e-test)
 - [Struttura del progetto](#struttura-del-progetto)
@@ -110,7 +111,7 @@ dipendenze né build, nella cartella `frontend/`.
 
 **Navigazione.** Le sezioni sono raggruppate per quello che si sta facendo: *Segnali*
 (Opportunità, Allerte), *Mercati* (Sì / No, Più esiti), *Notizie*, *Risultati* (Portafoglio, Backtest, Calibrazione).
-Impostazioni, «Come funziona» e account stanno in fondo.
+Impostazioni, Uso e costi, «Come funziona» e account stanno in fondo.
 - **Da 1024 px in su:** menu laterale, che si può ridurre alle sole icone; la scelta viene
   ricordata. In alto una riga di stato (ultima notizia, mercati aperti, Jev attivo) e il menu
   «Aggiorna» con gli aggiornamenti di notizie e mercati (solo admin).
@@ -538,17 +539,26 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 
 | Metodo | Path | Descrizione |
 |---|---|---|
-| GET · POST | `/backtest/runs` | Elenco dei backtest; avvio `{resolved_after, resolved_before, max_markets, min_volume, horizons, max_calls, exclude_decided}` (POST admin, `409` se uno è già in corso) |
+| GET · POST | `/backtest/runs` | Elenco dei backtest; avvio `{resolved_after, resolved_before, max_markets, min_volume, horizons, max_calls, exclude_decided, kinds}` (`kinds`: `binary` e/o `multi`) (POST admin, `409` se uno è già in corso) |
 | GET | `/backtest/runs/{id}` | Avanzamento e riepilogo (metriche, calibrazione, suggerimenti) |
 | GET | `/backtest/runs/{id}/cases` | Casi: `status` = `ok`, `skipped`, `all` |
 | POST | `/backtest/runs/{id}/stop` · DELETE `/backtest/runs/{id}` | Ferma o elimina (admin) |
 | GET · PUT | `/backtest/parameters` | `MODEL_WEIGHT_MAX` e `MIN_EDGE` in uso; PUT li sostituisce (admin) |
 | POST | `/backtest/parameters/reset` | Torna ai valori del `.env` (admin) |
 
+### Uso e costi
+
+| Metodo | Path | Descrizione |
+|---|---|---|
+| GET | `/usage` | Oggi rispetto ai limiti, storico per giorno, servizio e funzione (`days`, max 90), limiti e prezzi in uso |
+| PUT | `/usage/settings` | Limiti giornalieri e prezzi (admin) |
+| POST | `/usage/settings/reset` | Torna ai valori del `.env` (admin) |
+
 ### Mercati a più esiti
 
 | Metodo | Path | Descrizione |
 |---|---|---|
+| GET | `/multi/opportunities` | Eventi con un esito sottovalutato (`min_edge`, `min_evidence`, `include_hold`), con la valutazione economica |
 | GET | `/multi` | Eventi con i primi esiti e l'ultima previsione. `q` (titolo o nome di un esito), `sort` = `volume`, `edge`, `signal`, `end_date`, `news` |
 | GET | `/multi/{id}` | Tutti gli esiti, notizie collegate, storico delle previsioni |
 | POST | `/multi/{id}/predict` | Previsione Jev della distribuzione (admin; `422` senza notizie) |
@@ -691,6 +701,43 @@ l'esito dei mercati già risolti. Vengono salvate anche le valutazioni che non c
 
 Il token resta solo nel `.env`: non compare nelle API, nei log o nei messaggi d'errore.
 
+## Uso e costi delle API
+
+Tra classificazione, riassunti, previsioni, allerte, «Valuta tutti», backtest e più esiti, le
+chiamate a pagamento possono crescere in fretta. La pagina **Uso e costi** le tiene sotto
+controllo.
+
+**Cosa viene registrato.** Ogni chiamata a Jev, Groq e Gemini, con:
+- la **funzione** che l'ha fatta (classificazione, riassunti, riclassificazione, previsioni,
+  Valuta tutti, allerte, più esiti, backtest);
+- i **token** in entrata e in uscita;
+- un **costo stimato**, calcolato dai prezzi che imposti: per milione di token e, per Jev,
+  anche per chiamata. Con i prezzi a 0 si contano chiamate e token, ma non il costo.
+
+Ollama gira in locale e non viene contato.
+
+**Limiti giornalieri.** Si impostano dalla pagina (solo admin) e sostituiscono i valori del
+`.env`:
+- `DAILY_JEV_CALL_LIMIT`: numero massimo di chiamate a Jev;
+- `DAILY_AI_BUDGET_USD`: spesa massima stimata per tutte le API.
+
+Il giorno si azzera a mezzanotte (fuso `ALERT_TIMEZONE`). Oltre il limite:
+- previsioni, allerte, «Valuta tutti» e backtest si fermano con un messaggio chiaro;
+- la classificazione passa all'euristica locale e i riassunti all'estratto del testo, così
+  le notizie continuano ad arrivare;
+- un banner in tutta la dashboard lo segnala.
+
+All'80 % (`USAGE_WARN_SHARE`) e al 100 % di ogni limite arriva un messaggio Telegram, una
+sola volta al giorno, se Telegram è configurato.
+
+**Cosa mostra la pagina.**
+- **Oggi:** chiamate e spesa rispetto ai limiti.
+- **Ultimi 30 giorni:** grafico per giorno, per costo, chiamate o token, con il dettaglio per
+  funzione al passaggio del mouse.
+- **Riepilogo** per funzione e per servizio, con la quota di spesa.
+
+Il costo è una stima: fa fede la fattura del fornitore.
+
 ## Mercati a più esiti
 
 Molti degli eventi più scambiati su Polymarket hanno più risposte possibili, una sola delle
@@ -716,8 +763,31 @@ nella sezione **Più esiti**, perché si leggono come una distribuzione.
   marcatori di Jev (rombo) e blended (cerchio). Nel dettaglio: tutti gli esiti, la tabella,
   le notizie (con l'esito che ciascuna favorisce) e lo storico.
 
-Per ora la valutazione economica, il portafoglio simulato e le allerte riguardano solo i
-mercati Sì/No.
+**Economia, portafoglio, allerte e backtest.** Per gli esiti vale tutto quello che vale per i
+mercati Sì/No:
+- **Valutazione economica.** Dopo ogni previsione vengono valutati i 3 esiti più sottovalutati
+  sulla loro quota SÌ: prezzo reale del book, commissioni, incertezza, rendimento annualizzato,
+  Kelly e limiti del preset. Nel dettaglio dell'evento la scheda «Conviene?» permette di
+  scegliere l'esito.
+- **Portafoglio simulato.** L'esito migliore diventa una scommessa simulata, se conviene. Il
+  limite per evento vale per tutti gli esiti insieme, così non si punta su tre candidati della
+  stessa elezione oltre il rischio del preset. Esclusioni per evento e categoria e chiusura alla
+  risoluzione funzionano come per i mercati Sì/No.
+- **Opportunità.** Gli eventi con un esito sottovalutato compaiono in un blocco a parte, sotto i
+  mercati Sì/No.
+- **Allerte.** Una notizia fresca e pertinente collegata a un evento fa ricalcolare subito la
+  distribuzione (una chiamata). Se conviene arriva una notifica «Compra SÌ su …» e il prezzo
+  successivo viene misurato come per i mercati Sì/No.
+- **Backtest.** Scegli «Più esiti» tra i tipi di mercato. Per ogni evento risolto vengono
+  ricostruiti i prezzi storici dei 12 esiti più scambiati. Il risultato riporta:
+  - il Brier a più esiti (0 = perfetto, 2 = certo e sbagliato);
+  - la probabilità data al vincitore;
+  - quante volte il favorito ha vinto, per Jev e per il mercato;
+  - le scommesse simulate.
+
+Tecnicamente ogni esito è anche una riga della tabella dei mercati, segnata con
+`multi_event_id` e nascosta dagli elenchi Sì/No: book, valutazione economica, scommesse e
+chiusura usano lo stesso codice.
 
 ## Backtest
 
@@ -791,10 +861,21 @@ I test richiedono un PostgreSQL con pgvector. TypeSafe e Polymarket vengono simu
 livello HTTP, quindi non servono chiavi né rete.
 
 ```bash
-pip install -r requirements.txt pytest pytest-asyncio
+pip install -r requirements.txt -r requirements-dev.txt
 export TEST_DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/newsagg
 pytest
 ```
+
+I test non usano il modello di embedding, quindi `sentence-transformers` (e PyTorch) si può
+saltare se serve solo far girare i test.
+
+**CI.** Su GitHub ogni push su `main` e ogni pull request avviano
+`.github/workflows/tests.yml`:
+- **backend:** tutti i test, su un Postgres con pgvector (`pgvector/pgvector:pg16`) e senza
+  PyTorch;
+- **frontend:** controllo di sintassi dei moduli JavaScript con `node --check`.
+
+In CI un database non raggiungibile fa fallire i test invece di saltarli.
 
 ⚠️ Il test end-to-end **cancella e ricrea tutte le tabelle** del database indicato da
 `TEST_DATABASE_URL`: usa sempre un database dedicato.
@@ -823,7 +904,9 @@ backend/
 ├── ai/
 │   ├── jev.py              # client TypeSafe condiviso
 │   ├── typesafe_evaluator.py  # classificazione e punteggi delle notizie
-│   └── summarizer.py       # riassunti Gemini / Groq / Ollama
+│   ├── summarizer.py       # riassunti Gemini / Groq / Ollama
+│   ├── ratelimit.py        # limiti di frequenza per servizio
+│   └── usage.py            # uso e costi delle chiamate, limiti giornalieri
 ├── ingestor/
 │   ├── fetcher.py          # download sicuro e pulizia dei feed RSS/Atom
 │   ├── sources.py          # catalogo (feeds.yaml) e validazione delle fonti

@@ -11,7 +11,8 @@ import { viewPortfolio } from "./views/portfolio.js";
 import { bulkPredict } from "./views/bulk.js";
 import { viewAlerts } from "./views/alerts.js";
 import { viewBacktest } from "./views/backtest.js";
-import { viewMultiList, viewMultiDetail } from "./views/multi.js";
+import { viewMultiList, viewMultiDetail, eventCard } from "./views/multi.js";
+import { viewUsage } from "./views/usage.js";
 import { renderNav, markCurrent, setBadge, setupCollapse, setupMenu } from "./nav.js";
 import { economicsCard, verdictBadge } from "./economics.js";
 
@@ -154,6 +155,11 @@ function renderBanner() {
       " al file .env e riavvia. Nel frattempo le notizie vengono classificate con un'euristica locale.",
     ));
     banner.hidden = false;
+  } else if (status.usage?.blocked) {
+    banner.append(icon("alert"), h("span", {},
+      "Limite giornaliero delle API AI raggiunto: previsioni, allerte e backtest sono in pausa fino a mezzanotte. ",
+      h("a", { href: "#/uso" }, "Vedi uso e costi")));
+    banner.hidden = false;
   } else {
     banner.hidden = true;
   }
@@ -254,6 +260,7 @@ const routes = [
   [/^#\/portafoglio$/, "portafoglio", () => viewPortfolio(ctx)],
   [/^#\/allerte$/, "allerte", () => viewAlerts(ctx)],
   [/^#\/multi$/, "multi", () => viewMultiList(ctx)],
+  [/^#\/uso$/, "uso", () => viewUsage(ctx)],
   [/^#\/multi\/(.+)$/, "multi", (id) => viewMultiDetail(ctx, id)],
   [/^#\/backtest(?:\/([\w-]+))?$/, "backtest", (id) => viewBacktest(ctx, id)],
 ];
@@ -321,7 +328,21 @@ async function viewOpportunities() {
 
   const list = h("div", { class: "opps" }, skeleton(2));
   const kpis = h("div", { class: "kpis" });
+  // Multi-outcome events: a separate block, read as distributions
+  const multiHead = h("div", { class: "section-head", hidden: true },
+    h("h2", {}, "Mercati a più esiti"), h("a", { class: "btn btn-ghost btn-sm", href: "#/multi" }, "Tutti gli eventi"));
+  const multiList = h("div", { class: "multi-grid" });
+  const reloadMulti = async () => {
+    try {
+      const events = await api("/multi/opportunities", {
+        params: { min_edge: oppFilters.minEdge / 100, min_evidence: oppFilters.minEvidence / 100, include_hold: oppFilters.includeHold },
+      });
+      multiHead.hidden = !events.length;
+      multiList.replaceChildren(...events.map(eventCard));
+    } catch { multiHead.hidden = true; multiList.replaceChildren(); }
+  };
   const reload = async () => {
+    reloadMulti();
     try {
       const opps = await api("/predictions/opportunities", {
         params: { min_edge: oppFilters.minEdge / 100, min_evidence: oppFilters.minEvidence / 100, include_hold: oppFilters.includeHold, limit: 100 },
@@ -352,6 +373,7 @@ async function viewOpportunities() {
     pageHead("Opportunità", "Mercati in cui la stima di Jev, pesata per la forza delle notizie, si discosta dal prezzo. Ordinati per edge.",
       h("a", { class: "btn btn-ghost", href: "#/metodo" }, icon("help"), "Come funziona"), bulk.button),
     bulk.panel, kpis, filters, list,
+    h("div", { class: "opps-multi" }, multiHead, multiList),
   );
 }
 

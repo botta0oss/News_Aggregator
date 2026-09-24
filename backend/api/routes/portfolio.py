@@ -43,6 +43,7 @@ def _bet_dict(bet: PaperBet, market: Market) -> dict:
     return {
         "id": bet.id, "market_id": market.id, "question": market.question, "url": _market_url(market),
         "event_slug": market.event_slug, "category": market.category, "end_date": market.end_date,
+        "multi_event_id": market.multi_event_id,
         "side": bet.side, "shares": bet.shares, "avg_price": bet.avg_price, "stake": bet.stake, "fee": bet.fee,
         "outlay": bet.stake + bet.fee, "p_side": bet.p_side, "p_conservative": bet.p_conservative,
         "expected_profit": bet.expected_profit, "preset": bet.preset, "status": bet.status, "placed_by": bet.placed_by,
@@ -152,6 +153,16 @@ async def _latest(db: AsyncSession, market_id: str):
     market = await db.get(Market, market_id)
     if market is None:
         raise HTTPException(status_code=404, detail="Mercato non trovato")
+    if market.multi_event_id:
+        # Outcome of a multi-outcome event: its share of the latest distribution forecast
+        from backend.db.models import MultiPrediction
+        from backend.multi.service import outcome_prediction
+        latest = (await db.execute(select(MultiPrediction).where(MultiPrediction.event_id == market.multi_event_id)
+                                   .order_by(MultiPrediction.created_at.desc()).limit(1))).scalar_one_or_none()
+        prediction = outcome_prediction(latest, market_id) if latest else None
+        if prediction is None:
+            raise HTTPException(status_code=409, detail="L'evento non ha ancora una previsione per questo esito")
+        return market, prediction
     prediction = (await db.execute(select(MarketPrediction).where(MarketPrediction.market_id == market_id)
                                    .order_by(MarketPrediction.created_at.desc()).limit(1))).scalar_one_or_none()
     if prediction is None:

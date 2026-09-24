@@ -25,6 +25,7 @@ class RunIn(BaseModel):
     horizons: list[int] = Field(default_factory=lambda: [7])
     max_calls: int = Field(60, ge=1, le=1000)
     exclude_decided: bool = True
+    kinds: list[Literal["binary", "multi"]] = Field(default_factory=lambda: ["binary"])
 
 
 class ParametersIn(BaseModel):
@@ -56,7 +57,7 @@ async def start_run(body: RunIn):
         resolved_after=datetime.combine(body.resolved_after, time.min, tzinfo=timezone.utc),
         resolved_before=datetime.combine(body.resolved_before, time.max, tzinfo=timezone.utc),
         max_markets=body.max_markets, min_volume=body.min_volume, horizons=body.horizons,
-        max_calls=body.max_calls, exclude_decided=body.exclude_decided,
+        max_calls=body.max_calls, exclude_decided=body.exclude_decided, kinds=list(body.kinds),
     )
     try:
         run = await engine.start(params)
@@ -103,18 +104,20 @@ async def delete_run(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 
 @router.get("/parameters")
 async def get_parameters():
-    return {"parameters": overrides.current(), "min_evidence": settings.MIN_EVIDENCE, "jev_enabled": jev.is_enabled()}
+    return {"parameters": overrides.current(overrides.FORECAST_KEYS), "min_evidence": settings.MIN_EVIDENCE, "jev_enabled": jev.is_enabled()}
 
 
 @router.put("/parameters", dependencies=admin)
 async def put_parameters(body: ParametersIn, db: AsyncSession = Depends(get_db)):
     values = {k: v for k, v in body.model_dump(exclude={"note"}).items() if v is not None}
     try:
-        return {"parameters": await overrides.set_values(db, values, note=body.note)}
+        await overrides.set_values(db, values, note=body.note)
+        return {"parameters": overrides.current(overrides.FORECAST_KEYS)}
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.post("/parameters/reset", dependencies=admin)
 async def reset_parameters(db: AsyncSession = Depends(get_db)):
-    return {"parameters": await overrides.reset(db)}
+    await overrides.reset(db, overrides.FORECAST_KEYS)
+    return {"parameters": overrides.current(overrides.FORECAST_KEYS)}

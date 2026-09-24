@@ -12,6 +12,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.ai import jev
 from backend.ai.ratelimit import RateLimited
+from backend.ai.usage import BudgetExceeded, feature
 from backend.config import settings
 from backend.db.database import SessionLocal
 from backend.db.models import Article, Market, MarketArticleLink
@@ -127,6 +128,11 @@ async def _refresh_markets(session: AsyncSession) -> None:
 
 
 async def _run(refresh_first: bool) -> None:
+    with feature("valuta_tutti"):
+        await _run_tagged(refresh_first)
+
+
+async def _run_tagged(refresh_first: bool) -> None:
     try:
         async with SessionLocal() as session:
             if refresh_first:
@@ -170,6 +176,10 @@ async def _predict_one(session: AsyncSession, market: Market) -> bool:
             job.done += 1
             job.consecutive_failures = 0
             return True
+        except BudgetExceeded as e:
+            await session.rollback()
+            job.message = f"Fermata: {e}"
+            return False
         except RateLimited as e:
             await session.rollback()
             waits += 1

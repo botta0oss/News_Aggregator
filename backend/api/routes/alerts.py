@@ -98,6 +98,7 @@ async def list_alerts(
             "id": alert.id,
             "created_at": alert.created_at,
             "market": {"id": market.id, "question": market.question, "yes_price": market.yes_price,
+                       "multi_event_id": market.multi_event_id,
                        "closed": market.closed, "resolved_yes": market.resolved_yes},
             "news": {"title": article.title, "url": article.url, "source": article.publisher or (source.name if source else None),
                      "published_at": alert.news_at} if article else None,

@@ -140,7 +140,7 @@ function alertCard(a) {
       price == null ? null : h("span", { class: "muted small mono" }, fmt.cents(price)),
     );
   });
-  const href = `#/mercati/${encodeURIComponent(a.market.id)}`;
+  const href = a.market.multi_event_id ? `#/multi/${encodeURIComponent(a.market.multi_event_id)}` : `#/mercati/${encodeURIComponent(a.market.id)}`;
   return h("article", { class: `card alert-card${a.opportunity ? "" : " alert-muted"}` },
     h("div", { class: "alert-top" },
       a.verdict ? verdictBadge(a.verdict) : null,

@@ -339,3 +339,62 @@ export function reliabilityChart(calibration) {
       h("tbody", {}, rows))));
   return h("div", {}, legend, wrap, table);
 }
+
+/**
+ * Daily bars, one series (magnitude over time): rounded tops anchored to the baseline,
+ * 2px gaps, recessive grid, hover tooltip per day, direct label only on the highest bar.
+ * `days`: [{day: "2026-09-01", value, tip: [[key, label, value], ...]}]
+ */
+export function dailyBars(days, { format, label }) {
+  const wrap = h("div", { class: "chart" });
+  const holder = h("div", {});
+  wrap.append(holder);
+  const draw = () => {
+    const width = Math.max(280, holder.clientWidth || 600);
+    const height = 180;
+    const m = { l: 48, r: 8, t: 18, b: 24 };
+    const iw = width - m.l - m.r, ih = height - m.t - m.b;
+    const max = Math.max(...days.map((d) => d.value), 0) || 1;
+    const step = iw / days.length;
+    const bw = Math.max(2, step - 2);
+    const y = (v) => m.t + ih - (v / max) * ih;
+    const svg = s("svg", { viewBox: `0 0 ${width} ${height}`, height, role: "img", "aria-label": label });
+    for (const f of [0, 0.5, 1]) {
+      svg.append(s("line", { class: "gridline", x1: m.l, x2: m.l + iw, y1: y(max * f), y2: y(max * f) }));
+      svg.append(s("text", { class: "tick", x: m.l - 8, y: y(max * f) + 4, "text-anchor": "end" }, format(max * f)));
+    }
+    const peak = days.reduce((a, b) => (b.value > a.value ? b : a), days[0]);
+    days.forEach((d, i) => {
+      const x = m.l + i * step + 1;
+      const hgt = Math.max(0, (d.value / max) * ih);
+      if (hgt > 0) {
+        const r = Math.min(4, bw / 2, hgt);
+        const top = m.t + ih - hgt;
+        svg.append(s("path", { fill: "var(--series-blended)",
+          d: `M${x},${m.t + ih}V${top + r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top + r}V${m.t + ih}Z` }));
+      }
+      if (d === peak && d.value > 0) {
+        svg.append(s("text", { class: "endvalue", x: x + bw / 2, y: m.t + ih - hgt - 5, "text-anchor": "middle" }, format(d.value)));
+      }
+      const hit = s("rect", { x: m.l + i * step, y: m.t, width: step, height: ih, fill: "transparent", tabindex: "0",
+        "aria-label": `${fmt.date(d.day)}: ${format(d.value)}` });
+      const show = (cx, cy) => showTooltip(ttRows(fmt.date(d.day), [[null, "Totale", format(d.value)], ...d.tip]), cx, cy);
+      hit.addEventListener("mousemove", (e) => show(e.clientX, e.clientY));
+      hit.addEventListener("mouseleave", hideTooltip);
+      hit.addEventListener("focus", () => { const rc = hit.getBoundingClientRect(); show(rc.right, rc.top); });
+      hit.addEventListener("blur", hideTooltip);
+      svg.append(hit);
+    });
+    [0, days.length - 1].forEach((i, k) => svg.append(s("text", { class: "tick", x: m.l + i * step + (k ? step : 0), y: height - 6, "text-anchor": k ? "end" : "start" }, fmt.date(days[i].day))));
+    holder.replaceChildren(svg);
+  };
+  requestAnimationFrame(draw);
+  if ("ResizeObserver" in window) {
+    let lastWidth = 0;
+    new ResizeObserver((entries) => {
+      const w = Math.round(entries[0].contentRect.width);
+      if (w && w !== lastWidth) { lastWidth = w; draw(); }
+    }).observe(holder);
+  }
+  return wrap;
+}

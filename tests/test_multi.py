@@ -88,7 +88,8 @@ async def test_events_are_kept_apart_and_forecast(db, monkeypatch, jev_client):
     assert stats["created"] == 1
     async with SessionLocal() as session:
         assert (await session.get(MultiEvent, "ev1")).title == TITLE
-        assert await session.get(Market, "100") is None  # the outcome was not stored as a YES/NO market
+        outcome = await session.get(Market, "100")  # stored for book / bets, but flagged as an outcome
+        assert outcome.multi_event_id == "ev1" and outcome.event_slug == "ucl-winner"
         assert await service.refresh_links(session) == 1
 
     captured = jev_client(noul_value=0.9, score_value=3.0, choice_index=1)  # Jev favours Arsenal
@@ -141,3 +142,98 @@ async def test_resolution_is_detected(db):
             stats = await service.sync_events(session, client=client)
             event = await session.get(MultiEvent, "ev1")
     assert stats["resolved"] == 1 and event.closed and event.winner_id == "101"
+
+
+# ---------- Economics, portfolio, opportunities, alerts ----------
+
+def liquid_event(**kw):
+    ev = gamma_event(**kw)
+    for i, m in enumerate(ev["markets"]):
+        m["liquidityNum"] = 500_000  # liquid enough for the presets
+        m["clobTokenIds"] = json.dumps([f"yes{i}", f"no{i}"])
+    return ev
+
+
+async def sync_liquid(events=None):
+    async with gamma(events or [liquid_event()]) as client:
+        async with SessionLocal() as session:
+            await service.sync_events(session, client=client)
+            await service.refresh_links(session)
+
+
+async def test_forecast_is_evaluated_and_bet_on(db, monkeypatch, jev_client):
+    from backend.db.models import PaperBet
+    from backend.markets import polymarket as pm
+
+    async def no_book(token, client=None):
+        raise RuntimeError("no network")
+    monkeypatch.setattr(pm, "fetch_order_book", no_book)  # estimated quote from price and liquidity
+    await ingest_articles(monkeypatch, [entry("Arsenal beat Real Madrid in Champions League semi-final", "https://n.test/ucl2")])
+    await sync_liquid()
+    jev_client(noul_value=0.9, score_value=3.0, choice_index=1)
+    async with login_client("admin") as api:
+        pred = (await api.post("/multi/ev1/predict")).json()
+        arsenal = next(o for o in pred["outcomes"] if o["label"] == "Arsenal")
+        ev = pred["economics"][arsenal["id"]]
+        assert ev["side"] == "YES" and ev["verdict"] in ("GO", "SMALL") and ev["outlay"] > 0
+
+        # The automatic simulated bet is on Arsenal's YES share, linked to the event
+        bets = (await api.get("/portfolio/bets")).json()
+        assert len(bets) == 1 and bets[0]["market_id"] == arsenal["id"] and bets[0]["multi_event_id"] == "ev1"
+
+        # The live "Conviene?" card works on an outcome like on a YES/NO market
+        live = (await api.get(f"/markets/{arsenal['id']}/economics", params={"preset": "prudente"})).json()
+        assert live["evaluation"]["side"] == "YES" and live["open_bet"] is not None
+
+        opps = (await api.get("/multi/opportunities")).json()
+        assert [o["id"] for o in opps] == ["ev1"] and opps[0]["latest_prediction"]["economics"]
+        assert (await api.get("/predictions/opportunities")).json() == []  # YES/NO list untouched
+
+    # Settlement when the event resolves: Arsenal wins
+    teams = [(t, "1" if t == "Arsenal" else "0") for t, _ in TEAMS]
+    closed = liquid_event(teams=teams, closed=True)
+
+    def handler(request: httpx.Request):
+        if request.url.path == "/events/ev1":
+            return httpx.Response(200, json=closed)
+        return httpx.Response(200, json=[])
+    async with httpx.AsyncClient(base_url="https://gamma.test", transport=httpx.MockTransport(handler)) as client:
+        async with SessionLocal() as session:
+            await service.sync_events(session, client=client)
+            from backend.betting.portfolio import settle_bets
+            assert await settle_bets(session) == 1
+            bet = (await session.execute(select(PaperBet))).scalar_one()
+            assert bet.status == "won" and bet.pnl > 0
+
+
+async def test_event_alert(db, monkeypatch, jev_client):
+    from backend.alerts import service as alerts, telegram
+    from backend.db.models import Alert
+    from backend.markets import polymarket as pm
+
+    async def no_book(token, client=None):
+        raise RuntimeError("no network")
+
+    async def no_event(event_id, client=None):
+        return None
+    monkeypatch.setattr(pm, "fetch_order_book", no_book)
+    monkeypatch.setattr(alerts.polymarket, "fetch_event", no_event)
+    sent = []
+    monkeypatch.setattr(settings, "TELEGRAM_BOT_TOKEN", "1:x")
+    monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "9")
+    monkeypatch.setattr(telegram, "_transport", httpx.MockTransport(
+        lambda req: (sent.append(json.loads(req.content)["text"]), httpx.Response(200, json={"ok": True}))[1]))
+
+    await ingest_articles(monkeypatch, [entry("Arsenal beat Real Madrid in Champions League semi-final", "https://n.test/ucl3")])
+    await sync_liquid()
+    jev_client(noul_value=0.9, score_value=3.0, choice_index=1)
+    async with SessionLocal() as session:
+        stats = await alerts.run_alerts(session)
+        assert stats["evaluated"] == 1 and stats["opportunities"] == 1 and stats["notified"] == 1
+        alert = (await session.execute(select(Alert))).scalar_one()
+        assert alert.multi_event_id == "ev1" and alert.side == "YES"
+        assert (await alerts.run_alerts(session))["triggers"] == 0  # links checked once
+    assert "Compra SÌ su Arsenal" in sent[0] and TITLE in sent[0]
+    async with login_client("viewer") as api:
+        items = (await api.get("/alerts")).json()
+        assert items[0]["market"]["multi_event_id"] == "ev1"

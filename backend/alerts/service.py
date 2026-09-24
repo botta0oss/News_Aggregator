@@ -151,15 +151,58 @@ async def find_triggers(db: AsyncSession, s: AlertSettings) -> tuple[list[dict],
     return sorted(best.values(), key=lambda t: t["score"], reverse=True), seen
 
 
-async def in_cooldown(db: AsyncSession, market_id: str, hours: float) -> bool:
+async def in_cooldown(db: AsyncSession, market_id: Optional[str], hours: float, event_id: Optional[str] = None) -> bool:
     if hours <= 0:
         return False
-    last = (await db.execute(select(func.max(Alert.created_at)).where(Alert.market_id == market_id))).scalar()
+    cond = Alert.multi_event_id == event_id if event_id else Alert.market_id == market_id
+    last = (await db.execute(select(func.max(Alert.created_at)).where(cond))).scalar()
     return last is not None and last >= _now() - timedelta(hours=hours)
+
+
+async def find_event_triggers(db: AsyncSession, s: AlertSettings) -> tuple[list[dict], list]:
+    """Same as find_triggers, for news linked to open multi-outcome events."""
+    from backend.db.models import MultiArticleLink, MultiEvent
+    fresh_since = _now() - timedelta(hours=s.max_news_age_hours)
+    rows = (await db.execute(
+        select(MultiArticleLink, Article, MultiEvent, ProcessedArticle, Source)
+        .join(Article, Article.id == MultiArticleLink.article_id)
+        .join(MultiEvent, MultiEvent.id == MultiArticleLink.event_id)
+        .join(Source, Source.id == Article.source_id)
+        .outerjoin(ProcessedArticle, ProcessedArticle.article_id == Article.id)
+        .where(MultiArticleLink.alert_checked == False)  # noqa: E712
+        .where(Article.fetched_at >= _now() - timedelta(hours=max(s.max_news_age_hours, 1) * 2))
+        .limit(2000)
+    )).all()
+    seen = [link.id for link, *_ in rows]
+    best: dict[str, dict] = {}
+    for link, article, event, processed, source in rows:
+        published = article.published_at or article.fetched_at
+        if published is None or published < fresh_since or event.closed:
+            continue
+        if (link.match_score or 0.0) < s.min_match:
+            continue
+        quality = source_quality(processed)
+        if quality < MIN_SOURCE_QUALITY or (processed is not None and (processed.is_opinion or 0) >= 0.6):
+            continue
+        category = processed.category if processed else None
+        if s.categories and category not in s.categories:
+            continue
+        score = round(link.match_score * quality, 4)
+        if event.id not in best or score > best[event.id]["score"]:
+            best[event.id] = {"event_id": event.id, "event_title": event.title, "article_id": article.id,
+                              "title": article.title, "source": article.publisher or source.name,
+                              "published": published, "score": score}
+    return sorted(best.values(), key=lambda t: t["score"], reverse=True), seen
 
 
 async def run_alerts(db: AsyncSession) -> dict:
     """Checks new links and raises alerts. Safe to call after every link refresh."""
+    from backend.ai.usage import feature
+    with feature("allerte"):
+        return await _run_alerts(db)
+
+
+async def _run_alerts(db: AsyncSession) -> dict:
     from backend.markets.service import predict_market  # the market service imports this module
 
     stats = {"triggers": 0, "evaluated": 0, "opportunities": 0, "notified": 0, "skipped_budget": 0}
@@ -205,9 +248,79 @@ async def run_alerts(db: AsyncSession) -> dict:
             stats["opportunities"] += 1
             if await notify(db, alert, market, prediction, trig, s):
                 stats["notified"] += 1
+    else:  # not reached after a `break` (Jev rate limited or over budget): events wait for the next run
+        await _run_event_alerts(db, s, stats)
     if stats["evaluated"] or stats["triggers"]:
         logger.info(f"Alerts: {stats}")
     return stats
+
+
+async def _run_event_alerts(db: AsyncSession, s: AlertSettings, stats: dict) -> None:
+    """Multi-outcome events: one Jev call re-forecasts the whole distribution."""
+    from backend.db.models import MultiArticleLink, MultiEvent
+    from backend.multi import service as multi
+
+    budget = max(0, s.daily_budget - await calls_last_24h(db))
+    triggers, seen = await find_event_triggers(db, s)
+    if seen:
+        await db.execute(update(MultiArticleLink).where(MultiArticleLink.id.in_(seen)).values(alert_checked=True))
+        await db.commit()
+    stats["triggers"] += len(triggers)
+    for trig in triggers:
+        if await in_cooldown(db, None, s.cooldown_hours, event_id=trig["event_id"]):
+            continue
+        if budget <= 0:
+            stats["skipped_budget"] += 1
+            continue
+        event = await db.get(MultiEvent, trig["event_id"], populate_existing=True)
+        if event is None or event.closed:
+            continue
+        try:
+            fresh = await polymarket.fetch_event(event.id)  # prices of this moment
+            if fresh:
+                multi._apply_event(event, fresh)
+                await multi._apply_outcomes(db, event, fresh)
+                await db.commit()
+        except Exception:
+            await db.rollback()
+        try:
+            prediction = await multi.predict_event(db, event)
+        except RateLimited as e:
+            logger.warning(f"Alerts paused: {e}")
+            await db.rollback()
+            break
+        except (LookupError, ValueError) as e:
+            await db.rollback()
+            logger.info(f"Alert skipped for event {event.id}: {e}")
+            continue
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Alert evaluation failed for event {event.id}: {e}")
+            continue
+        budget -= 1
+        stats["evaluated"] += 1
+        best_id = prediction.best_outcome_id
+        market = await db.get(Market, best_id) if best_id and best_id != multi.OTHER_ID else None
+        if market is None:
+            continue
+        pred = multi.outcome_prediction(prediction, best_id)
+        ev = (prediction.economics or {}).get(best_id) or {}
+        entry = next(o for o in prediction.outcomes if o["id"] == best_id)
+        alert = Alert(
+            market_id=best_id, multi_event_id=event.id, article_id=trig["article_id"], news_at=trig["published"],
+            trigger_score=trig["score"], price=entry.get("price", entry["market"]), side="YES", verdict=ev.get("verdict"),
+            signal=prediction.signal, edge=entry["edge"], blended=entry["blended"], outlay=ev.get("outlay"),
+            limit_price=ev.get("limit_price"),
+            opportunity=prediction.signal == "BUY_YES" and ev.get("verdict") in VERDICTS.get(s.min_verdict, ("GO",)),
+            followups={},
+        )
+        db.add(alert)
+        await db.commit()
+        if alert.opportunity:
+            stats["opportunities"] += 1
+            trig = {**trig, "outcome": entry["label"]}
+            if await notify(db, alert, market, pred, trig, s):
+                stats["notified"] += 1
 
 
 async def _refresh_price(market: Market) -> None:
@@ -259,9 +372,10 @@ def format_message(alert: Alert, market: Market, prediction: MarketPrediction, t
     verdict = "conviene" if alert.verdict == "GO" else "conviene, puntata piccola"
     age_min = max(0, int((_now() - trig["published"]).total_seconds() // 60)) if trig.get("published") else None
     age = "" if age_min is None else (f", {age_min} min fa" if age_min < 120 else f", {age_min // 60} ore fa")
+    head = f"Compra SÌ su {e(trig['outcome'])}" if trig.get("outcome") else f"Compra {side}"
     lines = [
-        f"🔔 <b>Compra {side}</b> · {verdict}",
-        f"<b>{e(market.question)}</b>",
+        f"🔔 <b>{head}</b> · {verdict}",
+        f"<b>{e(trig.get('event_title') or market.question)}</b>",
         "",
         f"Notizia: {e(trig['title'])} ({e(trig['source'])}{age})",
         f"Prezzo SÌ {_cents(alert.price)} → stima {_pct(prediction.blended_probability)} "
@@ -271,7 +385,8 @@ def format_message(alert: Alert, market: Market, prediction: MarketPrediction, t
     if alert.outlay:
         lines.append(f"Puntata simulata {_num(alert.outlay, 2)} $, prezzo massimo {_cents(alert.limit_price)} per quota {side}")
     if settings.PUBLIC_URL:
-        lines += ["", f"{settings.PUBLIC_URL.rstrip('/')}/#/mercati/{market.id}"]
+        path = f"multi/{market.multi_event_id}" if market.multi_event_id else f"mercati/{market.id}"
+        lines += ["", f"{settings.PUBLIC_URL.rstrip('/')}/#/{path}"]
     return "\n".join(lines)
 
 

@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.ai import jev
 from backend.ai.ratelimit import RateLimited
+from backend.ai.usage import feature as usage_feature
 from backend.config import settings
 from backend.db.models import Article, Cluster, Market, MarketArticleLink, MarketPrediction, ProcessedArticle, Source
 from backend.ingestor.deduplicator import embedding_text, get_title_embedding
@@ -384,7 +385,8 @@ async def _run_market_pipeline(session: AsyncSession) -> dict:
     if settings.PREDICTION_AUTO and jev.is_enabled():
         for market in await markets_needing_prediction(session, settings.PREDICTION_MAX_PER_RUN):
             try:
-                await predict_market(session, market)
+                with usage_feature("previsioni"):
+                    await predict_market(session, market)
                 stats["predictions"] += 1
             except RateLimited as e:
                 logger.warning(f"Automatic predictions paused: {e}")

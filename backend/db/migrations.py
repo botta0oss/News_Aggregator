@@ -48,6 +48,13 @@ STATEMENTS = [
     # Multi-outcome events are kept apart from the YES/NO markets
     "ALTER TABLE markets ADD COLUMN IF NOT EXISTS multi_event_id TEXT",
     "CREATE INDEX IF NOT EXISTS ix_markets_multi_event_id ON markets (multi_event_id)",
+    "ALTER TABLE multi_predictions ADD COLUMN IF NOT EXISTS economics JSONB",
+    # Alerts on multi-outcome events (existing links count as already checked)
+    "ALTER TABLE multi_article_links ADD COLUMN IF NOT EXISTS alert_checked BOOLEAN NOT NULL DEFAULT true",
+    "ALTER TABLE multi_article_links ALTER COLUMN alert_checked SET DEFAULT false",
+    "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS multi_event_id TEXT",
+    "ALTER TABLE backtest_cases ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'binary'",
+    "ALTER TABLE backtest_cases ADD COLUMN IF NOT EXISTS details JSONB",
 ]
 
 

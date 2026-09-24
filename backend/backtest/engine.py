@@ -22,6 +22,7 @@ from sqlalchemy import select
 
 from backend.ai import jev
 from backend.ai.ratelimit import RateLimited
+from backend.ai.usage import BudgetExceeded, feature
 from backend.ai.typesafe_evaluator import _heuristic_evaluation
 from backend.backtest.analysis import summarize
 from backend.betting.economics import Exposure, estimated_quote, evaluate
@@ -34,7 +35,7 @@ from backend.ingestor.fetcher import fetch_feed
 from backend.markets import polymarket
 from backend.markets.forecast import compute_signal
 from backend.markets.matching import extract_terms, match_score, rank_evidence, term_overlap
-from backend.markets.service import build_jev_request, parse_forecast
+from backend.markets.service import EVIDENCE_CRITERIA, build_jev_request, parse_forecast
 from backend.markets.targeted import build_query
 
 logger = logging.getLogger(__name__)
@@ -54,8 +55,12 @@ class Params:
     horizons: list = field(default_factory=lambda: [7])
     max_calls: int = 60
     exclude_decided: bool = True
+    kinds: list = field(default_factory=lambda: ["binary"])   # "binary" (YES/NO) and/or "multi" (several outcomes)
 
     def validate(self) -> "Params":
+        self.kinds = [k for k in dict.fromkeys(self.kinds) if k in ("binary", "multi")]
+        if not self.kinds:
+            raise ValueError("Scegli almeno un tipo di mercato")
         if self.resolved_after >= self.resolved_before:
             raise ValueError("La data di inizio deve essere prima della data di fine")
         if self.resolved_before > datetime.now(timezone.utc) + timedelta(days=1):
@@ -161,8 +166,12 @@ def historical_search_url(question: str, as_of: datetime) -> Optional[str]:
     return f"{settings.TARGETED_NEWS_URL}?q={q}&{settings.TARGETED_NEWS_LOCALE}"
 
 
-async def historical_evidence(question: str, as_of: datetime) -> list:
-    """News published before `as_of` about the market, ranked as in the live app."""
+async def historical_evidence(question: str, as_of: datetime, labels: Optional[list] = None) -> list:
+    """News published before `as_of` about the market, ranked as in the live app.
+
+    labels: outcome names of a multi-outcome event; naming one gives the same bonus as live.
+    """
+    from backend.multi.service import _mentions
     url = historical_search_url(question, as_of)
     if not url:
         return []
@@ -182,7 +191,10 @@ async def historical_evidence(question: str, as_of: datetime) -> list:
                 title, publisher = head, publisher or tail
         vec = await asyncio.to_thread(get_title_embedding, title)
         similarity = round(cosine(q_vec, vec), 4)
-        score = match_score(similarity, term_overlap(terms, title))
+        overlap = term_overlap(terms, title)
+        if labels and any(_mentions(label, title) for label in labels):
+            overlap.entity_hit, overlap.score = True, min(1.0, overlap.score + 0.2)
+        score = match_score(similarity, overlap)
         if score < settings.MARKET_MATCH_THRESHOLD:
             continue
         publisher = publisher or "Google News"
@@ -203,7 +215,7 @@ async def _jev_with_retries(state, questions):
         try:
             return await jev.system_one(state, questions)
         except RateLimited as e:
-            if attempt == MAX_RATE_LIMIT_WAITS:
+            if attempt == MAX_RATE_LIMIT_WAITS or isinstance(e, BudgetExceeded):
                 raise
             try:
                 await asyncio.wait_for(_cancel.wait(), timeout=max(1.0, e.retry_in))
@@ -235,73 +247,53 @@ async def _update(run_id, **fields):
 
 
 async def _run(run_id, params: Params) -> None:
+    with feature("backtest"):
+        await _run_tagged(run_id, params)
+
+
+async def _run_tagged(run_id, params: Params) -> None:
     status, message = "done", None
     try:
         async with SessionLocal() as db:
             s = await db.get(BettingSettings, 1)
             preset = s.preset if s else settings.PAPER_PRESET
-        markets = await polymarket.fetch_resolved_markets(params.resolved_after, params.resolved_before,
-                                                          limit=params.max_markets, min_volume=params.min_volume)
-        plan = plan_cases(markets, params.horizons)
+        plan = []
+        if "binary" in params.kinds:
+            markets = await polymarket.fetch_resolved_markets(params.resolved_after, params.resolved_before,
+                                                              limit=params.max_markets, min_volume=params.min_volume)
+            plan += [("binary", m, h, a) for m, h, a in plan_cases(markets, params.horizons)]
+        if "multi" in params.kinds:
+            events = await polymarket.fetch_resolved_events(params.resolved_after, params.resolved_before,
+                                                            limit=params.max_markets, min_volume=params.min_volume)
+            plan += [("multi", e, h, a) for e, h, a in plan_event_cases(events, params.horizons)]
         await _update(run_id, total=len(plan), message=None if plan else "Nessun mercato risolto con questi filtri")
         done = skipped = failed = calls = consecutive = 0
         histories: dict = {}
-        for market, horizon, as_of in plan:
+        for kind, item, horizon, as_of in plan:
             if _cancel.is_set():
                 status, message = "stopped", "Interrotto"
                 break
             if calls >= params.max_calls:
                 status, message = "done", f"Raggiunto il limite di {params.max_calls} chiamate a Jev"
                 break
-            case = BacktestCase(run_id=run_id, market_id=market.id, question=market.question, url=market.url,
-                                category=categorize(market.question), horizon_days=horizon, as_of=as_of,
-                                end_date=market.end_date, resolved_yes=market.resolved_yes, status="ok")
+            title = item.question if kind == "binary" else item.title
+            case = BacktestCase(run_id=run_id, kind=kind, market_id=item.id, question=title, url=item.url,
+                                category=categorize(title), horizon_days=horizon, as_of=as_of, end_date=item.end_date,
+                                resolved_yes=item.resolved_yes if kind == "binary" else True, status="ok")
             try:
-                if market.id not in histories:
-                    first = min(a for m, _h, a in plan if m.id == market.id) - timedelta(days=2)
-                    histories[market.id] = await polymarket.fetch_price_history(market.yes_token_id, first, as_of + timedelta(days=max(params.horizons)))
-                price = polymarket.price_at(histories[market.id], as_of)
-                if price is None:
-                    case.status, case.note = "skipped", "Prezzo storico non disponibile"
-                elif params.exclude_decided and not DECIDED_BELOW <= price <= DECIDED_ABOVE:
-                    case.status, case.note, case.price = "skipped", "Esito già scontato dal prezzo", price
-                else:
-                    case.price = price
-                    evidence = await historical_evidence(market.question, as_of)
-                    case.news_count = len(evidence)
-                    if not evidence:
-                        case.status, case.note = "skipped", "Nessuna notizia di quei giorni"
-                    else:
-                        ns_market = SimpleNamespace(question=market.question, description=market.description,
-                                                    end_date=market.end_date)
-                        state, questions = build_jev_request(ns_market, evidence, now=as_of)
-                        calls += 1
-                        response = await _jev_with_retries(state, questions)
-                        model_p, strength = parse_forecast(response)
-                        signal = compute_signal(model_p, price, strength)
-                        bet = _simulate_bet(signal, price, signal.blended_probability, model_p, strength,
-                                            signal.model_weight, (market.end_date - as_of).total_seconds() / 86400,
-                                            market.liquidity or market.volume * 0.02, preset)
-                        won = (bet["side"] == "YES") == market.resolved_yes
-                        case.model_probability = round(model_p, 4)
-                        case.evidence_strength = round(strength, 4)
-                        case.blended_probability = signal.blended_probability
-                        case.edge, case.signal = signal.edge, signal.signal
-                        case.verdict, case.side = bet["verdict"], bet["side"]
-                        if bet["verdict"] != "NO" and bet["outlay"] > 0:
-                            case.outlay = bet["outlay"]
-                            case.pnl = round((bet["shares"] if won else 0.0) - bet["outlay"], 2)
-                        case.news = [{"title": e.article.title, "source": e.source.name,
-                                      "published_at": e.article.published_at.isoformat()} for e in evidence]
-                        consecutive = 0
+                evaluate_case = _eval_binary if kind == "binary" else _eval_multi
+                if await evaluate_case(case, item, as_of, params, histories, preset):
+                    calls += 1
+                consecutive = 0
             except asyncio.CancelledError:
                 status, message = "stopped", "Interrotto"
                 break
-            except RateLimited:
-                status, message = "stopped", "Fermato: Jev continua a rifiutare le richieste per limite di frequenza"
+            except RateLimited as e:
+                status = "stopped"
+                message = f"Fermato: {e}" if isinstance(e, BudgetExceeded) else "Fermato: Jev continua a rifiutare le richieste per limite di frequenza"
                 break
             except Exception as e:
-                logger.warning(f"Backtest case {market.id} ({horizon} gg) failed: {e}")
+                logger.warning(f"Backtest case {item.id} ({horizon} gg) failed: {e}")
                 case.status, case.note = "error", f"{e.__class__.__name__}: {str(e)[:160]}"
                 consecutive += 1
             async with SessionLocal() as db:
@@ -320,6 +312,125 @@ async def _run(run_id, params: Params) -> None:
     await finalize(run_id, status, message)
 
 
+def _news_json(evidence) -> list:
+    return [{"title": e.article.title, "source": e.source.name, "published_at": e.article.published_at.isoformat()}
+            for e in evidence]
+
+
+async def _eval_binary(case, market, as_of, params, histories, preset) -> bool:
+    """Fills the case; returns True if Jev was called."""
+    if market.id not in histories:
+        histories[market.id] = await polymarket.fetch_price_history(
+            market.yes_token_id, as_of - timedelta(days=max(params.horizons) + 2), market.end_date)
+    price = polymarket.price_at(histories[market.id], as_of)
+    if price is None:
+        case.status, case.note = "skipped", "Prezzo storico non disponibile"
+        return False
+    case.price = price
+    if params.exclude_decided and not DECIDED_BELOW <= price <= DECIDED_ABOVE:
+        case.status, case.note = "skipped", "Esito già scontato dal prezzo"
+        return False
+    evidence = await historical_evidence(market.question, as_of)
+    case.news_count = len(evidence)
+    if not evidence:
+        case.status, case.note = "skipped", "Nessuna notizia di quei giorni"
+        return False
+    ns_market = SimpleNamespace(question=market.question, description=market.description, end_date=market.end_date)
+    state, questions = build_jev_request(ns_market, evidence, now=as_of)
+    response = await _jev_with_retries(state, questions)
+    model_p, strength = parse_forecast(response)
+    signal = compute_signal(model_p, price, strength)
+    bet = _simulate_bet(signal, price, signal.blended_probability, model_p, strength, signal.model_weight,
+                        (market.end_date - as_of).total_seconds() / 86400, market.liquidity or market.volume * 0.02, preset)
+    won = (bet["side"] == "YES") == market.resolved_yes
+    case.model_probability = round(model_p, 4)
+    case.evidence_strength = round(strength, 4)
+    case.blended_probability = signal.blended_probability
+    case.edge, case.signal = signal.edge, signal.signal
+    case.verdict, case.side = bet["verdict"], bet["side"]
+    if bet["verdict"] != "NO" and bet["outlay"] > 0:
+        case.outlay = bet["outlay"]
+        case.pnl = round((bet["shares"] if won else 0.0) - bet["outlay"], 2)
+    case.news = _news_json(evidence)
+    return True
+
+
+def plan_event_cases(events: list, horizons: list) -> list[tuple]:
+    plan = []
+    for e in events:
+        closes = [o.closed_time for o in e.outcomes if o.closed_time]
+        close = min([e.end_date] + closes) if closes else e.end_date
+        start = min((o.start_date for o in e.outcomes if o.start_date), default=None)
+        for h in horizons:
+            as_of = close - timedelta(days=h)
+            if start and as_of < start + timedelta(days=1):
+                continue
+            plan.append((e, h, as_of))
+    return plan
+
+
+def multi_brier(outcomes: list[dict], winner_id: str, key: str) -> float:
+    """Multi-class Brier: sum over outcomes of (p - outcome)^2; 0 = perfect, 2 = certain and wrong."""
+    return round(sum((o[key] - (1.0 if o["id"] == winner_id else 0.0)) ** 2 for o in outcomes), 5)
+
+
+async def _eval_multi(case, event, as_of, params, histories, preset) -> bool:
+    from backend.multi import service as multi
+
+    top = sorted((o for o in event.outcomes if o.yes_token_id), key=lambda o: -(o.volume or 0))[:settings.MULTI_MAX_OUTCOMES]
+    priced = []
+    for o in top:
+        if o.id not in histories:
+            histories[o.id] = await polymarket.fetch_price_history(
+                o.yes_token_id, as_of - timedelta(days=max(params.horizons) + 2), event.end_date)
+        p = polymarket.price_at(histories[o.id], as_of)
+        if p is not None:
+            priced.append(SimpleNamespace(id=o.id, label=o.group_title, yes_price=p, closed=False))
+    winner = event.winner_id
+    if len(priced) < 3 or winner not in {o.id for o in priced}:
+        case.status, case.note = "skipped", "Prezzo storico non disponibile"
+        return False
+    priced.sort(key=lambda o: -o.yes_price)
+    items = multi.market_distribution(priced, settings.MULTI_MAX_OUTCOMES)
+    evidence = await historical_evidence(event.title, as_of, labels=[i["label"] for i in items if i["id"] != multi.OTHER_ID])
+    case.news_count = len(evidence)
+    if not evidence:
+        case.status, case.note = "skipped", "Nessuna notizia di quei giorni"
+        return False
+    ns_event = SimpleNamespace(title=event.title, description=event.description, end_date=event.end_date)
+    state, questions, keys = multi.build_request(ns_event, items, evidence, now=as_of)
+    response = await _jev_with_retries(state, questions)
+    for key, item in keys.items():
+        item["key"] = key
+    strength = float(response.scores["evidence_strength"].score) / (len(EVIDENCE_CRITERIA) - 1)
+    outcomes, w = multi.blend_distribution(items, dict(response.choices["winner"].probabilities), strength)
+    signal, best_id, best_edge = multi.pick_signal(outcomes, strength)
+    win = next(o for o in outcomes if o["id"] == winner)
+    best = next((o for o in outcomes if o["id"] == best_id), None)
+    case.price, case.model_probability, case.blended_probability = win["market"], win["model"], win["blended"]
+    case.evidence_strength = round(strength, 4)
+    case.signal, case.edge, case.side = signal, best_edge, "YES"
+    if signal == "BUY_YES" and best:
+        sig = SimpleNamespace(signal="BUY_YES", blended_probability=best["blended"], model_weight=w)
+        bet = _simulate_bet(sig, best["price"], best["blended"], best["model"], strength, w,
+                            (event.end_date - as_of).total_seconds() / 86400, event.liquidity or event.volume * 0.02, preset)
+        case.verdict = bet["verdict"]
+        if bet["verdict"] != "NO" and bet["outlay"] > 0:
+            case.outlay = bet["outlay"]
+            case.pnl = round((bet["shares"] if best_id == winner else 0.0) - bet["outlay"], 2)
+    top_market = max(outcomes, key=lambda o: o["market"])
+    top_model = max(outcomes, key=lambda o: o["model"])
+    case.details = {
+        "winner": win["label"], "best": best["label"] if best else None, "n_outcomes": len(outcomes),
+        "brier_market": multi_brier(outcomes, winner, "market"), "brier_model": multi_brier(outcomes, winner, "model"),
+        "brier_blended": multi_brier(outcomes, winner, "blended"),
+        "market_top_right": top_market["id"] == winner, "model_top_right": top_model["id"] == winner,
+        "outcomes": outcomes,
+    }
+    case.news = _news_json(evidence)
+    return True
+
+
 async def finalize(run_id, status: str, message: Optional[str]) -> None:
     async with SessionLocal() as db:
         cases = (await db.execute(select(BacktestCase).where(BacktestCase.run_id == run_id))).scalars().all()
@@ -334,4 +445,4 @@ def case_dict(c: BacktestCase) -> dict:
     return {k: getattr(c, k) for k in (
         "id", "market_id", "question", "url", "category", "horizon_days", "as_of", "end_date", "resolved_yes", "status",
         "note", "price", "news_count", "model_probability", "evidence_strength", "blended_probability", "edge",
-        "signal", "verdict", "side", "outlay", "pnl", "news")}
+        "signal", "verdict", "side", "outlay", "pnl", "news", "kind", "details")}

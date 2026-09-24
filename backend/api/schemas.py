@@ -122,6 +122,7 @@ class StatusResponse(BaseModel):
     polymarket_enabled: bool
     prediction_auto: bool
     targeted_news_enabled: bool = False
+    usage: Optional[dict] = None
     min_edge: float
     min_evidence: float
     model_weight_max: float
