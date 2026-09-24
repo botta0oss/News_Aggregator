@@ -63,6 +63,10 @@ async def security_headers(request: Request, call_next):
         h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     if request.url.path.startswith(("/auth", "/status")):
         h.setdefault("Cache-Control", "no-store")
+    elif h.get("content-type", "").startswith(("text/html", "text/javascript", "application/javascript", "text/css")):
+        # Dashboard files: the browser must revalidate them (cheap 304 via ETag), otherwise after
+        # an update it can mix an old ui.js with a new app.js and the module graph fails to load
+        h.setdefault("Cache-Control", "no-cache")
     return response
 
 # Public: login endpoints. Everything else requires a signed-in user; the POST endpoints

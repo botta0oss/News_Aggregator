@@ -3,6 +3,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.ai import jev
+from backend.ai.ratelimit import RateLimited
 from backend.auth.deps import require_admin
 from backend.api.schemas import (
     CalibrationResponse, MarketDetailResponse, MarketListResponse, MarketResponse,
@@ -182,7 +183,11 @@ async def predict(market_id: str, refresh_price: bool = Query(True), db: AsyncSe
     if market.closed:
         raise HTTPException(status_code=409, detail="Market is closed")
     try:
-        prediction = await predict_market(db, market)
+        # Interactive request: do not keep the user waiting behind the background queue
+        prediction = await predict_market(db, market, max_wait=10)
+    except RateLimited as e:
+        raise HTTPException(status_code=429, detail=f"Jev ha raggiunto il limite di richieste: riprova tra {max(1, round(e.retry_in))} secondi.",
+                            headers={"Retry-After": str(max(1, round(e.retry_in)))})
     except LookupError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:

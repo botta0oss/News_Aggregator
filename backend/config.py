@@ -53,7 +53,15 @@ class Settings(BaseSettings):
     FEED_TIMEOUT_SECONDS: float = 20.0
     FEED_MAX_BYTES: int = 5_000_000
     ALLOW_PRIVATE_FEEDS: bool = False         # allow feeds on private/internal addresses (SSRF risk)
-    AI_BATCH_SIZE: int = 100                  # articles summarized and classified per run
+    AI_BATCH_SIZE: int = 25                   # articles summarized and classified per run
+
+    # AI providers rate limits (requests per minute, client side). Set them to your plan's limits.
+    GROQ_RPM: float = 20
+    GEMINI_RPM: float = 10
+    JEV_RPM: float = 30
+    JEV_CONCURRENCY: int = 2
+    OLLAMA_CONCURRENCY: int = 1
+    AI_MAX_WAIT_SECONDS: float = 90           # longest a background job waits for a provider slot
 
     # Authentication
     SESSION_TTL_HOURS: int = 168              # absolute session lifetime (7 days)

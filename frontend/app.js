@@ -190,6 +190,8 @@ async function runJob(btn, path, startedMessage) {
 }
 
 function setupShell() {
+  window.__appStarted = true; // read by boot-check.js
+  document.querySelector(".boot-error")?.remove();
   hydrateIcons();
   document.getElementById("btn-logout").addEventListener("click", logout);
   window.addEventListener("auth:required", () => {

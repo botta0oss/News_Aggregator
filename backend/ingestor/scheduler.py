@@ -11,6 +11,7 @@ from backend.ingestor.fetcher import FeedError, fetch_and_parse_feed
 from backend.ingestor.sources import seed_sources_if_empty
 from backend.ingestor.deduplicator import hash_url, get_title_embedding
 from backend.ai.summarizer import summarize_article
+from backend.ai.ratelimit import RateLimited
 from backend.ai.typesafe_evaluator import evaluate_article_dimensions
 from backend.markets.service import run_market_pipeline
 
@@ -38,16 +39,17 @@ async def process_ai_queue():
                 source_name = source.name if source else "Unknown Source"
                 source_hint = source.category_hint if source else None
                 
-                # 1. Text Summary
-                summary = await summarize_article(title, content_raw[:2500])
-                
-                # 2. TypeSafe Jev Evaluation (Parallel judgments on single article state)
+                # 1. TypeSafe Jev evaluation first: if Jev is rate limited the batch stops here,
+                #    before spending a summarizer call on an article that will be retried
                 eval_res = await evaluate_article_dimensions(
                     title=title,
                     source_name=source_name,
                     content=content_raw,
                     source_hint=source_hint,
                 )
+
+                # 2. Text summary
+                summary = await summarize_article(title, content_raw[:2500])
                 
                 composite = eval_res["composite_score"]
                 legacy_score = max(1, min(10, int(round(composite * 10))))
@@ -71,6 +73,11 @@ async def process_ai_queue():
                 session.add(processed)
                 await session.commit()
                 logger.info(f"Processed article {article_id}: {eval_res['category']} (Composite: {composite})")
+            except RateLimited as e:
+                # Stop the batch: the remaining articles stay unprocessed and are picked up next run
+                logger.warning(f"AI queue paused: {e}. Remaining articles will be processed on the next run")
+                await session.rollback()
+                break
             except Exception as e:
                 logger.error(f"AI processing failed for article {article_id}: {e}")
                 await session.rollback()
@@ -239,6 +246,10 @@ async def reclassify_articles(limit: int = 200) -> int:
                     processed.importance_score = max(1, min(10, int(round(res["composite_score"] * 10))))
                     await session.commit()
                     done += 1
+                except RateLimited as e:
+                    logger.warning(f"Reclassification paused: {e}")
+                    await session.rollback()
+                    break
                 except Exception as e:
                     logger.error(f"Reclassification failed for {processed_id}: {e}")
                     await session.rollback()
