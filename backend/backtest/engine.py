@@ -22,6 +22,7 @@ from sqlalchemy import select
 
 from backend.ai import jev
 from backend.ai.ratelimit import RateLimited
+from backend.ai.usage import BudgetExceeded, feature
 from backend.ai.typesafe_evaluator import _heuristic_evaluation
 from backend.backtest.analysis import summarize
 from backend.betting.economics import Exposure, estimated_quote, evaluate
@@ -203,7 +204,7 @@ async def _jev_with_retries(state, questions):
         try:
             return await jev.system_one(state, questions)
         except RateLimited as e:
-            if attempt == MAX_RATE_LIMIT_WAITS:
+            if attempt == MAX_RATE_LIMIT_WAITS or isinstance(e, BudgetExceeded):
                 raise
             try:
                 await asyncio.wait_for(_cancel.wait(), timeout=max(1.0, e.retry_in))
@@ -235,6 +236,11 @@ async def _update(run_id, **fields):
 
 
 async def _run(run_id, params: Params) -> None:
+    with feature("backtest"):
+        await _run_tagged(run_id, params)
+
+
+async def _run_tagged(run_id, params: Params) -> None:
     status, message = "done", None
     try:
         async with SessionLocal() as db:
@@ -297,8 +303,9 @@ async def _run(run_id, params: Params) -> None:
             except asyncio.CancelledError:
                 status, message = "stopped", "Interrotto"
                 break
-            except RateLimited:
-                status, message = "stopped", "Fermato: Jev continua a rifiutare le richieste per limite di frequenza"
+            except RateLimited as e:
+                status = "stopped"
+                message = f"Fermato: {e}" if isinstance(e, BudgetExceeded) else "Fermato: Jev continua a rifiutare le richieste per limite di frequenza"
                 break
             except Exception as e:
                 logger.warning(f"Backtest case {market.id} ({horizon} gg) failed: {e}")

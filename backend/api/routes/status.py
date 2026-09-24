@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.ai import jev
+from backend.ai import jev, usage
 from backend.config import settings
 from backend.db.database import get_db
 from backend.db.models import Article, Market, MarketArticleLink, MarketPrediction, ProcessedArticle, Source
@@ -22,6 +22,7 @@ async def get_status(db: AsyncSession = Depends(get_db)):
         "polymarket_enabled": settings.POLYMARKET_ENABLED,
         "prediction_auto": settings.PREDICTION_AUTO,
         "targeted_news_enabled": settings.TARGETED_NEWS_ENABLED,
+        "usage": await usage.today_status(),
         "min_edge": settings.MIN_EDGE,
         "min_evidence": settings.MIN_EVIDENCE,
         "model_weight_max": settings.MODEL_WEIGHT_MAX,

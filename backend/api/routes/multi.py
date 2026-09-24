@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.ai import jev
 from backend.ai.ratelimit import RateLimited
+from backend.ai.usage import BudgetExceeded, feature
 from backend.auth.deps import require_admin
 from backend.db.database import get_db
 from backend.db.models import MultiArticleLink, MultiEvent, MultiOutcome, MultiPrediction
@@ -113,7 +114,10 @@ async def predict(event_id: str, db: AsyncSession = Depends(get_db)):
     if event.closed:
         raise HTTPException(status_code=409, detail="L'evento è chiuso")
     try:
-        return _prediction_out(await service.predict_event(db, event, max_wait=10))
+        with feature("piu_esiti"):
+            return _prediction_out(await service.predict_event(db, event, max_wait=10))
+    except BudgetExceeded as e:
+        raise HTTPException(status_code=429, detail=str(e))
     except RateLimited as e:
         raise HTTPException(status_code=429, detail=f"Jev ha raggiunto il limite di richieste: riprova tra {max(1, round(e.retry_in))} secondi.")
     except LookupError as e:

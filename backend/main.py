@@ -12,7 +12,7 @@ from backend.ingestor.scheduler import start_scheduler, shutdown_scheduler
 from backend.ai import jev
 from backend.auth.deps import require_user
 from backend.auth.service import ensure_bootstrap_admin
-from backend.api.routes import alerts, articles, auth, backtest, categories, ingest, markets, multi, portfolio, sources, status
+from backend.api.routes import alerts, articles, auth, backtest, categories, ingest, markets, multi, portfolio, sources, status, usage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -89,6 +89,7 @@ app.include_router(portfolio.markets_router, dependencies=protected)
 app.include_router(alerts.router, dependencies=protected)
 app.include_router(backtest.router, dependencies=protected)
 app.include_router(multi.router, dependencies=protected)
+app.include_router(usage.router, dependencies=protected)
 
 # Static dashboard files are public (they contain no data); the data comes from the API above.
 # Mounted only if present: StaticFiles raises at startup on a missing directory.

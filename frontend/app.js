@@ -12,6 +12,7 @@ import { bulkPredict } from "./views/bulk.js";
 import { viewAlerts } from "./views/alerts.js";
 import { viewBacktest } from "./views/backtest.js";
 import { viewMultiList, viewMultiDetail } from "./views/multi.js";
+import { viewUsage } from "./views/usage.js";
 import { renderNav, markCurrent, setBadge, setupCollapse, setupMenu } from "./nav.js";
 import { economicsCard, verdictBadge } from "./economics.js";
 
@@ -154,6 +155,11 @@ function renderBanner() {
       " al file .env e riavvia. Nel frattempo le notizie vengono classificate con un'euristica locale.",
     ));
     banner.hidden = false;
+  } else if (status.usage?.blocked) {
+    banner.append(icon("alert"), h("span", {},
+      "Limite giornaliero delle API AI raggiunto: previsioni, allerte e backtest sono in pausa fino a mezzanotte. ",
+      h("a", { href: "#/uso" }, "Vedi uso e costi")));
+    banner.hidden = false;
   } else {
     banner.hidden = true;
   }
@@ -254,6 +260,7 @@ const routes = [
   [/^#\/portafoglio$/, "portafoglio", () => viewPortfolio(ctx)],
   [/^#\/allerte$/, "allerte", () => viewAlerts(ctx)],
   [/^#\/multi$/, "multi", () => viewMultiList(ctx)],
+  [/^#\/uso$/, "uso", () => viewUsage(ctx)],
   [/^#\/multi\/(.+)$/, "multi", (id) => viewMultiDetail(ctx, id)],
   [/^#\/backtest(?:\/([\w-]+))?$/, "backtest", (id) => viewBacktest(ctx, id)],
 ];

@@ -12,6 +12,7 @@ from backend.ingestor.sources import seed_sources_if_empty
 from backend.ingestor.deduplicator import embedding_text, hash_url, get_title_embedding
 from backend.ai.summarizer import summarize_article
 from backend.ai.ratelimit import RateLimited
+from backend.ai.usage import feature as usage_feature
 from backend.ai.typesafe_evaluator import evaluate_article_dimensions
 from backend.markets.service import run_market_pipeline
 
@@ -42,16 +43,18 @@ async def process_ai_queue():
                 
                 # 1. TypeSafe Jev evaluation first: if Jev is rate limited the batch stops here,
                 #    before spending a summarizer call on an article that will be retried
-                eval_res = await evaluate_article_dimensions(
-                    title=title,
-                    source_name=source_name,
-                    content=content_raw,
-                    source_hint=source_hint,
-                )
+                with usage_feature("classificazione"):
+                    eval_res = await evaluate_article_dimensions(
+                        title=title,
+                        source_name=source_name,
+                        content=content_raw,
+                        source_hint=source_hint,
+                    )
 
                 # 2. Text summary
                 # Headline-only items (targeted search) have nothing to summarise: no API call
-                summary = await summarize_article(title, content_raw[:2500]) if content_raw.strip() else title
+                with usage_feature("riassunti"):
+                    summary = await summarize_article(title, content_raw[:2500]) if content_raw.strip() else title
                 
                 composite = eval_res["composite_score"]
                 legacy_score = max(1, min(10, int(round(composite * 10))))
@@ -280,6 +283,11 @@ def shutdown_scheduler():
         scheduler.shutdown(wait=False)
 
 async def reclassify_articles(limit: int = 200) -> int:
+    with usage_feature("riclassificazione"):
+        return await _reclassify_articles(limit)
+
+
+async def _reclassify_articles(limit: int = 200) -> int:
     """Re-runs classification on stored articles (keeps summaries).
 
     With a Jev key: articles not yet classified by Jev. Without: articles classified before

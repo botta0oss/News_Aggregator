@@ -3,6 +3,7 @@ import re
 from typing import Any, Dict, Optional
 from backend.ai import jev
 from backend.ai.ratelimit import RateLimited
+from backend.ai.usage import BudgetExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +188,9 @@ async def evaluate_article_dimensions(
                 "market_relevance": round(norm("market_relevance"), 3),
                 "source": "jev",
             }
+        except BudgetExceeded as e:
+            # Daily limit reached: classify for free with the heuristic instead of piling up articles
+            logger.info(f"{e} Heuristic classification.")
         except RateLimited:
             raise  # the caller retries this article on the next run instead of downgrading it
         except Exception as e:

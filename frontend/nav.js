@@ -23,6 +23,7 @@ export const NAV = [
 
 export const FOOTER_NAV = [
   { id: "impostazioni", href: "#/impostazioni", label: "Impostazioni", icon: "settings" },
+  { id: "uso", href: "#/uso", label: "Uso e costi", icon: "gauge" },
   { id: "metodo", href: "#/metodo", label: "Come funziona", icon: "help" },
 ];
 

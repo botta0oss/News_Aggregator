@@ -392,3 +392,16 @@ class MultiPrediction(Base):
     best_edge: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     signal: Mapped[str] = mapped_column(Text, default="HOLD")   # BUY_YES (on best_outcome_id) / HOLD
     article_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ApiUsage(Base):
+    """One paid AI call (Jev, Groq, Gemini): what it was for, tokens and estimated cost."""
+    __tablename__ = 'api_usage'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)     # jev / groq / gemini
+    feature: Mapped[str] = mapped_column(Text, nullable=False)      # classificazione, previsioni, allerte...
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)

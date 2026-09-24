@@ -160,6 +160,12 @@ async def in_cooldown(db: AsyncSession, market_id: str, hours: float) -> bool:
 
 async def run_alerts(db: AsyncSession) -> dict:
     """Checks new links and raises alerts. Safe to call after every link refresh."""
+    from backend.ai.usage import feature
+    with feature("allerte"):
+        return await _run_alerts(db)
+
+
+async def _run_alerts(db: AsyncSession) -> dict:
     from backend.markets.service import predict_market  # the market service imports this module
 
     stats = {"triggers": 0, "evaluated": 0, "opportunities": 0, "notified": 0, "skipped_budget": 0}

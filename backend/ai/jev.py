@@ -43,12 +43,18 @@ async def close_client() -> None:
 
 async def system_one(state, questions, max_wait: Optional[float] = None):
     """Rate-limited System One call. Raises RateLimited when Jev is paused or saturated."""
+    from backend.ai import usage
     from backend.ai.ratelimit import get_limiter, retry_after_seconds
+    await usage.check("jev")  # daily limits: raises BudgetExceeded (a RateLimited)
     limiter = get_limiter("jev")
     async with limiter.slot(max_wait):
         try:
-            return await get_client().system_one(state=state, questions=questions)
+            response = await get_client().system_one(state=state, questions=questions)
         except Exception as e:
             if getattr(e, "status_code", None) == 429 or type(e).__name__ == "TypeSafeRateLimitError":
                 limiter.cooldown(retry_after_seconds(e, 30))
+            await usage.record("jev", ok=False)
             raise
+    tokens = getattr(response, "usage", None)
+    await usage.record("jev", getattr(tokens, "input_tokens", 0), getattr(tokens, "output_tokens", 0))
+    return response

@@ -1,6 +1,7 @@
 import logging
 import httpx
 from typing import Optional
+from backend.ai import usage
 from backend.ai.ratelimit import RateLimited, get_limiter, retry_after_seconds
 from backend.config import settings
 
@@ -41,6 +42,7 @@ async def summarize_with_gemini(title: str, content: str) -> Optional[str]:
         return None
     limiter = get_limiter("gemini")
     try:
+        await usage.check("gemini")
         async with limiter.slot():
             prompt = (
                 "You are an objective news editor. Write a concise, 3-sentence factual summary in Italian "
@@ -49,12 +51,15 @@ async def summarize_with_gemini(title: str, content: str) -> Optional[str]:
                 f"Title: {title}\nContent: {content[:3000]}"
             )
             response = await _gemini().aio.models.generate_content(model=settings.GEMINI_MODEL, contents=prompt)
+            meta = getattr(response, "usage_metadata", None)
+            await usage.record("gemini", getattr(meta, "prompt_token_count", 0), getattr(meta, "candidates_token_count", 0))
             return response.text.strip() if response.text else None
     except RateLimited as e:
         logger.info(f"Gemini skipped: {e}")
     except Exception as e:
         if _is_rate_limit(e):
             limiter.cooldown(retry_after_seconds(e, 60))
+        await usage.record("gemini", ok=False)
         logger.warning(f"Gemini summarization failed: {e}")
     return None
 
@@ -77,6 +82,7 @@ async def summarize_with_groq(title: str, content: str) -> Optional[str]:
         {"role": "user", "content": f"Title: {title}\nContent: {content[:3000]}"},
     ]
     try:
+        await usage.check("groq")
         async with limiter.slot():
             extra = _groq_extra_params(settings.GROQ_MODEL)
             try:
@@ -89,6 +95,8 @@ async def summarize_with_groq(title: str, content: str) -> Optional[str]:
                         messages=messages, model=settings.GROQ_MODEL, temperature=0.1)
                 else:
                     raise
+            tokens = getattr(response, "usage", None)
+            await usage.record("groq", getattr(tokens, "prompt_tokens", 0), getattr(tokens, "completion_tokens", 0))
             text = response.choices[0].message.content if response.choices else None
             return text.strip() if text and text.strip() else None
     except RateLimited as e:
@@ -96,6 +104,7 @@ async def summarize_with_groq(title: str, content: str) -> Optional[str]:
     except Exception as e:
         if _is_rate_limit(e):
             get_limiter("groq").cooldown(retry_after_seconds(e, 30))
+        await usage.record("groq", ok=False)
         logger.warning(f"Groq summarization failed: {e}")
     return None
 

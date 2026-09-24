@@ -154,7 +154,9 @@ async def login_client(role: str):
 @pytest.fixture(autouse=True)
 def _reset_rate_limiters():
     """Limiters keep state (cooldowns) across calls: start every test clean."""
-    from backend.ai import ratelimit
+    from backend.ai import ratelimit, usage
     ratelimit.reset_limiters()
+    usage.reset()
     yield
     ratelimit.reset_limiters()
+    usage.reset()
