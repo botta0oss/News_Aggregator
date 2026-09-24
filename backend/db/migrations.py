@@ -21,6 +21,15 @@ STATEMENTS = [
     "ALTER TABLE processed_articles ADD COLUMN IF NOT EXISTS classifier TEXT",
     # Forecast explanation
     "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS model_weight DOUBLE PRECISION",
+    # Economics engine
+    "ALTER TABLE markets ADD COLUMN IF NOT EXISTS yes_token_id TEXT",
+    "ALTER TABLE markets ADD COLUMN IF NOT EXISTS no_token_id TEXT",
+    "ALTER TABLE markets ADD COLUMN IF NOT EXISTS best_bid DOUBLE PRECISION",
+    "ALTER TABLE markets ADD COLUMN IF NOT EXISTS best_ask DOUBLE PRECISION",
+    "ALTER TABLE markets ADD COLUMN IF NOT EXISTS taker_fee_bps DOUBLE PRECISION",
+    "ALTER TABLE markets ADD COLUMN IF NOT EXISTS order_min_size DOUBLE PRECISION",
+    "ALTER TABLE markets ADD COLUMN IF NOT EXISTS category TEXT",
+    "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS economics JSONB",
     # Full-text search on title + content ("simple" config: feeds mix languages)
     """CREATE INDEX IF NOT EXISTS ix_articles_fts ON articles
        USING gin (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(content_raw, '')))""",

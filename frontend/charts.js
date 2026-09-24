@@ -193,3 +193,68 @@ export function brierBars(rows) {
     }),
   );
 }
+
+/** Equity curve of the simulated portfolio: one series, dashed reference at the initial capital. */
+export function equityChart(points, initial) {
+  const data = points.map((p) => ({ t: new Date(p.t).getTime(), v: p.equity })).sort((a, b) => a.t - b.t);
+  const wrap = h("div", { class: "chart" });
+  const holder = h("div", {});
+  wrap.append(holder);
+
+  const draw = () => {
+    const width = Math.max(280, holder.clientWidth || 600);
+    const height = 200;
+    const m = { l: 56, r: 72, t: 12, b: 26 };
+    const iw = width - m.l - m.r, ih = height - m.t - m.b;
+    const values = data.map((d) => d.v).concat(initial);
+    let lo = Math.min(...values), hi = Math.max(...values);
+    const pad = Math.max((hi - lo) * 0.15, initial * 0.02);
+    lo -= pad; hi += pad;
+    const t0 = data[0].t, t1 = data[data.length - 1].t;
+    const x = (t) => m.l + (t1 === t0 ? iw / 2 : ((t - t0) / (t1 - t0)) * iw);
+    const y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * ih;
+
+    const svg = s("svg", { viewBox: `0 0 ${width} ${height}`, height, role: "img",
+      "aria-label": `Capitale da ${fmt.money(data[0].v)} a ${fmt.money(data[data.length - 1].v)}` });
+    const ticks = [lo + (hi - lo) * 0.1, (lo + hi) / 2, hi - (hi - lo) * 0.1];
+    for (const v of ticks) {
+      svg.append(s("line", { class: "gridline", x1: m.l, x2: m.l + iw, y1: y(v), y2: y(v) }));
+      svg.append(s("text", { class: "tick", x: m.l - 8, y: y(v) + 4, "text-anchor": "end" }, Math.round(v).toLocaleString("it-IT")));
+    }
+    svg.append(s("line", { x1: m.l, x2: m.l + iw, y1: y(initial), y2: y(initial), stroke: "var(--axis)", "stroke-dasharray": "4 4" }));
+    svg.append(s("text", { class: "tick", x: m.l + iw + 8, y: y(initial) + 4 }, "iniziale"));
+    const line = data.map((d, i) => `${i ? "L" : "M"}${x(d.t).toFixed(1)},${y(d.v).toFixed(1)}`).join("");
+    if (data.length > 1) {
+      svg.append(s("path", { d: `${line}L${x(t1)},${m.t + ih}L${x(t0)},${m.t + ih}Z`, fill: "var(--series-blended)", opacity: 0.1 }));
+      svg.append(s("path", { d: line, fill: "none", stroke: "var(--series-blended)", "stroke-width": 2, "stroke-linejoin": "round" }));
+    }
+    const last = data[data.length - 1];
+    svg.append(s("circle", { cx: x(last.t), cy: y(last.v), r: 4.5, fill: "var(--series-blended)", stroke: "var(--surface)", "stroke-width": 2 }));
+    svg.append(s("text", { class: "endvalue", x: x(last.t) + 10, y: y(last.v) + 4 }, `${Math.round(last.v).toLocaleString("it-IT")} $`));
+    [t0, t1].forEach((t, i) => svg.append(s("text", { class: "tick", x: x(t), y: height - 6, "text-anchor": i ? "end" : "start" }, fmt.date(t))));
+
+    const cross = s("line", { class: "crosshair", y1: m.t, y2: m.t + ih, visibility: "hidden" });
+    svg.append(cross);
+    const overlay = s("rect", { x: m.l, y: m.t, width: iw, height: ih, fill: "transparent" });
+    overlay.addEventListener("mousemove", (e) => {
+      const rect = svg.getBoundingClientRect();
+      const px = ((e.clientX - rect.left) / rect.width) * width;
+      let best = data[0];
+      for (const d of data) if (Math.abs(x(d.t) - px) < Math.abs(x(best.t) - px)) best = d;
+      cross.setAttribute("x1", x(best.t)); cross.setAttribute("x2", x(best.t)); cross.setAttribute("visibility", "visible");
+      showTooltip(ttRows(fmt.dateTime(best.t), [["blended", "Capitale", fmt.money(best.v)], [null, "Da inizio", fmt.signedMoney(best.v - initial)]]), e.clientX, e.clientY);
+    });
+    overlay.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); hideTooltip(); });
+    svg.append(overlay);
+    holder.replaceChildren(svg);
+  };
+  requestAnimationFrame(draw);
+  if ("ResizeObserver" in window) {
+    let lastWidth = 0;
+    new ResizeObserver((entries) => {
+      const w = Math.round(entries[0].contentRect.width);
+      if (w && w !== lastWidth) { lastWidth = w; draw(); }
+    }).observe(holder);
+  }
+  return wrap;
+}

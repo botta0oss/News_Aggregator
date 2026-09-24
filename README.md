@@ -22,6 +22,7 @@ opportunità.
 - [Come nasce una previsione](#come-nasce-una-previsione)
 - [API](#api)
 - [Flusso di lavoro consigliato](#flusso-di-lavoro-consigliato)
+- [Valutazione economica e portafoglio simulato](#valutazione-economica-e-portafoglio-simulato)
 - [Calibrazione](#calibrazione)
 - [Sviluppo e test](#sviluppo-e-test)
 - [Struttura del progetto](#struttura-del-progetto)
@@ -41,7 +42,9 @@ opportunità.
 | **Mercati** | Sincronizza in sola lettura i mercati Sì/No più scambiati di Polymarket. |
 | **Collegamento** | Associa ogni mercato alle notizie recenti più simili (pgvector). |
 | **Previsione** | Jev stima la probabilità del SÌ a partire da regole del mercato e notizie. |
-| **Segnale** | Confronta la stima con il prezzo: `BUY_YES`, `BUY_NO` o `HOLD`, con puntata suggerita. |
+| **Segnale** | Confronta la stima con il prezzo: `BUY_YES`, `BUY_NO` o `HOLD`. |
+| **Valutazione economica** | Decide se conviene davvero e quanto puntare: prezzo reale dal book, commissioni, incertezza della stima, rendimento annualizzato, Kelly sul book e limiti di rischio. |
+| **Portafoglio simulato** | Ogni scommessa che conviene diventa una scommessa virtuale, chiusa alla risoluzione, per misurare i risultati prima di usare soldi veri. |
 
 ## Architettura
 
@@ -241,6 +244,21 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 </details>
 
 <details>
+<summary><b>Valutazione economica e portafoglio simulato</b></summary>
+
+| Variabile | Default | Descrizione |
+|---|---|---|
+| `POLYMARKET_CLOB_URL` | `https://clob.polymarket.com` | API pubblica del book (sola lettura) |
+| `RISK_FREE_RATE` | `0.04` | Rendimento annuo dell'alternativa senza rischio, base della soglia di rendimento |
+| `DEFAULT_FEE_BPS` | `0` | Commissione (in punti base) quando il mercato non ne dichiara una |
+| `DEFAULT_SPREAD` | `0.02` | Spread ipotizzato quando il book non è disponibile |
+| `MODEL_PSEUDO_COUNT` | `20` | Quante "osservazioni" vale una stima Jev con evidenze piene (regola l'incertezza) |
+| `PAPER_BANKROLL` | `1000` | Capitale iniziale simulato (modificabile dalla dashboard) |
+| `PAPER_PRESET` | `bilanciato` | Preset iniziale: `prudente`, `bilanciato`, `aggressivo` |
+
+</details>
+
+<details>
 <summary><b>Accesso</b></summary>
 
 | Variabile | Default | Descrizione |
@@ -307,7 +325,9 @@ per il NO la formula simmetrica sul prezzo del NO.
 | Peso `w` | 0.5 × 0.75 = 0.375 |
 | Probabilità blended | 0.375 × 0.80 + 0.625 × 0.35 ≈ **0.519** |
 | Edge | **+0.169** → `BUY_YES` |
-| Puntata | (0.519 − 0.35) / 0.65 × 0.25 ≈ **6.5 % del bankroll** |
+| Puntata (Kelly semplice) | (0.519 − 0.35) / 0.65 × 0.25 ≈ **6.5 % del bankroll** |
+
+La puntata effettiva la decide poi la [valutazione economica](#valutazione-economica-e-portafoglio-simulato), che tiene conto di prezzo reale, costi, incertezza, tempo e limiti.
 
 ## API
 
@@ -372,6 +392,20 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 | GET | `/predictions/opportunities` | Mercati con edge maggiore. Filtri: `min_edge`, `min_evidence`, `include_hold` |
 | GET | `/predictions/calibration` | Brier score sui mercati risolti |
 | GET | `/status` | Configurazione (Jev attivo, soglie) e contatori per la dashboard |
+| GET | `/markets/{id}/economics` | Valutazione economica dal vivo dell'ultima previsione (`preset` opzionale) |
+| POST | `/markets/{id}/paper-bet` | Aggiunge subito la scommessa simulata, se conviene (admin) |
+
+### Portafoglio simulato
+
+| Metodo | Path | Descrizione |
+|---|---|---|
+| GET | `/portfolio` | Riepilogo, curva del capitale, preset disponibili |
+| PUT | `/portfolio/settings` | `{preset, auto_paper}` (admin) |
+| POST | `/portfolio/reset` | `{bankroll, preset}`: cancella le scommesse simulate e ricomincia (admin) |
+| GET | `/portfolio/bets` | Scommesse: `status` = `open`, `settled`, `excluded`, `all` |
+| POST | `/portfolio/bets/{id}/exclude` · `/include` | Esclude o riammette una scommessa (admin) |
+| GET · POST | `/portfolio/exclusions` | Esclusioni `{kind: market/event/category, value, label}` (POST admin) |
+| DELETE | `/portfolio/exclusions/{id}` | Rimuove un'esclusione (admin) |
 
 Codici di errore di `/markets/{id}/predict`: `503` chiave TypeSafe mancante, `422` nessuna
 notizia collegata, `409` mercato chiuso o senza prezzo, `404` mercato sconosciuto.
@@ -413,6 +447,47 @@ Esempio di risposta di `/predictions/opportunities` (valori illustrativi):
 5. Consulta le opportunità: `GET /predictions/opportunities?min_edge=0.08`
 6. Quando i risultati convincono, attiva `PREDICTION_AUTO=true`, tenendo d'occhio i costi
    con `PREDICTION_MAX_PER_RUN`.
+7. Lascia lavorare il portafoglio simulato per decine di mercati risolti. Prima di usare
+   soldi veri controlla che il risultato reale sia positivo e vicino a quello atteso.
+
+## Valutazione economica e portafoglio simulato
+
+Un edge sulla carta non basta: la valutazione economica (`backend/betting/`) decide se una
+previsione conviene davvero, quanto puntare e a che prezzo massimo. Si calcola dopo ogni
+previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
+
+1. **Prezzo reale.** Legge il book del lato da comprare dal CLOB di Polymarket (API
+   pubblica, sola lettura) e calcola il prezzo medio che pagheresti per quella cifra.
+   Commissione: `tasso × min(prezzo, 1 − prezzo)` per quota. Senza book usa prezzo medio +
+   metà spread e la liquidità dichiarata, e lo segnala.
+2. **Probabilità prudente.** `p_prudente = p_blended − z × σ`, dove
+   `σ = w × √(p_jev (1 − p_jev) / (MODEL_PSEUDO_COUNT × evidenze + 1))`. Dopo 30 mercati
+   risolti σ viene corretta con i risultati: allargata se le previsioni blended hanno fatto
+   peggio del prezzo, ristretta se hanno fatto meglio.
+3. **Margine netto.** `p_prudente − (prezzo + commissione)` deve superare la soglia del preset.
+4. **Tempo.** Il rendimento atteso prudente viene annualizzato sui giorni che mancano alla
+   scadenza e deve superare `RISK_FREE_RATE` + il premio del preset.
+5. **Quanto puntare.** Il capitale di Kelly è calcolato sul book, perché comprare di più
+   peggiora il prezzo. Se ne prende una frazione (in base al preset) e poi si applicano i
+   limiti per mercato, evento, categoria, totale investito, liquidità disponibile e quota del
+   book. Il **prezzo massimo** da pagare è `p_prudente − margine minimo`.
+6. **Verdetto.** *Conviene*, *Conviene poco* (la puntata è stata ridotta a meno della metà
+   dai limiti) oppure *Non conviene*, sempre con i motivi.
+
+| Preset | Kelly | z | Margine netto | Premio annuo | Max per mercato | Max per evento | Max per categoria | Max investito | Liquidità min. | Scadenza max |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Prudente | ×0,15 | 1,64 | 4 pt | 15% | 2% | 5% | 15% | 40% | 25.000 $ | 120 gg |
+| Bilanciato | ×0,25 | 1,0 | 3 pt | 8% | 4% | 8% | 25% | 60% | 10.000 $ | 365 gg |
+| Aggressivo | ×0,5 | 0,5 | 2 pt | 3% | 8% | 15% | 40% | 85% | 5.000 $ | 730 gg |
+
+**Portafoglio simulato** (pagina *Portafoglio*):
+- **Scommesse automatiche:** ogni previsione con verdetto *Conviene* o *Conviene poco* diventa una scommessa virtuale al prezzo reale del momento, al massimo una aperta per mercato.
+- **Chiusura:** avviene quando il mercato si risolve; una quota vincente vale 1 $.
+- **Cosa mostra:** valore attuale, profitti realizzati e latenti, percentuale di vittorie, curva del capitale e confronto tra profitto atteso e reale.
+- **Esclusioni:**
+  - singole scommesse, anche già chiuse (non contano nei risultati e si possono riammettere);
+  - mercati, eventi o categorie, che le scommesse automatiche saltano.
+- **Impostazioni:** si possono scegliere il preset, attivare o disattivare le scommesse automatiche, oppure ricominciare con un nuovo capitale.
 
 ## Calibrazione
 
@@ -450,6 +525,8 @@ pytest
 | `tests/test_auth.py` | Password, cookie, CSRF, ruoli, limite tentativi, scadenze, logout, header di sicurezza |
 | `tests/test_sources.py` | Fetcher (pulizia HTML, reindirizzamenti, blocco reti interne, limiti), catalogo, migrazioni, API delle fonti |
 | `tests/test_search.py` | Ricerca su titolo, testo e riassunto, prefissi, sintassi, evidenziazioni, filtri, uso dell'indice |
+| `tests/test_economics.py` | Book, commissioni, Kelly sul book, incertezza, annualizzazione, verdetti e limiti dei preset |
+| `tests/test_portfolio.py` | Scommesse automatiche, esclusioni, chiusura, profitti e perdite, curva, API e permessi |
 
 ## Struttura del progetto
 
@@ -471,6 +548,10 @@ backend/
 │   ├── polymarket.py       # client Gamma API (sola lettura)
 │   ├── service.py          # sync, collegamento notizie, previsioni Jev
 │   └── forecast.py         # blending, edge, Kelly, Brier
+├── betting/
+│   ├── profiles.py         # preset di rischio
+│   ├── economics.py        # valutazione economica (funzioni pure)
+│   └── portfolio.py        # portafoglio simulato
 ├── db/                     # modelli SQLAlchemy, query e migrazioni idempotenti
 └── api/                    # schemi e route FastAPI
 frontend/                   # dashboard: app.js, ui.js, charts.js, explain.js, views/ (notizie, impostazioni, metodo)
@@ -483,7 +564,11 @@ feeds.yaml                  # catalogo delle fonti consigliate
 - **Solo mercati binari** Sì/No. I mercati con più esiti vengono ignorati.
 - **Nessuna esecuzione di ordini**: per piazzare ordini servirebbero l'API CLOB di
   Polymarket, un wallet e la firma degli ordini.
-- **Commissioni e spread** non sono modellati: `MIN_EDGE` deve coprirli.
+- **Solo simulazione**: il portafoglio è virtuale. Le scommesse simulate ipotizzano di
+  comprare al book del momento senza muovere il mercato oltre la profondità letta.
+- **Formati dell'API CLOB e delle commissioni non verificati dal vivo**: il codice segue i
+  formati documentati (`/book`, `clobTokenIds`, `takerBaseFee`); se Polymarket li cambia,
+  la valutazione usa il prezzo stimato e lo segnala.
 - **Collegamento per similarità dei titoli**: notizie rilevanti con titoli diversi dalla
   domanda del mercato possono sfuggire.
 - **Nessun recupero password via email**: un admin reimposta la password da riga di
