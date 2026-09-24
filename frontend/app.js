@@ -8,6 +8,7 @@ import { viewNews } from "./views/news.js";
 import { viewSettings } from "./views/settings.js";
 import { viewMethod } from "./views/method.js";
 import { viewPortfolio } from "./views/portfolio.js";
+import { bulkPredict } from "./views/bulk.js";
 import { economicsCard, verdictBadge } from "./economics.js";
 
 const view = document.getElementById("view");
@@ -267,6 +268,7 @@ async function route({ quiet = false } = {}) {
 }
 
 function pageHead(title, subtitle, ...right) {
+  right = right.filter(Boolean);
   return h("div", { class: "page-head" },
     h("div", {}, h("h1", {}, title), subtitle ? h("p", {}, subtitle) : null),
     right.length ? h("div", { class: "actions" }, right) : null,
@@ -326,10 +328,11 @@ async function viewOpportunities() {
   );
 
   await reload();
+  const bulk = bulkPredict(ctx);
   return h("div", {},
     pageHead("Opportunità", "Mercati in cui la stima di Jev, pesata per la forza delle notizie, si discosta dal prezzo. Ordinati per edge.",
-      h("a", { class: "btn btn-ghost", href: "#/metodo" }, icon("help"), "Come funziona")),
-    kpis, filters, list,
+      h("a", { class: "btn btn-ghost", href: "#/metodo" }, icon("help"), "Come funziona"), bulk.button),
+    bulk.panel, kpis, filters, list,
   );
 }
 
@@ -493,8 +496,10 @@ async function viewMarkets() {
 
   paintSort();
   await load(true);
+  const bulk = bulkPredict(ctx);
   return h("div", {},
-    pageHead("Mercati", "I mercati Sì/No più scambiati su Polymarket. Il prezzo in centesimi è la probabilità implicita del SÌ."),
+    pageHead("Mercati", "I mercati Sì/No più scambiati su Polymarket. Il prezzo in centesimi è la probabilità implicita del SÌ.", bulk.button),
+    bulk.panel,
     h("div", { class: "filters", role: "group", "aria-label": "Filtri e ordinamento" },
       h("div", { class: "search-wrap" }, icon("search"), search),
       checkField("m-linked", "Solo con notizie", marketFilters.onlyLinked, (v) => { marketFilters.onlyLinked = v; reloadSoon(); }),

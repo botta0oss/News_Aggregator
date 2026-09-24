@@ -11,7 +11,8 @@ from backend.api.schemas import (
 )
 from backend.db.database import get_db, SessionLocal
 from backend.db.models import Market, MarketArticleLink, MarketPrediction
-from backend.markets import polymarket
+from backend.config import settings
+from backend.markets import bulk, polymarket
 from backend.markets.forecast import brier_score
 from backend.markets.service import get_market_evidence, predict_market, run_market_pipeline
 
@@ -75,6 +76,31 @@ async def _sync_job():
 async def trigger_market_sync(background_tasks: BackgroundTasks):
     background_tasks.add_task(_sync_job)
     return {"status": "started", "message": "Polymarket sync triggered"}
+
+
+@router.get("/predict-all", dependencies=[Depends(require_admin)])
+async def predict_all_status(db: AsyncSession = Depends(get_db)):
+    """Progress of the "evaluate every market" job and how many markets it would cover."""
+    return {**bulk.snapshot(), "eligible": await bulk.count_eligible(db), "jev_rpm": settings.JEV_RPM,
+            "jev_enabled": jev.is_enabled()}
+
+
+@router.post("/predict-all", status_code=202, dependencies=[Depends(require_admin)])
+async def predict_all_start(only_new: bool = Query(False, description="Solo mercati mai valutati o con notizie nuove dall'ultima previsione"),
+                            refresh_first: bool = Query(True, description="Aggiorna prezzi e collegamenti prima di valutare")):
+    """Starts a Jev forecast on every open market with recent news (one paid API call per market)."""
+    if not jev.is_enabled():
+        raise HTTPException(status_code=503, detail="TYPESAFE_API_KEY non è configurata")
+    if not bulk.start(only_new=only_new, refresh_first=refresh_first):
+        raise HTTPException(status_code=409, detail="Una valutazione di tutti i mercati è già in corso")
+    return bulk.snapshot()
+
+
+@router.post("/predict-all/stop", dependencies=[Depends(require_admin)])
+async def predict_all_stop():
+    """Stops the job after the market currently being evaluated."""
+    bulk.stop()
+    return bulk.snapshot()
 
 
 @router.get("", response_model=MarketListResponse)

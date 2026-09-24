@@ -121,6 +121,18 @@ l'ultima parola vale anche come prefisso. Il link `#/notizie?q=...` riapre la st
 I pulsanti in alto avviano l'aggiornamento di notizie e mercati. La pagina si aggiorna da
 sola mentre il lavoro procede in background.
 
+**Valuta tutti con Jev** (in Opportunità e Mercati, solo admin) chiede una previsione per
+ogni mercato aperto con notizie recenti collegate. Prima di partire mostra quante chiamate a
+pagamento servono e quanto tempo richiedono con il limite `JEV_RPM`. Puoi valutare tutti
+i mercati o solo quelli mai valutati o con notizie nuove dall'ultima previsione.
+
+Il lavoro gira in background: puoi chiudere la pagina e ritrovare l'avanzamento quando
+torni. Aggiorna prima prezzi e collegamenti, così l'edge è calcolato sul prezzo attuale.
+Se Jev risponde con un limite di frequenza, aspetta e riprende dallo stesso mercato.
+Si ferma da solo dopo 3 errori consecutivi, ad esempio per connessione assente o chiave
+non valida, e si può interrompere quando vuoi. Le scommesse simulate seguono le regole
+del portafoglio.
+
 Scelte di design:
 - **Tema scuro predefinito**, con tema chiaro dal pulsante in alto. La scelta viene ricordata.
 - **Colori fissi per ogni serie in tutti i grafici:** prezzo arancio, Jev acqua, blended blu. Verde e rosso sono riservati ai segnali e sono sempre accompagnati da icona e testo.
@@ -361,8 +373,8 @@ La puntata effettiva la decide poi la [valutazione economica](#valutazione-econo
 
 Documentazione interattiva completa su `/docs` (se `API_DOCS_ENABLED=true`). Tutti gli
 endpoint richiedono una sessione; quelli `POST` anche l'header `X-CSRF-Token`, e quelli che
-avviano lavori o chiamate a pagamento (`/ingest`, `/markets/sync`, `/markets/{id}/predict`)
-il ruolo `admin`.
+avviano lavori o chiamate a pagamento (`/ingest`, `/markets/sync`, `/markets/{id}/predict`,
+`/markets/predict-all`) il ruolo `admin`.
 
 ### Accesso
 
@@ -417,6 +429,9 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 | GET | `/markets` | Mercati con ultima previsione. Filtri: `q`, `only_linked`, `include_closed`. Ordinamento: `sort` = `volume`, `end_date`, `price`, `signal` (ultima previsione), `edge`, `news`, `liquidity`, `question`; `order` = `asc`/`desc` (default sensato per ogni campo, valori mancanti sempre in fondo) |
 | GET | `/markets/{id}` | Notizie collegate (rilevanza e impatto) e storico previsioni |
 | POST | `/markets/{id}/predict` | Previsione Jev immediata (aggiorna prima il prezzo) |
+| POST | `/markets/predict-all` | Avvia in background la previsione Jev su tutti i mercati aperti con notizie recenti. `only_new=true`: solo mai valutati o con notizie nuove; `refresh_first=false`: salta l'aggiornamento dei prezzi. `409` se è già in corso (admin) |
+| GET | `/markets/predict-all` | Avanzamento (`total`, `done`, `skipped`, `failed`, `current`, `message`) e mercati valutabili `eligible: {all, new}` (admin) |
+| POST | `/markets/predict-all/stop` | Interrompe dopo il mercato in corso (admin) |
 | GET | `/predictions/opportunities` | Mercati con edge maggiore. Filtri: `min_edge`, `min_evidence`, `include_hold` |
 | GET | `/predictions/calibration` | Brier score sui mercati risolti |
 | GET | `/status` | Configurazione (Jev attivo, soglie) e contatori per la dashboard |
@@ -470,8 +485,8 @@ Esempio di risposta di `/predictions/opportunities` (valori illustrativi):
    `GET /markets?only_linked=true`
 3. Controlla che le notizie siano pertinenti: `GET /markets/{id}`. Se i collegamenti sono
    rumorosi alza `MARKET_MATCH_THRESHOLD`, se sono troppo pochi abbassala.
-4. Chiedi una previsione sui mercati che ti interessano:
-   `POST /markets/{id}/predict`
+4. Chiedi una previsione sui mercati che ti interessano (`POST /markets/{id}/predict`),
+   oppure su tutti con **Valuta tutti con Jev** (`POST /markets/predict-all`)
 5. Consulta le opportunità: `GET /predictions/opportunities?min_edge=0.08`
 6. Quando i risultati convincono, attiva `PREDICTION_AUTO=true`, tenendo d'occhio i costi
    con `PREDICTION_MAX_PER_RUN`.
