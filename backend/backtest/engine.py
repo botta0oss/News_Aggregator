@@ -2,9 +2,17 @@
 
 For each resolved market and each horizon (e.g. 7 days before the end) the situation of
 that moment is rebuilt: the price from the CLOB price history and the news published
-before that date (Google News with date filters). Jev answers the same questions as in
-the live app, with "today" set to that date; the answer goes through the same blend,
-signal and economic evaluation. The real outcome then says who was right.
+before that date. Jev answers the same questions as in the live app, with "today" set to
+that date; the answer goes through the same blend, signal and economic evaluation. The
+real outcome then says who was right.
+
+News of the past, two sources:
+- "archive": the articles this app itself had saved by that date (fetched_at <= as_of).
+  Nothing written later can slip in: the honest measure, when the archive goes back far enough.
+- "google": Google News with date filters. Covers any period, but the filters are known to
+  leak later articles and updated pages; results can look better than they are.
+"auto" uses the archive when it has news for the case, Google otherwise; every case records
+which one it used and the summary reports the archive-only cases separately.
 
 Limit: Jev may already know how past events ended. Markets resolved after the model's
 knowledge cutoff give an honest measure; older ones can look better than they are.
@@ -45,6 +53,8 @@ NEWS_LOOKBACK_DAYS = 7
 DECIDED_BELOW, DECIDED_ABOVE = 0.03, 0.97
 MAX_RATE_LIMIT_WAITS = 5
 MAX_CONSECUTIVE_FAILURES = 5
+NEWS_SOURCES = ("auto", "archive", "google")
+MULTI_MAX_PRICED = 30   # outcomes of an event whose price history is fetched (most traded first)
 
 
 @dataclass
@@ -57,11 +67,14 @@ class Params:
     max_calls: int = 60
     exclude_decided: bool = True
     kinds: list = field(default_factory=lambda: ["binary"])   # "binary" (YES/NO) and/or "multi" (several outcomes)
+    news_source: str = "auto"                                  # auto / archive / google (see the module docstring)
 
     def validate(self) -> "Params":
         self.kinds = [k for k in dict.fromkeys(self.kinds) if k in ("binary", "multi")]
         if not self.kinds:
             raise ValueError("Scegli almeno un tipo di mercato")
+        if self.news_source not in NEWS_SOURCES:
+            raise ValueError("Fonte delle notizie non valida")
         if self.resolved_after >= self.resolved_before:
             raise ValueError("La data di inizio deve essere prima della data di fine")
         if self.resolved_before > datetime.now(timezone.utc) + timedelta(days=1):
@@ -167,8 +180,54 @@ def historical_search_url(question: str, as_of: datetime) -> Optional[str]:
     return f"{settings.TARGETED_NEWS_URL}?q={q}&{settings.TARGETED_NEWS_LOCALE}"
 
 
+async def archive_evidence(question: str, as_of: datetime, labels: Optional[list] = None) -> list:
+    """News this app had already saved at `as_of` about the market, ranked as in the live app."""
+    from sqlalchemy import func
+    from backend.db.models import Article, ProcessedArticle, Source
+    from backend.multi.service import _mentions
+    since = as_of - timedelta(days=NEWS_LOOKBACK_DAYS)
+    q_vec = await asyncio.to_thread(get_title_embedding, question)
+    d_title = Article.title_embedding.cosine_distance(q_vec)
+    distance = func.least(d_title, func.coalesce(Article.content_embedding.cosine_distance(q_vec), d_title))
+    floor = max(0.0, settings.MARKET_MATCH_THRESHOLD - settings.MARKET_CANDIDATE_MARGIN)
+    async with SessionLocal() as db:
+        rows = (await db.execute(
+            select(Article, ProcessedArticle, Source, distance.label("distance"))
+            .join(Source, Source.id == Article.source_id)
+            .outerjoin(ProcessedArticle, ProcessedArticle.article_id == Article.id)
+            .where(Article.fetched_at <= as_of, Article.fetched_at >= since, Article.title_embedding.is_not(None),
+                   distance <= 1.0 - floor)
+            .order_by(distance).limit(settings.MARKET_MAX_ARTICLES * 6)
+        )).all()
+    terms = extract_terms(question)
+    out = []
+    for article, processed, source, dist in rows:
+        similarity = round(1.0 - float(dist), 4)
+        overlap = term_overlap(terms, f"{article.title}\n{(article.content_raw or '')[:3000]}")
+        if labels and any(_mentions(label, article.title) for label in labels):
+            overlap.entity_hit, overlap.score = True, min(1.0, overlap.score + 0.2)
+        score = match_score(similarity, overlap)
+        if score >= settings.MARKET_MATCH_THRESHOLD:
+            # Story clusters may have grown after as_of: corroboration is not used here
+            out.append((SimpleNamespace(match_score=score, similarity=similarity, relevance=None),
+                        SimpleNamespace(title=article.title, url=article.url, content_raw=article.content_raw,
+                                        publisher=article.publisher, published_at=article.published_at,
+                                        fetched_at=article.fetched_at, cluster_id=article.cluster_id),
+                        processed, source))
+    return rank_evidence(out, settings.MARKET_MAX_ARTICLES, now=as_of)
+
+
+async def past_evidence(question: str, as_of: datetime, mode: str, labels: Optional[list] = None) -> tuple[list, str]:
+    """(evidence, source used) for the chosen news source."""
+    if mode in ("auto", "archive"):
+        evidence = await archive_evidence(question, as_of, labels)
+        if evidence or mode == "archive":
+            return evidence, "archive"
+    return await historical_evidence(question, as_of, labels), "google"
+
+
 async def historical_evidence(question: str, as_of: datetime, labels: Optional[list] = None) -> list:
-    """News published before `as_of` about the market, ranked as in the live app.
+    """News published before `as_of` about the market (Google News), ranked as in the live app.
 
     labels: outcome names of a multi-outcome event; naming one gives the same bonus as live.
     """
@@ -314,8 +373,12 @@ async def _run_tagged(run_id, params: Params) -> None:
 
 
 def _news_json(evidence) -> list:
-    return [{"title": e.article.title, "source": e.source.name, "published_at": e.article.published_at.isoformat()}
-            for e in evidence]
+    out = []
+    for e in evidence:
+        published = e.article.published_at or e.article.fetched_at
+        out.append({"title": e.article.title, "source": e.article.publisher or e.source.name,
+                    "published_at": published.isoformat() if published else None})
+    return out
 
 
 async def _eval_binary(case, market, as_of, params, histories, preset) -> bool:
@@ -331,7 +394,8 @@ async def _eval_binary(case, market, as_of, params, histories, preset) -> bool:
     if params.exclude_decided and not DECIDED_BELOW <= price <= DECIDED_ABOVE:
         case.status, case.note = "skipped", "Esito già scontato dal prezzo"
         return False
-    evidence = await historical_evidence(market.question, as_of)
+    evidence, source = await past_evidence(market.question, as_of, params.news_source)
+    case.details = {"news_source": source}
     case.news_count = len(evidence)
     if not evidence:
         case.status, case.note = "skipped", "Nessuna notizia di quei giorni"
@@ -379,22 +443,31 @@ def multi_brier(outcomes: list[dict], winner_id: str, key: str) -> float:
 async def _eval_multi(case, event, as_of, params, histories, preset) -> bool:
     from backend.multi import service as multi
 
-    top = sorted((o for o in event.outcomes if o.yes_token_id), key=lambda o: -(o.volume or 0))[:settings.MULTI_MAX_OUTCOMES]
+    # Outcomes are chosen by their price at as_of, like live: nothing here depends on who won.
+    # Price histories are fetched for the most traded outcomes only (a cap on requests).
+    tradable = sorted((o for o in event.outcomes if o.yes_token_id), key=lambda o: -(o.volume or 0))[:MULTI_MAX_PRICED]
     priced = []
-    for o in top:
+    for o in tradable:
         if o.id not in histories:
             histories[o.id] = await polymarket.fetch_price_history(
                 o.yes_token_id, as_of - timedelta(days=max(params.horizons) + 2), event.end_date)
         p = polymarket.price_at(histories[o.id], as_of)
         if p is not None:
             priced.append(SimpleNamespace(id=o.id, label=o.group_title, yes_price=p, closed=False))
-    winner = event.winner_id
-    if len(priced) < 3 or winner not in {o.id for o in priced}:
+    if len(priced) < 3:
         case.status, case.note = "skipped", "Prezzo storico non disponibile"
         return False
     priced.sort(key=lambda o: -o.yes_price)
     items = multi.market_distribution(priced, settings.MULTI_MAX_OUTCOMES)
-    evidence = await historical_evidence(event.title, as_of, labels=[i["label"] for i in items if i["id"] != multi.OTHER_ID])
+    listed = {i["id"] for i in items if i["id"] != multi.OTHER_ID}
+    has_other = any(i["id"] == multi.OTHER_ID for i in items)
+    # The winner may be outside the outcomes shown to Jev: then "other outcomes" won
+    winner = event.winner_id if event.winner_id in listed else multi.OTHER_ID
+    if winner == multi.OTHER_ID and not has_other:
+        case.status, case.note = "skipped", "Il vincitore non ha uno storico dei prezzi"
+        return False
+    evidence, source = await past_evidence(event.title, as_of, params.news_source,
+                                           labels=[i["label"] for i in items if i["id"] != multi.OTHER_ID])
     case.news_count = len(evidence)
     if not evidence:
         case.status, case.note = "skipped", "Nessuna notizia di quei giorni"
@@ -404,26 +477,28 @@ async def _eval_multi(case, event, as_of, params, histories, preset) -> bool:
     response = await _jev_with_retries(state, questions)
     for key, item in keys.items():
         item["key"] = key
-    strength = float(response.scores["evidence_strength"].score) / (len(EVIDENCE_CRITERIA) - 1)
-    outcomes, w = multi.blend_distribution(items, dict(response.choices["winner"].probabilities), strength)
+    probs, strength = multi.parse_distribution(response)
+    outcomes, w = multi.blend_distribution(items, probs, strength)
     signal, best_id, best_edge = multi.pick_signal(outcomes, strength)
     win = next(o for o in outcomes if o["id"] == winner)
     best = next((o for o in outcomes if o["id"] == best_id), None)
     case.price, case.model_probability, case.blended_probability = win["market"], win["model"], win["blended"]
     case.evidence_strength = round(strength, 4)
-    case.signal, case.edge, case.side = signal, best_edge, "YES"
-    if signal == "BUY_YES" and best:
-        sig = SimpleNamespace(signal="BUY_YES", blended_probability=best["blended"], model_weight=w)
+    case.signal, case.edge, case.side = signal, best_edge, "NO" if signal == "BUY_NO" else "YES"
+    if signal in ("BUY_YES", "BUY_NO") and best:
+        sig = SimpleNamespace(signal=signal, blended_probability=best["blended"], model_weight=w)
         bet = _simulate_bet(sig, best["price"], best["blended"], best["model"], strength, w,
                             (event.end_date - as_of).total_seconds() / 86400, event.liquidity or event.volume * 0.02, preset,
                             case.category)
         case.verdict = bet["verdict"]
         if bet["verdict"] != "NO" and bet["outlay"] > 0:
             case.outlay = bet["outlay"]
-            case.pnl = round((bet["shares"] if best_id == winner else 0.0) - bet["outlay"], 2)
+            won = (best_id == winner) == (signal == "BUY_YES")
+            case.pnl = round((bet["shares"] if won else 0.0) - bet["outlay"], 2)
     top_market = max(outcomes, key=lambda o: o["market"])
     top_model = max(outcomes, key=lambda o: o["model"])
     case.details = {
+        "news_source": source, "winner_listed": winner != multi.OTHER_ID,
         "winner": win["label"], "best": best["label"] if best else None, "n_outcomes": len(outcomes),
         "brier_market": multi_brier(outcomes, winner, "market"), "brier_model": multi_brier(outcomes, winner, "model"),
         "brier_blended": multi_brier(outcomes, winner, "blended"),

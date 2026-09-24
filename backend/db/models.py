@@ -144,6 +144,9 @@ class MarketPrediction(Base):
     model_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     market_probability: Mapped[float] = mapped_column(Float, nullable=False)   # price at prediction time
     model_probability: Mapped[float] = mapped_column(Float, nullable=False)    # raw Jev P(YES)
+    calibrated_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # after Platt scaling
+    blend_method: Mapped[Optional[str]] = mapped_column(Text, nullable=True)   # logodds / linear
+    model_samples: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Jev calls averaged
     evidence_strength: Mapped[float] = mapped_column(Float, nullable=False)    # 0-1
     blended_probability: Mapped[float] = mapped_column(Float, nullable=False)  # shrunk toward market
     model_weight: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # weight w of Jev in the blend

@@ -11,6 +11,22 @@ export function weightOf(p, status) {
   return Math.max(0, Math.min(1, max * p.evidence_strength));
 }
 
+const logit = (p) => { const c = Math.min(1 - 1e-4, Math.max(1e-4, p)); return Math.log(c / (1 - c)); };
+const sigmoid = (x) => 1 / (1 + Math.exp(-x));
+
+/** Jev after the Platt calibration fitted by the backtest (a = 0, b = 1: unchanged). */
+export function calibrated(pModel, status) {
+  const a = status?.jev_calib_a ?? 0, b = status?.jev_calib_b ?? 1;
+  return a === 0 && b === 1 ? pModel : sigmoid(a + b * logit(pModel));
+}
+
+/** Same pooling as the server: log-odds (default) or linear average, weight w on Jev. */
+export function pool(pModel, price, w, method) {
+  if (w <= 0) return price;
+  if (method === "linear") return w * pModel + (1 - w) * price;
+  return sigmoid(w * logit(pModel) + (1 - w) * logit(price));
+}
+
 /** One sentence for cards: what Jev thinks, how much it counts, the resulting gap. */
 export function explainSentence(p, status) {
   const w = weightOf(p, status);
@@ -46,6 +62,8 @@ export function explainCard(p, market, evidence, status) {
   const maxW = status?.model_weight_max ?? 0.5;
   const q = p.market_probability;
   const b = p.blended_probability;
+  const cal = p.calibrated_probability ?? null;
+  const linear = (p.blend_method || "linear") === "linear";  // older forecasts were linear
 
   const tally = { raises_yes: 0, lowers_yes: 0, neutral: 0 };
   for (const ev of evidence || []) if (ev.impact && ev.impact in tally) tally[ev.impact] += 1;
@@ -76,8 +94,14 @@ export function explainCard(p, market, evidence, status) {
         formula(`w = ${pct(maxW)} × ${pct(p.evidence_strength)} = `, h("b", {}, pct(w))),
       ),
       step(3, "Probabilità finale (blended)", GLOSSARY.blended,
-        h("p", {}, `Il resto del peso (${pct(1 - w)}) va al prezzo di mercato, che di solito è già ben informato:`),
-        formula(`${pct(w)} × ${pct(p.model_probability)} + ${pct(1 - w)} × ${pct(q)} = `, h("b", {}, pct(b))),
+        cal != null && Math.abs(cal - p.model_probability) >= 0.0005
+          ? h("p", {}, "Prima la stima di Jev viene corretta con la calibrazione stimata dal backtest: ",
+            h("b", { class: "mono" }, `${pct(p.model_probability)} → ${pct(cal)}`), ".") : null,
+        h("p", {}, `Il resto del peso (${pct(1 - w)}) va al prezzo di mercato, che di solito è già ben informato. `,
+          linear ? "Media pesata delle due probabilità:" : "Le due probabilità si uniscono in log-odds (le quote logaritmiche): una stima netta e ben motivata non viene diluita come in una media semplice."),
+        linear
+          ? formula(`${pct(w)} × ${pct(cal ?? p.model_probability)} + ${pct(1 - w)} × ${pct(q)} = `, h("b", {}, pct(b)))
+          : formula(`logit(blended) = ${pct(w)} × logit(${pct(cal ?? p.model_probability)}) + ${pct(1 - w)} × logit(${pct(q)}) → `, h("b", {}, pct(b))),
       ),
       step(4, "Edge rispetto al prezzo", GLOSSARY.edge,
         formula(`${pct(b)} − ${pct(q)} = `, h("b", { class: p.edge > 0 ? "pos" : p.edge < 0 ? "neg" : "" }, pts(p.edge))),

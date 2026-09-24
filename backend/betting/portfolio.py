@@ -97,7 +97,12 @@ async def exposure_for(db: AsyncSession, market: Market) -> Exposure:
 # ---------- Inputs of the evaluation ----------
 
 async def calibration_factor(db: AsyncSession) -> float:
-    """> 1 when past blended forecasts were worse than the market price; 1 until enough markets resolved."""
+    """How much to widen (> 1) or narrow (< 1) the forecast uncertainty, from resolved markets.
+
+    Reliability ratio: the Brier score the blended forecasts actually got, divided by the one
+    they would get on average if they were exactly calibrated (mean of p·(1 − p)). Above 1
+    the forecasts were over-confident. 1 until enough markets have resolved.
+    """
     latest = (
         select(MarketPrediction)
         .distinct(MarketPrediction.market_id)
@@ -105,14 +110,14 @@ async def calibration_factor(db: AsyncSession) -> float:
         .subquery()
     )
     rows = (await db.execute(
-        select(Market.resolved_yes, latest.c.market_probability, latest.c.blended_probability)
+        select(Market.resolved_yes, latest.c.blended_probability)
         .join(latest, latest.c.market_id == Market.id).where(Market.resolved_yes.is_not(None))
     )).all()
     if len(rows) < MIN_RESOLVED_FOR_CALIBRATION:
         return 1.0
-    b_market = brier_score((r.market_probability, r.resolved_yes) for r in rows) or 1e-6
-    b_blend = brier_score((r.blended_probability, r.resolved_yes) for r in rows) or 1e-6
-    return max(0.75, min(2.0, math.sqrt(b_blend / b_market)))
+    observed = sum((r.blended_probability - (1.0 if r.resolved_yes else 0.0)) ** 2 for r in rows) / len(rows)
+    expected = sum(r.blended_probability * (1 - r.blended_probability) for r in rows) / len(rows)
+    return max(0.75, min(2.0, math.sqrt(observed / max(expected, 1e-4))))
 
 
 async def update_market_category(db: AsyncSession, market: Market) -> Optional[str]:

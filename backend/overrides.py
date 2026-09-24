@@ -14,6 +14,8 @@ from backend.db.models import AppSetting
 ALLOWED = {
     "MODEL_WEIGHT_MAX": (0.0, 1.0),
     "MIN_EDGE": (0.0, 0.5),
+    "JEV_CALIB_A": (-3.0, 3.0),
+    "JEV_CALIB_B": (0.2, 3.0),
     # Daily limits and prices of the paid AI calls (page "Uso e costi")
     "DAILY_JEV_CALL_LIMIT": (0, 100_000),
     "DAILY_AI_BUDGET_USD": (0.0, 10_000.0),
@@ -25,7 +27,7 @@ ALLOWED = {
     "GEMINI_PRICE_INPUT_MTOK": (0.0, 1000.0),
     "GEMINI_PRICE_OUTPUT_MTOK": (0.0, 1000.0),
 }
-FORECAST_KEYS = ("MODEL_WEIGHT_MAX", "MIN_EDGE")
+FORECAST_KEYS = ("MODEL_WEIGHT_MAX", "MIN_EDGE", "JEV_CALIB_A", "JEV_CALIB_B")
 USAGE_KEYS = tuple(k for k in ALLOWED if k not in FORECAST_KEYS)
 # Values from .env / defaults, captured before any override is applied
 DEFAULTS = {key: getattr(settings, key) for key in ALLOWED}

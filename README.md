@@ -255,7 +255,7 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | `MARKET_CANDIDATE_MARGIN` | `0.15` | Candidati: similarità semantica ≥ soglia − margine |
 | `MARKET_MATCH_TERM_WEIGHT` | `0.3` | Peso dei termini chiave nella pertinenza |
 | `MARKET_MATCH_NO_ENTITY_PENALTY` | `0.6` | Moltiplicatore se la notizia non cita nessun nome della domanda |
-| `MARKET_NEWS_WINDOW_HOURS` | `72` | Solo notizie delle ultime N ore |
+| `MARKET_NEWS_WINDOW_HOURS` | `168` | Solo notizie degli ultimi N ore (7 giorni: per molti mercati una settimana di contesto conta) |
 | `MARKET_MAX_ARTICLES` | `8` | Notizie passate a Jev per ogni previsione |
 | `EVIDENCE_HALF_LIFE_HOURS` | `48` | Il peso di una notizia si dimezza ogni N ore (minimo 25 %) |
 | `EVIDENCE_MIN_JEV_RELEVANCE` | `0.25` | Notizie che Jev ha giudicato meno rilevanti di così per un mercato non gli vengono più passate |
@@ -268,6 +268,9 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | `PREDICTION_AUTO` | `false` | Previsioni automatiche dopo ogni raccolta (ogni previsione è una chiamata a pagamento) |
 | `PREDICTION_MAX_PER_RUN` | `10` | Tetto di previsioni automatiche per esecuzione |
 | `MODEL_WEIGHT_MAX` | `0.5` | Peso massimo di Jev rispetto al prezzo di mercato |
+| `BLEND_METHOD` | `logodds` | Come si uniscono Jev e prezzo: `logodds` o `linear` |
+| `JEV_CALIB_A` / `JEV_CALIB_B` | `0` / `1` | Calibrazione di Platt della stima di Jev (si stimano col backtest) |
+| `JEV_SAMPLES` | `1` | Chiamate a Jev per previsione, mediate (ognuna si paga) |
 | `MIN_EDGE` | `0.05` | Edge minimo per emettere un segnale |
 | `MIN_EVIDENCE` | `0.5` | Forza minima delle evidenze per emettere un segnale |
 | `KELLY_FRACTION` | `0.25` | Frazione del criterio di Kelly usata per la puntata |
@@ -430,13 +433,26 @@ indipendente e confrontabile con il prezzo.
 ### 2. Dalla stima al segnale
 
 I mercati liquidi di solito sono già ben calibrati, quindi la stima di Jev non viene usata
-così com'è: viene avvicinata al prezzo, tanto più quanto le evidenze sono deboli.
+così com'è:
+
+1. **Calibrazione (scala di Platt).** `logit P_cal = JEV_CALIB_A + JEV_CALIB_B × logit P_jev`,
+   con `logit p = ln(p / (1 − p))`. I due numeri si stimano col backtest sui mercati risolti:
+   `B < 1` ammorbidisce un Jev troppo sicuro di sé, `B > 1` rende più netto uno troppo
+   prudente. Di base (0 e 1) la stima resta com'è.
+2. **Unione col prezzo in log-odds**, con un peso che cresce con la forza delle evidenze:
 
 ```
-w        = MODEL_WEIGHT_MAX × evidence_strength
-blended  = w × P_jev + (1 − w) × prezzo
-edge     = blended − prezzo
+w              = MODEL_WEIGHT_MAX × evidence_strength
+logit(blended) = w × logit(P_cal) + (1 − w) × logit(prezzo)
+edge           = blended − prezzo
 ```
+
+La media in log-odds è il modo standard di unire previsioni calibrate: la media semplice
+(`BLEND_METHOD=linear`, il metodo di prima) le rende sistematicamente troppo timide. Con
+`w = 0` il blended è il prezzo, con `w = 1` è Jev.
+
+Con `JEV_SAMPLES > 1` ogni previsione chiede a Jev più volte e fa la media (in log-odds)
+delle risposte: meno rumore, ma ogni chiamata si paga.
 
 - `edge ≥ MIN_EDGE` ed evidenze ≥ `MIN_EVIDENCE` → **BUY_YES**
 - `edge ≤ −MIN_EDGE` ed evidenze ≥ `MIN_EVIDENCE` → **BUY_NO**
@@ -453,9 +469,9 @@ per il NO la formula simmetrica sul prezzo del NO.
 | Stima Jev | 0.80 |
 | Forza evidenze | 3/4 → 0.75 |
 | Peso `w` | 0.5 × 0.75 = 0.375 |
-| Probabilità blended | 0.375 × 0.80 + 0.625 × 0.35 ≈ **0.519** |
-| Edge | **+0.169** → `BUY_YES` |
-| Puntata (Kelly semplice) | (0.519 − 0.35) / 0.65 × 0.25 ≈ **6.5 % del bankroll** |
+| Probabilità blended | logit⁻¹(0.375 × logit 0.80 + 0.625 × logit 0.35) ≈ **0.533** |
+| Edge | **+0.183** → `BUY_YES` |
+| Puntata (Kelly semplice) | (0.533 − 0.35) / 0.65 × 0.25 ≈ **7.0 % del bankroll** |
 
 La puntata effettiva la decide poi la [valutazione economica](#valutazione-economica-e-portafoglio-simulato), che tiene conto di prezzo reale, costi, incertezza, tempo e limiti.
 
@@ -549,7 +565,7 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 | GET | `/backtest/runs/{id}` | Avanzamento e riepilogo (metriche, calibrazione, suggerimenti) |
 | GET | `/backtest/runs/{id}/cases` | Casi: `status` = `ok`, `skipped`, `all` |
 | POST | `/backtest/runs/{id}/stop` · DELETE `/backtest/runs/{id}` | Ferma o elimina (admin) |
-| GET · PUT | `/backtest/parameters` | `MODEL_WEIGHT_MAX` e `MIN_EDGE` in uso; PUT li sostituisce (admin) |
+| GET · PUT | `/backtest/parameters` | `MODEL_WEIGHT_MAX`, `MIN_EDGE`, `JEV_CALIB_A`, `JEV_CALIB_B` in uso; PUT li sostituisce (admin) |
 | POST | `/backtest/parameters/reset` | Torna ai valori del `.env` (admin) |
 
 ### Uso e costi
@@ -639,8 +655,10 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
    metà spread e la liquidità dichiarata, e lo segnala.
 2. **Probabilità prudente.** `p_prudente = p_blended − z × σ`, dove
    `σ = w × √(p_jev (1 − p_jev) / (MODEL_PSEUDO_COUNT × evidenze + 1))`. Dopo 30 mercati
-   risolti σ viene corretta con i risultati: allargata se le previsioni blended hanno fatto
-   peggio del prezzo, ristretta se hanno fatto meglio.
+   risolti σ viene moltiplicata per `√(Brier osservato / Brier atteso)`, dove il Brier atteso
+   è quello che avrebbero previsioni perfettamente calibrate (media di `p (1 − p)`): allargata
+   se le previsioni blended sono state troppo sicure, ristretta se sono state prudenti (fattore
+   tra 0,75 e 2).
 3. **Margine netto.** `p_prudente − (prezzo + commissione)` deve superare la soglia del preset.
 4. **Tempo.** Il rendimento atteso prudente viene annualizzato sui giorni che mancano alla
    scadenza e deve superare `RISK_FREE_RATE` + il premio del preset.
@@ -815,8 +833,16 @@ previsto Jev i mercati già risolti?
 2. **Momenti.** Per ogni mercato e ogni orizzonte (1, 7 o 30 giorni prima della chiusura)
    ricostruisce la situazione di quel momento:
    - il **prezzo di allora**, dallo storico della CLOB (`/prices-history`);
-   - le **notizie dei 7 giorni precedenti**, da Google News con i filtri `after:`/`before:`.
-     Quelle pubblicate dopo quel momento vengono scartate.
+   - le **notizie dei 7 giorni precedenti**, da una di due fonti (scelta nel modulo):
+     - **archivio**: gli articoli che questa app aveva già salvato a quella data
+       (`fetched_at ≤ momento`). Nessuna notizia successiva può entrare: è la misura onesta,
+       ma copre solo il periodo in cui l'app era attiva;
+     - **Google News** con i filtri `after:`/`before:`: copre qualsiasi periodo, ma i filtri
+       per data lasciano passare pagine aggiornate dopo, e i risultati possono sembrare
+       migliori di quanto sono. Quelle con data successiva vengono comunque scartate.
+
+     Di base si usa l'archivio quando ha notizie per quel caso, altrimenti Google News. Ogni
+     caso registra la fonte usata e i risultati dei soli casi d'archivio sono mostrati a parte.
 3. **Selezione delle notizie.** Pertinenza (significato + termini chiave) e scelta delle
    migliori, come nell'app.
 4. **Previsione.** Jev riceve la stessa richiesta, con «oggi» impostato a quella data e senza
@@ -825,6 +851,11 @@ previsto Jev i mercati già risolti?
    portafoglio. Il book storico non esiste: il prezzo è quello di allora più metà dello spread
    tipico.
 6. **Confronto.** L'esito reale del mercato dice chi aveva ragione.
+
+Per gli eventi a più esiti, gli esiti mostrati a Jev sono i più probabili **secondo il prezzo di
+allora** (fino a `MULTI_MAX_OUTCOMES`, tra i 30 più scambiati), come dal vivo. Se il vincitore
+era poco quotato finisce negli «altri esiti»: sceglierli sapendo chi ha vinto renderebbe i
+risultati migliori del vero.
 
 **Casi saltati** (senza consumare chiamate):
 - prezzo storico non disponibile;
@@ -837,24 +868,36 @@ avanzamento e pulsante per fermarlo. Se il server si riavvia, il backtest risult
 **Risultati.**
 - Brier score (più basso è meglio) di prezzo, Jev e blended, in totale, per orizzonte e per
   categoria.
+- **Vantaggio sul prezzo** (Brier del prezzo − Brier del blended) con l'**intervallo al 95%**,
+  calcolato con un bootstrap che ricampiona i mercati interi: gli orizzonti di uno stesso
+  mercato condividono l'esito e non sono casi indipendenti. Se l'intervallo comprende lo zero,
+  il vantaggio può essere dovuto al caso.
 - Quota di segnali giusti e scommesse simulate: profitto e ROI.
 - Grafico di calibrazione (previsto contro accaduto).
 - Tabella dei casi, con le notizie lette da Jev.
 
 **Parametri suggeriti.**
-- Il **peso massimo di Jev** che avrebbe dato il Brier più basso al blended.
+- La **calibrazione di Jev** (scala di Platt: regressione logistica dell'esito su
+  `logit P_jev`, con una leggera penalità verso «nessuna correzione»).
+- Con Jev calibrato, il **peso massimo di Jev** che dà il Brier più basso al blended.
 - Con quel peso, l'**edge minimo** che avrebbe reso di più puntando 1 $ per segnale, se ci
   sono almeno 10 scommesse.
-- L'affidabilità è *bassa* sotto i 30 casi, *media* sotto i 100, *alta* da 100 in su.
+- **Verifica fuori campione.** I mercati vengono ordinati per data di chiusura: i parametri si
+  stimano sul 70% più vecchio e si provano sul 30% più recente, come si userebbero dal vivo.
+  Un valore è *consigliato* solo se migliora anche lì; i valori mostrati sono poi ristimati su
+  tutti i mercati. Servono almeno 10 mercati per parte, altrimenti nulla è consigliato.
+- L'affidabilità dipende dai **mercati diversi** (non dai casi): *bassa* sotto 30, *media*
+  sotto 100, *alta* da 100 in su.
 
-Un admin può applicarli con un clic: vengono salvati nel database, valgono per le previsioni
-successive e sostituiscono i valori del `.env` finché non premi «Ripristina i valori del
-.env». Si possono modificare solo `MODEL_WEIGHT_MAX` e `MIN_EDGE`.
+Un admin può applicare i valori consigliati con un clic: vengono salvati nel database,
+valgono per le previsioni successive e sostituiscono i valori del `.env` finché non premi
+«Ripristina i valori del .env». Si possono modificare solo `MODEL_WEIGHT_MAX`, `MIN_EDGE`,
+`JEV_CALIB_A` e `JEV_CALIB_B`.
 
 **Il limite.** Jev potrebbe conoscere già l'esito di eventi passati: i mercati risolti prima
 della data fino a cui arrivano le conoscenze del suo modello possono dare risultati troppo
-buoni. Per una misura onesta scegli mercati chiusi dopo quella data. Inoltre i suggerimenti
-sono calcolati sugli stessi mercati: con pochi casi rischiano di adattarsi al caso.
+buoni. Per una misura onesta scegli mercati chiusi dopo quella data e, quando l'archivio li
+copre, le sole notizie dell'archivio.
 
 ## Calibrazione
 

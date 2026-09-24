@@ -1,3 +1,4 @@
+import math
 """Multi-outcome events: parsing, separation from YES/NO markets, distribution forecast, API."""
 import json
 from datetime import datetime, timezone
@@ -66,7 +67,10 @@ def test_distribution_blend_and_signal(monkeypatch):
     out, w = service.blend_distribution(items, {"o0": 0.2, "o1": 0.6, "o2": 0.1, "o3": 0.1}, evidence_strength=1.0)
     assert w == 0.5
     arsenal = next(o for o in out if o["label"] == "Arsenal")
-    assert arsenal["blended"] == pytest.approx(0.5 * 0.6 + 0.5 * 0.25, abs=1e-3)
+    model = [0.2, 0.6, 0.1, 0.1]
+    raw = [math.sqrt(m * i["market"]) for m, i in zip(model, items)]
+    assert arsenal["blended"] == pytest.approx(raw[1] / sum(raw), abs=1e-3)
+    assert arsenal["edge"] == pytest.approx(arsenal["blended"] - arsenal["price"], abs=1e-3)  # against the price paid
     assert sum(o["blended"] for o in out) == pytest.approx(1.0, abs=1e-3)
     signal, best, edge = service.pick_signal(out, evidence_strength=1.0)
     assert signal == "BUY_YES" and best == "1" and edge == pytest.approx(arsenal["edge"])

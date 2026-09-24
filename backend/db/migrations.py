@@ -57,6 +57,10 @@ STATEMENTS = [
     "ALTER TABLE backtest_cases ADD COLUMN IF NOT EXISTS details JSONB",
     # Final outcome including 50-50 splits (resolved_yes stays for yes/no)
     "ALTER TABLE markets ADD COLUMN IF NOT EXISTS resolution TEXT",
+    # Forecast: Platt-calibrated Jev, pooling method, ensemble size
+    "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS calibrated_probability DOUBLE PRECISION",
+    "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS blend_method TEXT",
+    "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS model_samples INTEGER",
     """UPDATE markets SET resolution = CASE WHEN resolved_yes THEN 'yes' ELSE 'no' END
        WHERE resolution IS NULL AND resolved_yes IS NOT NULL""",
 ]

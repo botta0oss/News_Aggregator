@@ -92,7 +92,9 @@ async def test_full_market_flow(db, monkeypatch, jev_client):
         pred = await service.predict_market(session, market)
     assert pred.signal == "BUY_YES"
     assert pred.model_probability == 0.8 and pred.evidence_strength == 0.75
-    assert pred.blended_probability == pytest.approx(0.375 * 0.8 + 0.625 * 0.35, abs=1e-4)
+    from backend.markets.forecast import logit, sigmoid
+    assert pred.blended_probability == pytest.approx(sigmoid(0.375 * logit(0.8) + 0.625 * logit(0.35)), abs=1e-4)
+    assert pred.calibrated_probability == pytest.approx(0.8) and pred.blend_method == "logodds" and pred.model_samples == 1
     assert pred.edge > settings.MIN_EDGE and pred.kelly_fraction > 0
     state = captured[-1]["state"]
     assert state["market"]["question"] == FED_Q

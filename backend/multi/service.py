@@ -21,7 +21,7 @@ from backend.db.models import (
 )
 from backend.ingestor.deduplicator import get_title_embedding
 from backend.markets import polymarket
-from backend.markets.forecast import model_weight
+from backend.markets.forecast import model_weight, pool_distribution
 from backend.markets.matching import extract_terms, match_score, rank_evidence, term_overlap
 from backend.markets.service import EVIDENCE_CRITERIA, _candidate_distance
 
@@ -239,15 +239,20 @@ def build_request(event: MultiEvent, items: list[dict], evidence: list, now: Opt
 
 
 def blend_distribution(items: list[dict], model_probs: dict, evidence_strength: float) -> tuple[list[dict], float]:
-    """Blended probability and edge per outcome; model probabilities renormalised over the listed outcomes."""
+    """Blended probability and edge per outcome; model probabilities renormalised over the listed outcomes.
+
+    The blend pools the normalised market distribution with Jev's (log-linear by default). The
+    edge is measured against the raw price, the one actually paid: normalising removes the
+    overround from the reference but not from the cost of a share.
+    """
     total = sum(max(0.0, model_probs.get(i["key"], 0.0)) for i in items) or 1.0
     w = model_weight(evidence_strength)
+    models = [max(0.0, model_probs.get(i["key"], 0.0)) / total for i in items]
+    blended = pool_distribution(models, [i["market"] for i in items], w)
     out = []
-    for i in items:
-        model = max(0.0, model_probs.get(i["key"], 0.0)) / total
-        blended = w * model + (1 - w) * i["market"]
+    for i, model, bl in zip(items, models, blended):
         out.append({"id": i["id"], "label": i["label"], "price": i["price"], "market": i["market"],
-                    "model": round(model, 4), "blended": round(blended, 4), "edge": round(blended - i["market"], 4)})
+                    "model": round(model, 4), "blended": round(bl, 4), "edge": round(bl - i["price"], 4)})
     return out, w
 
 
@@ -262,6 +267,28 @@ def pick_signal(outcomes: list[dict], evidence_strength: float) -> tuple[str, Op
     return "HOLD", best["id"], best["edge"]
 
 
+def parse_distribution(response) -> tuple[dict, float]:
+    probs = dict(response.choices["winner"].probabilities)
+    strength = float(response.scores["evidence_strength"].score) / (len(EVIDENCE_CRITERIA) - 1)
+    return probs, strength
+
+
+async def ask_jev_distribution(state, questions, max_wait: Optional[float] = None, samples: Optional[int] = None):
+    """Jev's distribution over the outcomes, averaged over `JEV_SAMPLES` calls (each one is paid)."""
+    samples = max(1, samples or settings.JEV_SAMPLES)
+    responses = [await jev.system_one(state, questions, max_wait=max_wait)]
+    for _ in range(samples - 1):
+        try:
+            responses.append(await jev.system_one(state, questions, max_wait=max_wait))
+        except Exception as e:
+            logger.info(f"Extra Jev sample skipped: {e}")
+            break
+    parsed = [parse_distribution(r) for r in responses]
+    keys = {k for probs, _ in parsed for k in probs}
+    probs = {k: sum(p.get(k, 0.0) for p, _ in parsed) / len(parsed) for k in keys}
+    return responses[0], probs, sum(s for _, s in parsed) / len(parsed)
+
+
 async def predict_event(session: AsyncSession, event: MultiEvent, max_wait: Optional[float] = None) -> MultiPrediction:
     if not jev.is_enabled():
         raise jev.JevUnavailableError("TYPESAFE_API_KEY is not configured")
@@ -272,13 +299,11 @@ async def predict_event(session: AsyncSession, event: MultiEvent, max_wait: Opti
     if not evidence:
         raise LookupError("Nessuna notizia recente collegata a questo evento")
     state, questions, keys = build_request(event, items, evidence)
-    response = await jev.system_one(state, questions, max_wait=max_wait)
+    response, probs, strength = await ask_jev_distribution(state, questions, max_wait=max_wait)
 
-    winner = response.choices["winner"]
     for key, item in keys.items():
         item["key"] = key
-    strength = float(response.scores["evidence_strength"].score) / (len(EVIDENCE_CRITERIA) - 1)
-    outcomes, w = blend_distribution(items, dict(winner.probabilities), strength)
+    outcomes, w = blend_distribution(items, probs, strength)
     signal, best_id, best_edge = pick_signal(outcomes, strength)
 
     for i, item in enumerate(evidence):

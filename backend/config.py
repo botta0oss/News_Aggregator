@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     MARKET_CANDIDATE_MARGIN: float = 0.15     # candidates: semantic similarity >= threshold - margin
     MARKET_MATCH_TERM_WEIGHT: float = 0.3     # weight of the key-term overlap in the match score
     MARKET_MATCH_NO_ENTITY_PENALTY: float = 0.6  # score multiplier when no name of the question appears
-    MARKET_NEWS_WINDOW_HOURS: int = 72
+    MARKET_NEWS_WINDOW_HOURS: int = 168
     MARKET_MAX_ARTICLES: int = 8              # articles passed to Jev per prediction
     EVIDENCE_HALF_LIFE_HOURS: float = 48.0    # news weight halves every N hours (floor 25%)
     EVIDENCE_MIN_JEV_RELEVANCE: float = 0.25  # articles Jev judged less relevant than this are dropped
@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     PREDICTION_AUTO: bool = False             # run Jev predictions automatically after each ingest
     PREDICTION_MAX_PER_RUN: int = 10
     MODEL_WEIGHT_MAX: float = 0.5             # max weight of Jev vs market price in the blended probability
+    BLEND_METHOD: str = "logodds"             # "logodds" (pool in log-odds) or "linear"
+    JEV_CALIB_A: float = 0.0                  # Platt scaling of Jev: logit p' = A + B · logit p (fitted by the backtest)
+    JEV_CALIB_B: float = 1.0
+    JEV_SAMPLES: int = 1                      # Jev calls per forecast, averaged in log-odds (each one is paid)
     MIN_EDGE: float = 0.05                    # minimum |edge| to emit a BUY signal
     MIN_EVIDENCE: float = 0.5                 # minimum normalized evidence strength to emit a signal
     KELLY_FRACTION: float = 0.25              # fractional Kelly sizing

@@ -284,6 +284,24 @@ def parse_forecast(response) -> tuple[float, float]:
     return model_p, evidence_strength
 
 
+async def ask_jev(state, questions, max_wait: Optional[float] = None, samples: Optional[int] = None):
+    """Jev forecast, averaged over `JEV_SAMPLES` calls in log-odds (an ensemble reduces the noise
+    of a single answer; every call is paid). Returns (first response, P(YES), evidence strength)."""
+    from backend.markets.forecast import logit, sigmoid
+    samples = max(1, samples or settings.JEV_SAMPLES)
+    responses = [await jev.system_one(state, questions, max_wait=max_wait)]
+    for _ in range(samples - 1):
+        try:
+            responses.append(await jev.system_one(state, questions, max_wait=max_wait))
+        except Exception as e:  # a failed extra sample is not worth losing the forecast
+            logger.info(f"Extra Jev sample skipped: {e}")
+            break
+    parsed = [parse_forecast(r) for r in responses]
+    model_p = sigmoid(sum(logit(p) for p, _ in parsed) / len(parsed))
+    strength = sum(s for _, s in parsed) / len(parsed)
+    return responses[0], model_p, strength, len(parsed)
+
+
 async def predict_market(session: AsyncSession, market: Market, max_wait: Optional[float] = None) -> MarketPrediction:
     """Runs a Jev forecast for one market and stores it together with the betting signal."""
     if not jev.is_enabled():
@@ -296,8 +314,7 @@ async def predict_market(session: AsyncSession, market: Market, max_wait: Option
         raise LookupError("No related news found for this market")
 
     state, questions = build_jev_request(market, evidence)
-    response = await jev.system_one(state, questions, max_wait=max_wait)
-    model_p, evidence_strength = parse_forecast(response)
+    response, model_p, evidence_strength, samples = await ask_jev(state, questions, max_wait=max_wait)
 
     for i, (link, *_rest) in enumerate(evidence):
         relevant = response.nouls.get(f"relevant_n{i}")
@@ -314,6 +331,9 @@ async def predict_market(session: AsyncSession, market: Market, max_wait: Option
         model_name=response.model,
         market_probability=market.yes_price,
         model_probability=round(model_p, 4),
+        calibrated_probability=signal.calibrated_probability,
+        blend_method=settings.BLEND_METHOD,
+        model_samples=samples,
         evidence_strength=round(evidence_strength, 4),
         blended_probability=signal.blended_probability,
         model_weight=signal.model_weight,
