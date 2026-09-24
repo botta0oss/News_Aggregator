@@ -803,3 +803,28 @@ th.num .th-sort { flex-direction: row-reverse; }
 .cases-table .q-cell { min-width: 240px; }
 .cases-table details { margin-top: 4px; }
 .notice.small { font-size: 0.85rem; margin: 0 0 12px; }
+
+/* ---------- Più esiti ---------- */
+.multi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+@media (max-width: 420px) { .multi-grid { grid-template-columns: minmax(0, 1fr); } }
+.multi-card { display: grid; gap: 10px; align-content: start; }
+.multi-title { font-size: 1rem; line-height: 1.35; }
+.multi-title a { color: var(--text-primary); }
+.multi-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 2px; }
+.multi-foot .btn { margin-left: auto; }
+.dist { display: grid; gap: 6px; }
+.dist-row { display: grid; grid-template-columns: minmax(80px, 34%) minmax(0, 1fr) 52px 64px; align-items: center; gap: 10px; font-size: 0.88rem; padding: 2px 4px; border-radius: 6px; }
+.dist-row.best { background: color-mix(in srgb, var(--good) 10%, transparent); }
+.dist-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.dist-track { position: relative; height: 18px; border-radius: 4px; background: color-mix(in srgb, var(--grid) 60%, transparent); }
+.dist-bar { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: color-mix(in srgb, var(--series-market) 55%, transparent); }
+.dist-track .pmark { top: 50%; }
+.dist-value, .dist-edge { text-align: right; font-size: 0.82rem; }
+.dist-full { margin: 12px 0 4px; }
+.dist-full .dist-row { grid-template-columns: minmax(100px, 28%) minmax(0, 1fr) 56px 70px; }
+@media (max-width: 560px) {
+  .dist-row, .dist-full .dist-row { grid-template-columns: minmax(70px, 30%) minmax(0, 1fr) 46px; }
+  .dist-edge { display: none; }
+}
+.dist-track .pmark { width: 12px; height: 12px; }
+.dist-track .pmark.jev { width: 9px; height: 9px; }

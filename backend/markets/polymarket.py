@@ -40,6 +40,9 @@ class PolymarketMarket:
     start_date: Optional[datetime] = None
     closed_time: Optional[datetime] = None   # when trading actually stopped (can be before end_date)
     category: Optional[str] = None           # Polymarket's own category/tag, when present
+    event_id: Optional[str] = None
+    neg_risk: bool = False                   # outcome of a group of mutually exclusive markets
+    group_title: Optional[str] = None        # the outcome's name inside its event (e.g. a candidate)
 
     @property
     def url(self) -> Optional[str]:
@@ -128,7 +131,103 @@ def parse_market(raw: dict) -> Optional[PolymarketMarket]:
         start_date=_datetime(raw.get("startDate") or raw.get("createdAt")),
         closed_time=_datetime(raw.get("closedTime")),
         category=raw.get("category") or None,
+        event_id=str(events[0]["id"]) if events and isinstance(events[0], dict) and events[0].get("id") else None,
+        neg_risk=bool(raw.get("negRisk")),
+        group_title=(raw.get("groupItemTitle") or "").strip() or None,
     )
+
+
+def is_multi_outcome(m: "PolymarketMarket") -> bool:
+    """Outcome of an event with several mutually exclusive answers (shown under "Più esiti")."""
+    return m.neg_risk and bool(m.group_title)
+
+
+@dataclass
+class PolymarketEvent:
+    id: str
+    title: str
+    slug: Optional[str]
+    description: Optional[str]
+    end_date: Optional[datetime]
+    volume: float
+    liquidity: float
+    closed: bool
+    outcomes: list  # PolymarketMarket, one per outcome
+
+    @property
+    def url(self) -> Optional[str]:
+        return f"https://polymarket.com/event/{self.slug}" if self.slug else None
+
+    @property
+    def winner_id(self) -> Optional[str]:
+        winners = [o.id for o in self.outcomes if o.resolved_yes]
+        return winners[0] if len(winners) == 1 else None
+
+
+def parse_event(raw: dict) -> Optional[PolymarketEvent]:
+    """A multi-outcome event: mutually exclusive (negRisk) and with at least 3 outcomes."""
+    if not raw.get("id") or not raw.get("title") or not raw.get("negRisk"):
+        return None
+    outcomes = []
+    for m in raw.get("markets") or []:
+        if not isinstance(m, dict):
+            continue
+        parsed = parse_market({**m, "events": [{"id": raw["id"], "slug": raw.get("slug")}], "negRisk": True})
+        if parsed and parsed.group_title and parsed.yes_price is not None:
+            outcomes.append(parsed)
+    if len(outcomes) < 3:
+        return None
+    return PolymarketEvent(
+        id=str(raw["id"]), title=str(raw["title"]).strip(), slug=raw.get("slug"), description=raw.get("description"),
+        end_date=_datetime(raw.get("endDate")), volume=_float(raw.get("volume")), liquidity=_float(raw.get("liquidity")),
+        closed=bool(raw.get("closed")), outcomes=outcomes,
+    )
+
+
+async def fetch_multi_events(limit: Optional[int] = None, min_volume: Optional[float] = None,
+                             client: Optional[httpx.AsyncClient] = None) -> list[PolymarketEvent]:
+    """Open multi-outcome events, most traded first."""
+    limit = limit if limit is not None else settings.MULTI_SYNC_LIMIT
+    min_volume = min_volume if min_volume is not None else settings.POLYMARKET_MIN_VOLUME
+    own_client = client is None
+    client = client or _client()
+    events: list[PolymarketEvent] = []
+    try:
+        offset = 0
+        for _ in range(20):
+            res = await client.get("/events", params={
+                "active": "true", "closed": "false", "order": "volume24hr", "ascending": "false",
+                "limit": PAGE_SIZE, "offset": offset,
+            })
+            res.raise_for_status()
+            page = res.json()
+            if not isinstance(page, list) or not page:
+                break
+            for raw in page:
+                event = parse_event(raw) if isinstance(raw, dict) else None
+                if event and event.volume >= min_volume:
+                    events.append(event)
+            if len(events) >= limit or len(page) < PAGE_SIZE:
+                break
+            offset += PAGE_SIZE
+    finally:
+        if own_client:
+            await client.aclose()
+    return events[:limit]
+
+
+async def fetch_event(event_id: str, client: Optional[httpx.AsyncClient] = None) -> Optional[PolymarketEvent]:
+    own_client = client is None
+    client = client or _client()
+    try:
+        res = await client.get(f"/events/{event_id}")
+        if res.status_code == 404:
+            return None
+        res.raise_for_status()
+        return parse_event(res.json())
+    finally:
+        if own_client:
+            await client.aclose()
 
 
 def _client() -> httpx.AsyncClient:

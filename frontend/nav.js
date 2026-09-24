@@ -9,6 +9,7 @@ export const NAV = [
   ] },
   { group: "Mercati", items: [
     { id: "mercati", href: "#/mercati", label: "Sì / No", icon: "toggle", short: "Mercati" },
+    { id: "multi", href: "#/multi", label: "Più esiti", icon: "list" },
   ] },
   { group: "Notizie", items: [
     { id: "notizie", href: "#/notizie", label: "Notizie", icon: "news" },

@@ -66,6 +66,11 @@ async def sync_markets(session: AsyncSession, client=None) -> dict:
     for data in fetched:
         seen_ids.add(data.id)
         market = await session.get(Market, data.id)
+        if polymarket.is_multi_outcome(data):
+            # Outcomes of multi-outcome events live under "Più esiti" (multi/service.py)
+            if market is not None and market.multi_event_id is None:
+                market.multi_event_id = data.event_id
+            continue
         if market is None:
             market = Market(id=data.id, question=data.question)
             session.add(market)
@@ -77,7 +82,7 @@ async def sync_markets(session: AsyncSession, client=None) -> dict:
     await session.commit()
 
     # Tracked markets no longer in the active list: check whether they closed/resolved
-    stmt = select(Market).where(Market.resolved_yes.is_(None))
+    stmt = select(Market).where(Market.resolved_yes.is_(None), Market.multi_event_id.is_(None))
     if seen_ids:
         stmt = stmt.where(Market.id.not_in(seen_ids))
     stmt = stmt.order_by(Market.updated_at.asc()).limit(MAX_RESOLUTION_CHECKS)
@@ -132,7 +137,8 @@ async def refresh_links(session: AsyncSession, market_ids: Optional[list[str]] =
     since = datetime.now(timezone.utc) - timedelta(hours=settings.MARKET_NEWS_WINDOW_HOURS)
     await backfill_content_embeddings(session, since)
     floor = max(0.0, settings.MARKET_MATCH_THRESHOLD - settings.MARKET_CANDIDATE_MARGIN)
-    stmt = select(Market).where(Market.closed == False, Market.question_embedding.is_not(None))  # noqa: E712
+    stmt = select(Market).where(Market.closed == False, Market.question_embedding.is_not(None),  # noqa: E712
+                                Market.multi_event_id.is_(None))
     if market_ids is not None:
         stmt = stmt.where(Market.id.in_(market_ids))
     markets = (await session.execute(stmt)).scalars().all()
@@ -366,6 +372,12 @@ async def _run_market_pipeline(session: AsyncSession) -> dict:
     stats["settled_bets"] = await settle_bets(session)
     stats["targeted"] = await run_targeted_search(session)
     stats["links"] = await refresh_links(session)
+    try:
+        from backend.multi.service import run_pipeline as run_multi_pipeline
+        stats["multi"] = await run_multi_pipeline(session)
+    except Exception as e:  # a failure on events must not stop YES/NO markets
+        await session.rollback()
+        logger.error(f"Multi-outcome sync failed: {e}")
     # Fresh, relevant news: evaluate those markets right away and notify (before the batch below)
     stats["alerts"] = await run_alerts(session)
     stats["predictions"] = 0

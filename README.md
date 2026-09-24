@@ -26,6 +26,7 @@ opportunità.
 - [Valutazione economica e portafoglio simulato](#valutazione-economica-e-portafoglio-simulato)
 - [Allerte notizie–prezzo](#allerte-notizieprezzo)
 - [Backtest](#backtest)
+- [Mercati a più esiti](#mercati-a-più-esiti)
 - [Calibrazione](#calibrazione)
 - [Sviluppo e test](#sviluppo-e-test)
 - [Struttura del progetto](#struttura-del-progetto)
@@ -108,7 +109,7 @@ L'interfaccia web è servita dalla stessa app su `/`: HTML, CSS e JavaScript sen
 dipendenze né build, nella cartella `frontend/`.
 
 **Navigazione.** Le sezioni sono raggruppate per quello che si sta facendo: *Segnali*
-(Opportunità, Allerte), *Mercati*, *Notizie*, *Risultati* (Portafoglio, Backtest, Calibrazione).
+(Opportunità, Allerte), *Mercati* (Sì / No, Più esiti), *Notizie*, *Risultati* (Portafoglio, Backtest, Calibrazione).
 Impostazioni, «Come funziona» e account stanno in fondo.
 - **Da 1024 px in su:** menu laterale, che si può ridurre alle sole icone; la scelta viene
   ricordata. In alto una riga di stato (ultima notizia, mercati aperti, Jev attivo) e il menu
@@ -121,6 +122,7 @@ Impostazioni, «Come funziona» e account stanno in fondo.
 |---|---|
 | **Opportunità** | Mercati con segnale attivo ordinati per edge: prezzo, stima Jev e probabilità blended sulla stessa scala 0–100 %, puntata suggerita e forza delle evidenze. Filtri per edge ed evidenze minime. |
 | **Mercati** | Tabella dei mercati con ricerca e ordinamento (clic sulle colonne o menu «Ordina per»): prezzo in centesimi, volume, liquidità, scadenza con giorni mancanti, notizie collegate, ultimo segnale ed edge. |
+| **Più esiti** | Eventi con più risposte possibili (elezioni, campionati, premi) come distribuzione: barra del prezzo per ogni esito, stima di Jev e blended, edge per esito, segnale sull'esito più sottovalutato. |
 | **Dettaglio mercato** | Ultima previsione, pulsante per chiederne una nuova, storico (prezzo contro blended), notizie collegate con rilevanza e impatto, regole di risoluzione. |
 | **Notizie** | Ricerca nelle notizie (titolo, testo, riassunto) con parole evidenziate; filtri per fonte, periodo, regione, categoria, rilevanza per i mercati, opinioni; ordinamento per pertinenza, punteggio o data. |
 | **Allerte** | Ultime allerte con notizia, prezzo all'allerta e movimento a favore dopo 15 minuti, 1, 6 e 24 ore; risultati complessivi; impostazioni (categorie, soglie, limite giornaliero, ore silenziose, prova di Telegram). |
@@ -543,6 +545,14 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 | GET · PUT | `/backtest/parameters` | `MODEL_WEIGHT_MAX` e `MIN_EDGE` in uso; PUT li sostituisce (admin) |
 | POST | `/backtest/parameters/reset` | Torna ai valori del `.env` (admin) |
 
+### Mercati a più esiti
+
+| Metodo | Path | Descrizione |
+|---|---|---|
+| GET | `/multi` | Eventi con i primi esiti e l'ultima previsione. `q` (titolo o nome di un esito), `sort` = `volume`, `edge`, `signal`, `end_date`, `news` |
+| GET | `/multi/{id}` | Tutti gli esiti, notizie collegate, storico delle previsioni |
+| POST | `/multi/{id}/predict` | Previsione Jev della distribuzione (admin; `422` senza notizie) |
+
 ### Allerte
 
 | Metodo | Path | Descrizione |
@@ -681,6 +691,34 @@ l'esito dei mercati già risolti. Vengono salvate anche le valutazioni che non c
 
 Il token resta solo nel `.env`: non compare nelle API, nei log o nei messaggi d'errore.
 
+## Mercati a più esiti
+
+Molti degli eventi più scambiati su Polymarket hanno più risposte possibili, una sola delle
+quali vince: «Chi vincerà le elezioni?», «Chi vincerà la Champions?». Su Polymarket ogni
+esito è una quota SÌ/NO a sé; qui vengono tenuti insieme e separati dai mercati Sì/No,
+nella sezione **Più esiti**, perché si leggono come una distribuzione.
+
+- **Sincronizzazione.** Arrivano gli eventi aperti più scambiati (Gamma `/events`,
+  `negRisk`, almeno 3 esiti; `MULTI_SYNC_LIMIT`). Gli esiti di questi eventi non compaiono
+  più tra i mercati Sì/No, tra le opportunità e nelle allerte. Il vincitore viene rilevato
+  quando l'evento si chiude.
+- **Notizie.** Il collegamento funziona come per i mercati Sì/No, sul titolo dell'evento.
+  Una notizia che nomina uno degli esiti (un candidato, una squadra) riceve un bonus.
+- **Previsione.** Con una sola chiamata Jev dà la probabilità di ciascun esito (domanda a
+  scelta multipla), senza vedere i prezzi.
+  - Riceve i `MULTI_MAX_OUTCOMES` esiti più probabili (12 di default); gli altri vengono
+    sommati in «Altri esiti».
+  - I prezzi vengono normalizzati a 100 %, così il margine del mercato sparisce.
+  - Blend ed edge sono calcolati esito per esito, con lo stesso peso dei mercati Sì/No.
+  - Il segnale indica di comprare SÌ sull'esito più sottovalutato, se l'edge supera
+    `MIN_EDGE` e le evidenze `MIN_EVIDENCE`.
+- **Vista.** Nell'elenco, per ogni evento, i primi esiti con la barra del prezzo e i
+  marcatori di Jev (rombo) e blended (cerchio). Nel dettaglio: tutti gli esiti, la tabella,
+  le notizie (con l'esito che ciascuna favorisce) e lo storico.
+
+Per ora la valutazione economica, il portafoglio simulato e le allerte riguardano solo i
+mercati Sì/No.
+
 ## Backtest
 
 Il portafoglio simulato e le allerte misurano i risultati man mano che i mercati si
@@ -801,6 +839,8 @@ backend/
 │   ├── profiles.py         # preset di rischio
 │   ├── economics.py        # valutazione economica (funzioni pure)
 │   └── portfolio.py        # portafoglio simulato
+├── multi/
+│   └── service.py          # eventi a più esiti: sync, notizie, previsione della distribuzione
 ├── backtest/
 │   ├── engine.py           # ricostruzione del passato: prezzo storico, notizie di allora, Jev
 │   └── analysis.py         # metriche, calibrazione e parametri suggeriti

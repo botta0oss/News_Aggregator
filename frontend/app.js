@@ -11,6 +11,7 @@ import { viewPortfolio } from "./views/portfolio.js";
 import { bulkPredict } from "./views/bulk.js";
 import { viewAlerts } from "./views/alerts.js";
 import { viewBacktest } from "./views/backtest.js";
+import { viewMultiList, viewMultiDetail } from "./views/multi.js";
 import { renderNav, markCurrent, setBadge, setupCollapse, setupMenu } from "./nav.js";
 import { economicsCard, verdictBadge } from "./economics.js";
 
@@ -252,6 +253,8 @@ const routes = [
   [/^#\/metodo$/, "metodo", () => viewMethod(ctx)],
   [/^#\/portafoglio$/, "portafoglio", () => viewPortfolio(ctx)],
   [/^#\/allerte$/, "allerte", () => viewAlerts(ctx)],
+  [/^#\/multi$/, "multi", () => viewMultiList(ctx)],
+  [/^#\/multi\/(.+)$/, "multi", (id) => viewMultiDetail(ctx, id)],
   [/^#\/backtest(?:\/([\w-]+))?$/, "backtest", (id) => viewBacktest(ctx, id)],
 ];
 

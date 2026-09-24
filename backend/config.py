@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     POLYMARKET_CLOB_URL: str = "https://clob.polymarket.com"
     POLYMARKET_SYNC_LIMIT: int = 200          # max active markets kept in sync
     POLYMARKET_MIN_VOLUME: float = 10000.0    # ignore illiquid markets (USD)
+    MULTI_SYNC_LIMIT: int = 60                # multi-outcome events kept in sync
+    MULTI_MAX_OUTCOMES: int = 12              # outcomes passed to Jev (most likely first; the rest is "altro")
 
     # News -> market matching
     MARKET_MATCH_THRESHOLD: float = 0.5       # minimum match score (semantic similarity + key terms), 0-1
