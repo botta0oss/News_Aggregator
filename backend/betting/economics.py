@@ -194,12 +194,25 @@ def fill(asks: list, budget: float, max_price: float, fee_bps: float) -> tuple[f
     return shares, spent, fee
 
 
+# Synthetic book: share of the depth at each level, one spread apart (real books thin out
+# away from the best price, so a large order pays progressively more)
+ESTIMATED_LEVELS = (0.4, 0.3, 0.2, 0.1)
+
+
 def estimated_quote(mid: float, spread: float, liquidity: float, fee_bps: float, min_order_shares=None) -> Quote:
-    """Fallback without an order book: one level at mid + half spread, depth from the reported liquidity."""
-    price = min(0.99, mid + spread / 2)
-    size = max(0.0, liquidity * 0.5) / price if price > 0 else 0.0
-    return Quote(asks=[(price, size)] if size > 0 else [], mid=mid, fee_bps=fee_bps,
-                 min_order_shares=min_order_shares, source="estimate")
+    """Fallback without an order book: levels from mid + half spread upward, one spread apart,
+    holding in total half the reported liquidity (in dollars)."""
+    depth = max(0.0, liquidity * 0.5)
+    asks = []
+    for k, share in enumerate(ESTIMATED_LEVELS):
+        price = round(min(0.99, mid + spread / 2 + k * max(spread, 0.01)), 4)
+        if price <= 0 or depth <= 0:
+            break
+        if asks and price <= asks[-1][0]:
+            asks[-1] = (asks[-1][0], asks[-1][1] + depth * share / price)  # capped at 0.99: merge
+        else:
+            asks.append((price, depth * share / price))
+    return Quote(asks=asks, mid=mid, fee_bps=fee_bps, min_order_shares=min_order_shares, source="estimate")
 
 
 # ---------- Evaluation ----------

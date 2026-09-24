@@ -653,8 +653,10 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
    quota, massima a 50¢ e nulla agli estremi. Il tasso dipende dalla categoria (Esteri 0,
    Politica/Tecnologia/Economia 4%, Sport 3%, Cultura/Scienza 5%, Cripto 7%; categoria
    sconosciuta: `DEFAULT_FEE_BPS`). L'endpoint CLOB `/fee-rate` dice se il mercato ha le
-   commissioni attive: se risponde 0 la commissione è zero. Senza book usa prezzo medio +
-   metà spread e la liquidità dichiarata, e lo segnala.
+   commissioni attive: se risponde 0 la commissione è zero. Senza book stima un book a 4
+   livelli, da prezzo medio + metà spread in su, uno spread l'uno dall'altro (40/30/20/10%
+   della metà della liquidità dichiarata): chi compra molto paga progressivamente di più.
+   Lo segnala sempre.
 2. **Probabilità prudente.** `p_prudente = p_blended − z × σ`, dove
    `σ = w × √(p_jev (1 − p_jev) / (MODEL_PSEUDO_COUNT × evidenze + 1))`. Dopo 30 mercati
    risolti σ viene moltiplicata per `√(Brier osservato / Brier atteso)`, dove il Brier atteso
@@ -789,31 +791,42 @@ nella sezione **Più esiti**, perché si leggono come una distribuzione.
   scelta multipla), senza vedere i prezzi.
   - Riceve i `MULTI_MAX_OUTCOMES` esiti più probabili (12 di default); gli altri vengono
     sommati in «Altri esiti».
-  - I prezzi vengono normalizzati a 100 %, così il margine del mercato sparisce.
-  - Blend ed edge sono calcolati esito per esito, con lo stesso peso dei mercati Sì/No.
-  - Il segnale indica di comprare SÌ sull'esito più sottovalutato, se l'edge supera
-    `MIN_EDGE` e le evidenze `MIN_EVIDENCE`.
+  - I prezzi vengono normalizzati a 100 %, così il margine del mercato sparisce dal
+    riferimento.
+  - Il blend unisce le due distribuzioni in modo log-lineare (`p ∝ Jev^w × mercato^(1−w)`,
+    poi normalizzato), con lo stesso peso dei mercati Sì/No.
+  - L'edge si misura sul **prezzo vero** della quota SÌ, quello che si paga: normalizzare
+    toglie il margine dal riferimento, non dal costo.
+  - Il segnale indica l'esito più lontano dal suo prezzo, se l'edge supera `MIN_EDGE` e le
+    evidenze `MIN_EVIDENCE`: **compra SÌ** se è sottovalutato, **compra NO** se è
+    sopravvalutato (spesso un favorito su cui il mercato è troppo ottimista).
+- **Arbitraggio.** Vince un solo esito, quindi un SÌ di ogni esito paga sempre 1 $ e un NO
+  di ogni esito paga sempre N − 1 $. Se al miglior prezzo del book comprare tutto il set
+  costa meno, commissioni incluse, l'evento mostra il badge «Arbitraggio» con il guadagno per
+  set. Si conosce solo il primo livello del book: la quantità può essere piccola e il prezzo
+  cambiare in fretta.
 - **Vista.** Nell'elenco, per ogni evento, i primi esiti con la barra del prezzo e i
   marcatori di Jev (rombo) e blended (cerchio). Nel dettaglio: tutti gli esiti, la tabella,
   le notizie (con l'esito che ciascuna favorisce) e lo storico.
 
 **Economia, portafoglio, allerte e backtest.** Per gli esiti vale tutto quello che vale per i
 mercati Sì/No:
-- **Valutazione economica.** Dopo ogni previsione vengono valutati i 3 esiti più sottovalutati
-  sulla loro quota SÌ: prezzo reale del book, commissioni, incertezza, rendimento annualizzato,
+- **Valutazione economica.** Dopo ogni previsione vengono valutati i 3 esiti più lontani dal
+  prezzo, sulla quota SÌ se sottovalutati e sulla quota NO se sopravvalutati: prezzo reale del book, commissioni, incertezza, rendimento annualizzato,
   Kelly e limiti del preset. Nel dettaglio dell'evento la scheda «Conviene?» permette di
   scegliere l'esito.
 - **Portafoglio simulato.** L'esito migliore diventa una scommessa simulata, se conviene. Il
   limite per evento vale per tutti gli esiti insieme, così non si punta su tre candidati della
   stessa elezione oltre il rischio del preset. Esclusioni per evento e categoria e chiusura alla
   risoluzione funzionano come per i mercati Sì/No.
-- **Opportunità.** Gli eventi con un esito sottovalutato compaiono in un blocco a parte, sotto i
-  mercati Sì/No.
+- **Opportunità.** Gli eventi con un esito sotto- o sopravvalutato compaiono in un blocco a
+  parte, sotto i mercati Sì/No.
 - **Allerte.** Una notizia fresca e pertinente collegata a un evento fa ricalcolare subito la
-  distribuzione (una chiamata). Se conviene arriva una notifica «Compra SÌ su …» e il prezzo
+  distribuzione (una chiamata). Se conviene arriva una notifica «Compra SÌ su …» (o «Compra NO su …») e il prezzo
   successivo viene misurato come per i mercati Sì/No.
 - **Backtest.** Scegli «Più esiti» tra i tipi di mercato. Per ogni evento risolto vengono
-  ricostruiti i prezzi storici dei 12 esiti più scambiati. Il risultato riporta:
+  ricostruiti i prezzi storici e gli esiti mostrati a Jev sono i più probabili secondo il
+  prezzo di allora. Il risultato riporta:
   - il Brier a più esiti (0 = perfetto, 2 = certo e sbagliato);
   - la probabilità data al vincitore;
   - quante volte il favorito ha vinto, per Jev e per il mercato;
@@ -953,16 +966,18 @@ In CI un database non raggiungibile fa fallire i test invece di saltarli.
 | File | Contenuto |
 |---|---|
 | `tests/test_pipeline.py` | Punteggio composito, euristica, valutatore Jev, riassunti |
-| `tests/test_forecast.py` | Blending, Kelly, segnali, Brier score |
-| `tests/test_polymarket.py` | Parsing e filtri dei mercati Gamma |
+| `tests/test_forecast.py` | Calibrazione di Platt, unione in log-odds (anche a più esiti), Kelly, segnali, Brier score |
+| `tests/test_polymarket.py` | Parsing e filtri dei mercati Gamma, esito definitivo (oracolo UMA) e 50-50 |
+| `tests/test_dedup.py` | Stessa storia da testate diverse raggruppata, conferme contate per testata |
+| `tests/test_reembed.py` | Cambio del modello di embedding (vettori ricalcolati), affidabilità storica della testata |
 | `tests/test_markets_e2e.py` | Flusso completo: raccolta → mercati → previsione → API → risoluzione |
 | `tests/test_auth.py` | Password, cookie, CSRF, ruoli, limite tentativi, scadenze, logout, header di sicurezza |
 | `tests/test_sources.py` | Fetcher (pulizia HTML, reindirizzamenti, blocco reti interne, limiti), catalogo, migrazioni, API delle fonti |
 | `tests/test_search.py` | Ricerca su titolo, testo e riassunto, prefissi, sintassi, evidenziazioni, filtri, uso dell'indice |
-| `tests/test_economics.py` | Book, commissioni, Kelly sul book, incertezza, annualizzazione, verdetti e limiti dei preset |
+| `tests/test_economics.py` | Book, commissioni `p × (1 − p)`, prezzo massimo al netto della commissione, book stimato a livelli, Kelly sul book, incertezza, annualizzazione, verdetti e limiti dei preset |
 | `tests/test_markets_sort.py` | Ordinamento dei mercati per ogni campo e direzione, valori mancanti in fondo, paginazione stabile |
 | `tests/test_ratelimit.py` | Limitatore (distanziamento, pausa, concorrenza), Groq sotto rate limit e con modelli di ragionamento, coda che riprende, 429 sulla previsione manuale, file senza cache |
-| `tests/test_portfolio.py` | Scommesse automatiche, esclusioni, chiusura, profitti e perdite, curva, API e permessi |
+| `tests/test_portfolio.py` | Scommesse automatiche, esclusioni, chiusura (anche 50-50), commissioni per categoria, prezzo di chiusura (CLV), profitti e perdite, curva, API e permessi |
 
 ## Struttura del progetto
 

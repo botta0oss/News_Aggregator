@@ -260,13 +260,15 @@ def blend_distribution(items: list[dict], model_probs: dict, evidence_strength: 
 
 
 def pick_signal(outcomes: list[dict], evidence_strength: float) -> tuple[str, Optional[str], Optional[float]]:
-    """BUY_YES on the most underpriced listed outcome, if the edge and the evidence are strong enough."""
+    """The listed outcome furthest from its price, if the edge and the evidence are strong enough:
+    BUY_YES on an underpriced outcome, BUY_NO on an overpriced one (often a favourite the market
+    likes too much). The edge is signed: blended − price."""
     candidates = [o for o in outcomes if o["id"] != OTHER_ID]
     if not candidates:
         return "HOLD", None, None
-    best = max(candidates, key=lambda o: o["edge"])
-    if best["edge"] >= settings.MIN_EDGE and evidence_strength >= settings.MIN_EVIDENCE:
-        return "BUY_YES", best["id"], best["edge"]
+    best = max(candidates, key=lambda o: abs(o["edge"]))
+    if abs(best["edge"]) >= settings.MIN_EDGE and evidence_strength >= settings.MIN_EVIDENCE:
+        return ("BUY_YES" if best["edge"] > 0 else "BUY_NO"), best["id"], best["edge"]
     return "HOLD", best["id"], best["edge"]
 
 
@@ -332,15 +334,41 @@ async def predict_event(session: AsyncSession, event: MultiEvent, max_wait: Opti
 
 # ---------- Economics and simulated bets ----------
 
+async def arbitrage_for(session: AsyncSession, event_ids: list[str]) -> dict:
+    """Guaranteed-profit gaps (buy every YES, or every NO) on open events, by event id."""
+    from backend.betting.fees import category_rate
+    from backend.db.models import Market
+    from backend.multi import arbitrage
+    if not event_ids:
+        return {}
+    rows = (await session.execute(
+        select(MultiOutcome, Market).join(Market, Market.id == MultiOutcome.id)
+        .where(MultiOutcome.event_id.in_(event_ids))
+    )).all()
+    by_event: dict = {}
+    for outcome, market in rows:
+        by_event.setdefault(outcome.event_id, []).append((outcome, market))
+    out = {}
+    for event_id, items in by_event.items():
+        if any(o.closed for o, _ in items):
+            continue  # a closed outcome breaks the "exactly one wins" set
+        category = next((m.category for _, m in items if m.category), None)
+        found = arbitrage.find([(m.best_ask, m.best_bid) for _, m in items], category_rate(category) * 10_000)
+        if found:
+            out[event_id] = found.as_dict()
+    return out
+
 def outcome_prediction(prediction: MultiPrediction, outcome_id: str):
     """A YES/NO-style view of one outcome of a multi-outcome forecast, for the economic evaluation."""
     from types import SimpleNamespace
     entry = next((o for o in prediction.outcomes if o["id"] == outcome_id), None)
     if entry is None:
         return None
-    strong = entry["edge"] >= settings.MIN_EDGE and prediction.evidence_strength >= settings.MIN_EVIDENCE
+    signal = "HOLD"
+    if prediction.evidence_strength >= settings.MIN_EVIDENCE and abs(entry["edge"]) >= settings.MIN_EDGE:
+        signal = "BUY_YES" if entry["edge"] > 0 else "BUY_NO"
     return SimpleNamespace(
-        id=None, market_id=outcome_id, created_at=prediction.created_at, signal="BUY_YES" if strong else "HOLD",
+        id=None, market_id=outcome_id, created_at=prediction.created_at, signal=signal,
         market_probability=entry.get("price", entry["market"]), model_probability=entry["model"],
         blended_probability=entry["blended"], evidence_strength=prediction.evidence_strength,
         model_weight=prediction.model_weight, edge=entry["edge"], multi_prediction_id=prediction.id,
@@ -361,14 +389,15 @@ MAX_EVALUATED_OUTCOMES = 3
 
 
 async def apply_economics(session: AsyncSession, event: MultiEvent, prediction: MultiPrediction) -> dict:
-    """Evaluates the most underpriced outcomes (up to 3) and places the simulated bet on the best one."""
+    """Evaluates the outcomes furthest from their price (up to 3: YES if underpriced, NO if
+    overpriced) and places the simulated bet on the best one."""
     from backend.betting import portfolio
     from backend.db.models import Market
     results = {}
     try:
         category = await event_category(session, event.id)
-        candidates = sorted((o for o in prediction.outcomes if o["id"] != OTHER_ID and o["edge"] > 0),
-                            key=lambda o: o["edge"], reverse=True)[:MAX_EVALUATED_OUTCOMES]
+        candidates = sorted((o for o in prediction.outcomes if o["id"] != OTHER_ID and o["edge"] != 0),
+                            key=lambda o: abs(o["edge"]), reverse=True)[:MAX_EVALUATED_OUTCOMES]
         for entry in candidates:
             market = await session.get(Market, entry["id"])
             if market is None or market.closed:
@@ -378,7 +407,7 @@ async def apply_economics(session: AsyncSession, event: MultiEvent, prediction: 
             pred = outcome_prediction(prediction, entry["id"])
             ev = await portfolio.evaluate_prediction(session, market, pred)
             results[entry["id"]] = ev.as_dict()
-            if entry["id"] == prediction.best_outcome_id and prediction.signal == "BUY_YES":
+            if entry["id"] == prediction.best_outcome_id and prediction.signal in ("BUY_YES", "BUY_NO"):
                 await portfolio.maybe_place_bet(session, market, pred, ev)
         prediction.economics = results
         await session.commit()

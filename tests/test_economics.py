@@ -128,6 +128,12 @@ def test_min_order_and_estimated_quote():
     assert "stake_below_min" in codes(tiny)
     q = estimated_quote(0.35, 0.02, 50_000, 0.0)
     assert q.source == "estimate" and q.asks[0][0] == pytest.approx(0.36)
+    # Several levels, one spread apart, holding half the liquidity in dollars
+    assert [p for p, _ in q.asks] == pytest.approx([0.36, 0.38, 0.40, 0.42])
+    assert sum(p * s for p, s in q.asks) == pytest.approx(25_000)
+    # Near 1 the levels are capped at 0.99 and merged
+    top = estimated_quote(0.97, 0.02, 1000, 0.0)
+    assert [p for p, _ in top.asks] == [0.98, 0.99] and sum(p * s for p, s in top.asks) == pytest.approx(500)
     ev = run(quote=q)
     assert ev.quote_source == "estimate" and ev.notes
 

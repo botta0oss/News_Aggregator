@@ -309,10 +309,11 @@ async def _run_event_alerts(db: AsyncSession, s: AlertSettings, stats: dict) -> 
         entry = next(o for o in prediction.outcomes if o["id"] == best_id)
         alert = Alert(
             market_id=best_id, multi_event_id=event.id, article_id=trig["article_id"], news_at=trig["published"],
-            trigger_score=trig["score"], price=entry.get("price", entry["market"]), side="YES", verdict=ev.get("verdict"),
+            trigger_score=trig["score"], price=entry.get("price", entry["market"]),
+            side="NO" if prediction.signal == "BUY_NO" else "YES", verdict=ev.get("verdict"),
             signal=prediction.signal, edge=entry["edge"], blended=entry["blended"], outlay=ev.get("outlay"),
             limit_price=ev.get("limit_price"),
-            opportunity=prediction.signal == "BUY_YES" and ev.get("verdict") in VERDICTS.get(s.min_verdict, ("GO",)),
+            opportunity=prediction.signal in ("BUY_YES", "BUY_NO") and ev.get("verdict") in VERDICTS.get(s.min_verdict, ("GO",)),
             followups={},
         )
         db.add(alert)
@@ -373,7 +374,7 @@ def format_message(alert: Alert, market: Market, prediction: MarketPrediction, t
     verdict = "conviene" if alert.verdict == "GO" else "conviene, puntata piccola"
     age_min = max(0, int((_now() - trig["published"]).total_seconds() // 60)) if trig.get("published") else None
     age = "" if age_min is None else (f", {age_min} min fa" if age_min < 120 else f", {age_min // 60} ore fa")
-    head = f"Compra SÌ su {e(trig['outcome'])}" if trig.get("outcome") else f"Compra {side}"
+    head = f"Compra {side} su {e(trig['outcome'])}" if trig.get("outcome") else f"Compra {side}"
     lines = [
         f"🔔 <b>{head}</b> · {verdict}",
         f"<b>{e(trig.get('event_title') or market.question)}</b>",
