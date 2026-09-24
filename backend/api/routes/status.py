@@ -1,0 +1,36 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from backend.ai import jev
+from backend.config import settings
+from backend.db.database import get_db
+from backend.db.models import Article, Market, MarketArticleLink, MarketPrediction, ProcessedArticle
+from backend.api.schemas import StatusResponse
+
+router = APIRouter(prefix="/status", tags=["status"])
+
+
+@router.get("", response_model=StatusResponse)
+async def get_status(db: AsyncSession = Depends(get_db)):
+    """Configuration flags and counters used by the dashboard."""
+    async def count(stmt):
+        return (await db.execute(stmt)).scalar() or 0
+
+    open_markets = select(Market.id).where(Market.closed == False)  # noqa: E712
+    return {
+        "jev_enabled": jev.is_enabled(),
+        "polymarket_enabled": settings.POLYMARKET_ENABLED,
+        "prediction_auto": settings.PREDICTION_AUTO,
+        "min_edge": settings.MIN_EDGE,
+        "min_evidence": settings.MIN_EVIDENCE,
+        "articles": await count(select(func.count(Article.id))),
+        "processed_articles": await count(select(func.count(ProcessedArticle.id))),
+        "last_article_at": (await db.execute(select(func.max(Article.fetched_at)))).scalar(),
+        "open_markets": await count(select(func.count()).select_from(open_markets.subquery())),
+        "linked_markets": await count(
+            select(func.count(func.distinct(MarketArticleLink.market_id)))
+            .where(MarketArticleLink.market_id.in_(open_markets))
+        ),
+        "predictions": await count(select(func.count(MarketPrediction.id))),
+        "last_prediction_at": (await db.execute(select(func.max(MarketPrediction.created_at)))).scalar(),
+    }

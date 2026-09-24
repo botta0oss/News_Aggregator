@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>News × Markets</title>
+  <meta name="description" content="Notizie classificate con TypeSafe Jev e previsioni sui mercati Polymarket">
+  <meta name="theme-color" content="#020617">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233987e5'/%3E%3Cpath d='M7 22l6-7 5 4 7-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Fira+Sans:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Apply the saved theme before first paint (dark is the default)
+    try { if (localStorage.getItem("theme") === "light") document.documentElement.dataset.theme = "light"; } catch (e) {}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#view">Vai al contenuto</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/opportunita" aria-label="News × Markets, vai alle opportunità">
+        <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--series-blended)"/><path d="M7 22l6-7 5 4 7-9" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>News <span class="brand-x">×</span> Markets</span>
+      </a>
+      <nav class="tabs" aria-label="Sezioni">
+        <a href="#/opportunita" data-tab="opportunita">Opportunità</a>
+        <a href="#/mercati" data-tab="mercati">Mercati</a>
+        <a href="#/notizie" data-tab="notizie">Notizie</a>
+        <a href="#/calibrazione" data-tab="calibrazione">Calibrazione</a>
+      </nav>
+      <div class="actions">
+        <button class="btn btn-ghost" id="btn-ingest" type="button" title="Scarica le nuove notizie e aggiorna classificazioni, mercati e collegamenti">
+          <span data-icon="refresh"></span><span class="spinner" aria-hidden="true"></span><span class="btn-label">Aggiorna notizie</span>
+        </button>
+        <button class="btn btn-ghost" id="btn-sync" type="button" title="Aggiorna mercati e prezzi da Polymarket e collega le notizie">
+          <span data-icon="sync"></span><span class="spinner" aria-hidden="true"></span><span class="btn-label">Aggiorna mercati</span>
+        </button>
+        <button class="btn btn-ghost btn-icon" id="btn-theme" type="button" aria-label="Passa al tema chiaro">
+          <span data-icon="sun"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" role="note" hidden></div>
+
+  <main id="view" class="container" tabindex="-1"></main>
+
+  <footer class="footer container">
+    <p id="footer-status"></p>
+    <p>Segnali indicativi, non consulenza finanziaria. L'app non piazza ordini su Polymarket.</p>
+  </footer>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

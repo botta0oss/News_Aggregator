@@ -143,6 +143,15 @@ async def test_full_market_flow(db, monkeypatch, jev_client):
         assert (await api.get(f"/articles/{uuid.uuid4()}")).status_code == 404
         assert (await api.get("/categories")).status_code == 200
 
+        st = (await api.get("/status")).json()
+        assert st["jev_enabled"] is True and st["open_markets"] == 2 and st["linked_markets"] == 1
+        assert st["articles"] == 3 and st["predictions"] == 2
+
+        # The dashboard is served at / by the same app
+        r = await api.get("/")
+        assert r.status_code == 200 and "News × Markets" in r.text
+        assert (await api.get("/app.js")).status_code == 200
+
     # 6. Market 1 resolves YES: detected on the next sync, used for calibration
     resolved = gamma_market(1, FED_Q, yes="1", closed=True)
     async with gamma_client([gamma_market(2, OTHER_Q, yes="0.10")], single={"1": resolved}) as client:
