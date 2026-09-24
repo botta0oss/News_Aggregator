@@ -98,6 +98,8 @@ class Market(Base):
     closed: Mapped[bool] = mapped_column(Boolean, default=False)
     resolved_yes: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)  # set once resolved
     resolution: Mapped[Optional[str]] = mapped_column(Text, nullable=True)       # yes / no / split, once final
+    # Last YES price seen while the market was still trading: the "closing line" for CLV
+    last_trading_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     # Trading data for the economics engine
     yes_token_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     no_token_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

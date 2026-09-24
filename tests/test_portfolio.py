@@ -219,3 +219,35 @@ def test_parse_fee_switch():
     assert parse_fee_enabled({"base_fee": 0}) is False
     assert parse_fee_enabled({"base_fee": 1000}) is True
     assert parse_fee_enabled({"other": 1}) is None and parse_fee_enabled("x") is None
+
+
+async def test_closing_line_value(db, book):
+    from backend.markets import service as market_service
+    async with SessionLocal() as s:
+        m = await make_market(s)
+        await portfolio.apply_economics(s, m, await make_prediction(s, m))
+        bet = (await s.execute(select(PaperBet))).scalar_one()
+        # Still trading at 0.45: provisional move, no closing line yet
+        m.yes_price = 0.45
+        await s.commit()
+        summ = await portfolio.summary(s)
+        assert summ["clv"]["n"] == 0
+        assert summ["clv_open"]["avg"] == pytest.approx(0.45 - bet.avg_price, abs=1e-4)
+        # The sync records the last trading price, and keeps it when the market closes at 1
+        data = polymarket.PolymarketMarket(id=m.id, question=m.question, slug=None, event_slug=m.event_slug,
+                                           description=None, end_date=m.end_date, yes_price=0.52, volume=1e6,
+                                           liquidity=5e4, active=True, closed=False, resolved_yes=None)
+        market_service._apply_market(m, data)
+        data.closed, data.yes_price, data.resolved_yes, data.resolution = True, 1.0, True, "yes"
+        market_service._apply_market(m, data)
+        await s.commit()
+        assert m.last_trading_price == 0.52 and m.yes_price == 1.0
+        summ = await portfolio.summary(s)
+        assert summ["clv"] == {"n": 1, "avg": pytest.approx(0.52 - bet.avg_price, abs=1e-4), "share_positive": 1.0}
+    async with login_client("viewer") as api:
+        bets = (await api.get("/portfolio/bets")).json()
+        assert bets[0]["clv"] == pytest.approx(0.52 - bet.avg_price, abs=1e-4)
+        cal = (await api.get("/predictions/calibration")).json()
+        # The BUY_YES signal was made at 0.35 and the market closed at 0.52
+        assert cal["signal_clv"]["n"] == 1 and cal["signal_clv"]["avg"] == pytest.approx(0.17)
+        assert cal["resolved_markets"] == 1 and cal["gain_blended"]["markets"] == 1

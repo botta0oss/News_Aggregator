@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.betting import fees
+from backend.betting import clv, fees
 from backend.betting.economics import Exposure, Quote, estimated_quote, evaluate, model_sigma, Evaluation
 from backend.betting.profiles import get_profile
 from backend.config import settings
@@ -268,6 +268,13 @@ async def settle_bets(db: AsyncSession) -> int:
     return len(rows)
 
 
+def bet_clv(bet: PaperBet, market: Market) -> Optional[float]:
+    """Closing line value of a bet once its market stopped trading; None before."""
+    if not market.closed or market.last_trading_price is None:
+        return None
+    return clv.clv(bet.avg_price, market.last_trading_price, bet.side)
+
+
 def mark_value(bet: PaperBet, market: Market) -> Optional[float]:
     """Current value of an open bet at the market price (what the shares would be worth now)."""
     if market.yes_price is None:
@@ -312,5 +319,10 @@ async def summary(db: AsyncSession) -> dict:
         "counts": {"open": counts["open"], "won": counts["won"], "lost": counts["lost"], "void": counts["void"], "excluded": counts["excluded"]},
         "hit_rate": counts["won"] / settled if settled else None,
         "expected_pnl_settled": expected_settled,
+        # Closing line value (points of the side bought) on bets whose market closed, and the
+        # move so far on open ones: positive = bought below the price the market settled on
+        "clv": clv.summarize([bet_clv(b, m) for b, m in bets if b.status != "excluded"]),
+        "clv_open": clv.summarize([clv.clv(b.avg_price, m.yes_price, b.side) for b, m in bets
+                                   if b.status == "open" and not m.closed]),
         "equity_curve": curve,
     }

@@ -47,6 +47,8 @@ def _apply_market(market: Market, data: polymarket.PolymarketMarket) -> None:
     market.end_date = data.end_date
     if data.yes_price is not None:
         market.yes_price = data.yes_price
+        if not data.closed:
+            market.last_trading_price = data.yes_price
     market.volume = data.volume
     market.liquidity = data.liquidity
     market.active = data.active

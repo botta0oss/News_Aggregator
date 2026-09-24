@@ -106,6 +106,8 @@ async def _apply_outcomes(session: AsyncSession, event: MultiEvent, data) -> Non
         m.question, m.slug, m.event_slug, m.description = o.question, o.slug, event.slug, event.description
         m.end_date = o.end_date or event.end_date
         m.yes_price, m.volume, m.liquidity = o.yes_price, o.volume, o.liquidity or 0.0
+        if not o.closed and o.yes_price is not None:
+            m.last_trading_price = o.yes_price
         m.active, m.closed, m.resolved_yes, m.resolution = o.active, o.closed, o.resolved_yes, o.resolution
         for f in ("yes_token_id", "no_token_id", "best_bid", "best_ask", "taker_fee_bps", "order_min_size"):
             if getattr(o, f) is not None:

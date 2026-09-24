@@ -120,6 +120,9 @@ class CalibrationResponse(BaseModel):
     brier_market: Optional[float]
     brier_model: Optional[float]
     brier_blended: Optional[float]
+    gain_model: Optional[dict] = None
+    gain_blended: Optional[dict] = None
+    signal_clv: Optional[dict] = None
 
 class StatusResponse(BaseModel):
     jev_enabled: bool

@@ -24,6 +24,7 @@ from backend.db.models import (
 )
 from backend.ingestor.sources import CATEGORIES
 from backend.markets import polymarket
+from backend.betting.clv import summarize as clv_summary
 from backend.markets.matching import source_quality
 
 logger = logging.getLogger(__name__)
@@ -455,10 +456,11 @@ def followup_price(alert: Alert, key: str) -> Optional[float]:
 async def summary(db: AsyncSession, days: int = 30) -> dict:
     """How the opportunities did: price move after the alert and outcome of resolved markets."""
     since = _now() - timedelta(days=days)
-    rows = (await db.execute(
-        select(Alert, Market.resolved_yes).join(Market, Market.id == Alert.market_id)
+    rows3 = (await db.execute(
+        select(Alert, Market.resolved_yes, Market).join(Market, Market.id == Alert.market_id)
         .where(Alert.created_at >= since)
     )).all()
+    rows = [(a, r) for a, r, _ in rows3]
     opps = [(a, r) for a, r in rows if a.opportunity]
     moves = {}
     for key in CHECKPOINTS:
@@ -468,6 +470,8 @@ async def summary(db: AsyncSession, days: int = 30) -> dict:
             "avg_move": round(sum(values) / len(values), 4) if values else None,
             "share_favorable": round(sum(1 for v in values if v > 0) / len(values), 4) if values else None,
         }
+    closing = {a.id: favorable_move(a, m.last_trading_price) for a, _, m in rows3 if m.closed}
+    clv_values = [closing.get(a.id) for a, _ in opps]
     resolved = [(a, r) for a, r in opps if r is not None and a.side in ("YES", "NO")]
     won = sum(1 for a, r in resolved if (a.side == "YES") == r)
     s = await get_settings(db)
@@ -479,6 +483,8 @@ async def summary(db: AsyncSession, days: int = 30) -> dict:
         "moves": moves,
         "resolved": len(resolved),
         "won": won,
+        # Move from the alert price to the closing price, in the suggested direction
+        "clv": clv_summary(clv_values),
         "calls_last_24h": await calls_last_24h(db),
         "daily_budget": s.daily_budget,
     }

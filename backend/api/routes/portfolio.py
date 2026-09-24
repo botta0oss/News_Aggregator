@@ -51,6 +51,7 @@ def _bet_dict(bet: PaperBet, market: Market) -> dict:
         "current_price": (market.yes_price if bet.side == "YES" else 1 - market.yes_price) if market.yes_price is not None else None,
         "current_value": value,
         "unrealized_pnl": (value - bet.stake - bet.fee) if value is not None else None,
+        "clv": portfolio.bet_clv(bet, market),
     }
 
 

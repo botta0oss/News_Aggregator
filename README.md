@@ -912,7 +912,18 @@ Quando un mercato seguito si risolve, il sync lo rileva e salva l'esito.
 - `brier_blended`: la probabilità blended usata per i segnali.
 
 Il sistema aggiunge valore solo se `brier_blended` è stabilmente **inferiore** a
-`brier_market` su molti mercati. Con pochi mercati risolti il confronto non è significativo.
+`brier_market` su molti mercati. Con pochi mercati risolti il confronto non è significativo:
+`gain_blended` e `gain_model` danno il vantaggio sul prezzo con l'intervallo al 95%
+(bootstrap sui mercati). Se l'intervallo comprende lo zero, il vantaggio può essere dovuto al caso.
+
+**Prezzo di chiusura (CLV).** Il sync registra l'ultimo prezzo di ogni mercato mentre si
+scambia ancora (`last_trading_price`): è la «chiusura», la stima del mercato quando tutte le
+informazioni sono note. Comprare stabilmente sotto la chiusura è il segno più affidabile di un
+vantaggio reale e si misura molto prima che i mercati risolti bastino per il Brier:
+- `signal_clv` in Calibrazione: di quanto il prezzo si è mosso verso ogni segnale fino alla chiusura;
+- nel portafoglio simulato: chiusura del lato comprato − prezzo medio pagato, per scommessa e
+  in media (`clv`; `clv_open` è il movimento finora sulle aperte);
+- nelle allerte: movimento dal prezzo dell'allerta alla chiusura, nella direzione consigliata.
 
 ## Sviluppo e test
 

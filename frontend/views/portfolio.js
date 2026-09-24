@@ -105,6 +105,9 @@ export async function viewPortfolio(ctx) {
       statTile("Profitti realizzati", fmt.signedMoney(data.realized_pnl), `${data.counts.won} vinte · ${data.counts.lost} perse${data.counts.void ? ` · ${data.counts.void} annullate` : ""}`),
       statTile("Profitti latenti", fmt.signedMoney(data.unrealized_pnl), `${data.counts.open} aperte · ${money(data.invested)} investiti`),
       statTile("Scommesse vinte", data.hit_rate != null ? fmt.pct(data.hit_rate) : "–", `liquidità ${money(data.cash)}`),
+      statTile("Prezzo di chiusura", data.clv?.n ? fmt.pts(data.clv.avg) : "–",
+        data.clv?.n ? `${fmt.pct(data.clv.share_positive)} comprate sotto la chiusura · ${fmt.count(data.clv.n, "mercato chiuso", "mercati chiusi")}`
+          : data.clv_open?.n ? `finora ${fmt.pts(data.clv_open.avg)} sulle aperte` : "nessun mercato chiuso ancora"),
     ),
     !bets.length ? h("p", { class: "note", style: { marginBottom: "16px" } }, icon("alert"),
       s.auto_paper ? "Ancora nessuna scommessa: la prima arriva con la prossima previsione che supera i controlli economici del preset."
