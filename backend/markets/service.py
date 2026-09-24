@@ -16,7 +16,7 @@ from backend.markets import polymarket
 from backend.markets.forecast import compute_signal
 from backend.markets.targeted import run_targeted_search
 from backend.alerts.service import run_alerts
-from backend.markets.matching import EvidenceItem, extract_terms, match_score, rank_evidence, term_overlap
+from backend.markets.matching import EvidenceItem, extract_terms, match_score, outlet_priors, rank_evidence, term_overlap
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +203,8 @@ async def get_market_evidence(session: AsyncSession, market_id: str, limit: Opti
         cluster_sources = dict((await session.execute(
             select(Cluster.id, Cluster.source_count).where(Cluster.id.in_(cluster_ids))
         )).all())
-    return rank_evidence(rows, limit or settings.MARKET_MAX_ARTICLES, cluster_sources)
+    return rank_evidence(rows, limit or settings.MARKET_MAX_ARTICLES, cluster_sources,
+                         outlet_priors=await outlet_priors(session, rows))
 
 
 def build_jev_request(market: Market, evidence: list, now: Optional[datetime] = None):

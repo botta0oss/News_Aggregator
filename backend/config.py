@@ -8,7 +8,9 @@ class Settings(BaseSettings):
     SIMILARITY_THRESHOLD: float = 0.92        # near-identical titles: same news
     STORY_SIMILARITY_THRESHOLD: float = 0.82  # title + text this close: same story rewritten by another outlet
     STORY_WINDOW_HOURS: float = 48            # how far back a story is looked for
-    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    # Multilingual (50+ languages, 384 dimensions): Italian news match English market questions.
+    # Changing it re-embeds the stored articles, markets and events at the next start.
+    EMBEDDING_MODEL: str = "paraphrase-multilingual-MiniLM-L12-v2"
 
     # TypeSafe Jev (Composite Scoring, Classification & Forecasting)
     TYPESAFE_API_KEY: Optional[str] = None

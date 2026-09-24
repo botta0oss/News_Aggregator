@@ -222,11 +222,27 @@ def match_score(similarity: float, overlap: TermMatch) -> float:
 
 # ---------- Evidence ranking ----------
 
-def source_quality(processed) -> float:
-    """0.25-1: authority, penalised for clickbait and opinion pieces. 0.75 if not classified yet."""
+OUTLET_PRIOR_WEIGHT = 0.5   # share of the outlet's track record in an article's authority
+OUTLET_MIN_ARTICLES = 5     # classified articles an outlet needs before its average counts
+
+
+def outlet_key(article, source) -> str:
+    """The outlet that wrote the article: the publisher for aggregated results, otherwise the feed."""
+    return (getattr(article, "publisher", None) or source.name or "").strip().lower()
+
+
+def source_quality(processed, prior: Optional[float] = None) -> float:
+    """0.25-1: authority, penalised for clickbait and opinion pieces.
+
+    prior: the outlet's average authority over its classified articles. One article's score is
+    noisy; the outlet's record steadies it (half and half). Not classified yet: the prior alone,
+    or 0.75 when there is none.
+    """
     if processed is None:
-        return 0.75
-    authority = processed.authority_score if processed.authority_score is not None else 0.5
+        return max(0.25, min(1.0, 0.5 + 0.5 * prior)) if prior is not None else 0.75
+    authority = processed.authority_score if processed.authority_score is not None else prior if prior is not None else 0.5
+    if prior is not None and processed.authority_score is not None:
+        authority = (1 - OUTLET_PRIOR_WEIGHT) * authority + OUTLET_PRIOR_WEIGHT * prior
     clickbait = processed.clickbait_score or 0.0
     q = (0.5 + 0.5 * authority) * (1 - 0.5 * clickbait)
     if (processed.is_opinion or 0.0) >= 0.6:
@@ -266,14 +282,15 @@ class EvidenceItem:
 
 
 def rank_evidence(rows, limit: int, cluster_sources: Optional[dict] = None, now: Optional[datetime] = None,
-                  max_per_source: int = 3) -> list[EvidenceItem]:
+                  max_per_source: int = 3, outlet_priors: Optional[dict] = None) -> list[EvidenceItem]:
     """Best evidence first; one article per story and at most `max_per_source` per source."""
     cluster_sources = cluster_sources or {}
+    outlet_priors = outlet_priors or {}
     items = []
     for link, article, processed, source in rows:
         if link.relevance is not None and link.relevance < settings.EVIDENCE_MIN_JEV_RELEVANCE:
             continue  # Jev said it is not about this market
-        quality = source_quality(processed)
+        quality = source_quality(processed, outlet_priors.get(outlet_key(article, source)))
         base = link.match_score if link.match_score is not None else link.similarity
         score = base * quality * recency_factor(article.published_at or article.fetched_at, now) \
             * jev_relevance_factor(link.relevance)
@@ -296,3 +313,21 @@ def rank_evidence(rows, limit: int, cluster_sources: Optional[dict] = None, now:
         if len(chosen) >= limit:
             break
     return chosen
+
+
+async def outlet_priors(session, rows) -> dict:
+    """Average authority of each outlet appearing in `rows`, over its classified articles."""
+    from sqlalchemy import func, select
+    from backend.db.models import Article, ProcessedArticle, Source
+    keys = {outlet_key(article, source) for _l, article, _p, source in rows}
+    keys.discard("")
+    if not keys:
+        return {}
+    key = func.lower(func.coalesce(Article.publisher, Source.name))
+    result = await session.execute(
+        select(key, func.avg(ProcessedArticle.authority_score))
+        .join(Article, Article.id == ProcessedArticle.article_id).join(Source, Source.id == Article.source_id)
+        .where(ProcessedArticle.authority_score.is_not(None), key.in_(keys))
+        .group_by(key).having(func.count(ProcessedArticle.id) >= OUTLET_MIN_ARTICLES)
+    )
+    return {k: float(v) for k, v in result.all()}

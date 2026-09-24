@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from backend.config import settings
 from backend import overrides
+from backend.ingestor import reembed
 from backend.backtest import engine as backtest_engine
 from backend.db.database import init_db, SessionLocal
 from backend.ingestor.scheduler import start_scheduler, shutdown_scheduler
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI):
         await ensure_bootstrap_admin(db)
         await overrides.load(db)  # forecast parameters changed from the dashboard
     await backtest_engine.recover_interrupted()
+    await reembed.start_if_needed()  # vectors from another embedding model are recomputed
     start_scheduler()
     yield
     shutdown_scheduler()

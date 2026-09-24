@@ -22,7 +22,7 @@ from backend.db.models import (
 from backend.ingestor.deduplicator import get_title_embedding
 from backend.markets import polymarket
 from backend.markets.forecast import model_weight, pool_distribution
-from backend.markets.matching import extract_terms, match_score, rank_evidence, term_overlap
+from backend.markets.matching import extract_terms, match_score, outlet_priors, rank_evidence, term_overlap
 from backend.markets.service import EVIDENCE_CRITERIA, _candidate_distance
 
 logger = logging.getLogger(__name__)
@@ -187,7 +187,8 @@ async def get_evidence(session: AsyncSession, event_id: str, limit: Optional[int
     clusters = dict((await session.execute(
         select(Cluster.id, Cluster.source_count).where(Cluster.id.in_(cluster_ids))
     )).all()) if cluster_ids else {}
-    return rank_evidence(rows, limit or settings.MARKET_MAX_ARTICLES, clusters)
+    return rank_evidence(rows, limit or settings.MARKET_MAX_ARTICLES, clusters,
+                         outlet_priors=await outlet_priors(session, rows))
 
 
 # ---------- Forecast ----------

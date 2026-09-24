@@ -72,7 +72,7 @@ flowchart LR
 ```
 
 Stack: **FastAPI**, **SQLAlchemy async + asyncpg**, **PostgreSQL + pgvector**,
-**sentence-transformers** (`all-MiniLM-L6-v2`), **APScheduler**, **typesafe-sdk**.
+**sentence-transformers** (`paraphrase-multilingual-MiniLM-L12-v2`), **APScheduler**, **typesafe-sdk**.
 
 ## Avvio rapido
 
@@ -233,7 +233,7 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | `SIMILARITY_THRESHOLD` | `0.92` | Similarità oltre cui due titoli sono la stessa notizia |
 | `STORY_SIMILARITY_THRESHOLD` | `0.82` | Similarità di titolo + testo oltre cui due articoli raccontano la stessa storia (titoli riscritti da testate diverse) |
 | `STORY_WINDOW_HOURS` | `48` | Quanto indietro si cerca la stessa storia |
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Modello di embedding (384 dimensioni) |
+| `EMBEDDING_MODEL` | `paraphrase-multilingual-MiniLM-L12-v2` | Modello di embedding (384 dimensioni, multilingue: una notizia italiana trova il mercato scritto in inglese). Se lo cambi, all'avvio i vettori salvati vengono ricalcolati in background, prima le notizie più recenti |
 | `TYPESAFE_API_KEY` | – | Chiave TypeSafe. Senza chiave niente previsioni, classificazione euristica |
 | `TYPESAFE_MODEL` | `jev-latest` | Modello Jev |
 | `SUMMARIZER_PROVIDER` | `auto` | `gemini`, `groq`, `ollama` o `auto` |
@@ -392,7 +392,9 @@ cambiano.
    con pertinenza ≥ `MARKET_MATCH_THRESHOLD`.
 4. **Utilità per Jev.** L'utilità di ogni notizia è `pertinenza × affidabilità della fonte ×
    freschezza × giudizio di Jev`.
-   - L'affidabilità dipende da autorevolezza, clickbait e articoli d'opinione.
+   - L'affidabilità dipende da autorevolezza, clickbait e articoli d'opinione. L'autorevolezza
+     di un singolo articolo è una stima rumorosa: per le testate con almeno 5 articoli
+     classificati vale per metà la media della testata.
    - La freschezza si dimezza ogni `EVIDENCE_HALF_LIFE_HOURS`.
    - Le notizie che Jev ha già giudicato non rilevanti per quel mercato vengono tolte.
 
