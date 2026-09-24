@@ -269,3 +269,58 @@ class Alert(Base):
 
     market = relationship("Market")
     article = relationship("Article")
+
+
+class BacktestRun(Base):
+    """A backtest on resolved markets: parameters, progress and summary."""
+    __tablename__ = 'backtest_runs'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(Text, default="running")   # running / done / stopped / failed
+    params: Mapped[dict] = mapped_column(JSONB, default=dict)
+    total: Mapped[int] = mapped_column(Integer, default=0)          # cases planned
+    done: Mapped[int] = mapped_column(Integer, default=0)          # cases evaluated with Jev
+    skipped: Mapped[int] = mapped_column(Integer, default=0)
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    summary: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+
+class BacktestCase(Base):
+    """One market evaluated as of a past date, with the price of that moment and the real outcome."""
+    __tablename__ = 'backtest_cases'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('backtest_runs.id', ondelete='CASCADE'), index=True)
+    market_id: Mapped[str] = mapped_column(Text, nullable=False)       # Polymarket id (not in the markets table)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    category: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    horizon_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_yes: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    status: Mapped[str] = mapped_column(Text, default="ok")             # ok / skipped / error
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)            # P(YES) at as_of
+    news_count: Mapped[int] = mapped_column(Integer, default=0)
+    model_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    evidence_strength: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    blended_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    edge: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    signal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    verdict: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    side: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    outlay: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    news: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)   # titles and sources passed to Jev
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class AppSetting(Base):
+    """Forecast parameters changed from the dashboard; they override the .env values."""
+    __tablename__ = 'app_settings'
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -25,6 +25,7 @@ opportunità.
 - [Flusso di lavoro consigliato](#flusso-di-lavoro-consigliato)
 - [Valutazione economica e portafoglio simulato](#valutazione-economica-e-portafoglio-simulato)
 - [Allerte notizie–prezzo](#allerte-notizieprezzo)
+- [Backtest](#backtest)
 - [Calibrazione](#calibrazione)
 - [Sviluppo e test](#sviluppo-e-test)
 - [Struttura del progetto](#struttura-del-progetto)
@@ -107,7 +108,7 @@ L'interfaccia web è servita dalla stessa app su `/`: HTML, CSS e JavaScript sen
 dipendenze né build, nella cartella `frontend/`.
 
 **Navigazione.** Le sezioni sono raggruppate per quello che si sta facendo: *Segnali*
-(Opportunità, Allerte), *Mercati*, *Notizie*, *Risultati* (Portafoglio, Calibrazione).
+(Opportunità, Allerte), *Mercati*, *Notizie*, *Risultati* (Portafoglio, Backtest, Calibrazione).
 Impostazioni, «Come funziona» e account stanno in fondo.
 - **Da 1024 px in su:** menu laterale, che si può ridurre alle sole icone; la scelta viene
   ricordata. In alto una riga di stato (ultima notizia, mercati aperti, Jev attivo) e il menu
@@ -123,6 +124,7 @@ Impostazioni, «Come funziona» e account stanno in fondo.
 | **Dettaglio mercato** | Ultima previsione, pulsante per chiederne una nuova, storico (prezzo contro blended), notizie collegate con rilevanza e impatto, regole di risoluzione. |
 | **Notizie** | Ricerca nelle notizie (titolo, testo, riassunto) con parole evidenziate; filtri per fonte, periodo, regione, categoria, rilevanza per i mercati, opinioni; ordinamento per pertinenza, punteggio o data. |
 | **Allerte** | Ultime allerte con notizia, prezzo all'allerta e movimento a favore dopo 15 minuti, 1, 6 e 24 ore; risultati complessivi; impostazioni (categorie, soglie, limite giornaliero, ore silenziose, prova di Telegram). |
+| **Backtest** | Jev sui mercati già risolti, con notizie e prezzo di allora: Brier contro il prezzo, per orizzonte e categoria, calibrazione, scommesse simulate, parametri suggeriti da applicare. |
 | **Calibrazione** | Brier score di prezzo, Jev e blended sui mercati risolti, con avviso se il campione è piccolo. |
 | **Come funziona** | Il metodo passo per passo con i parametri reali del server, un esempio numerico e un glossario. |
 | **Impostazioni** | Fonti: aggiungi (con prova del feed prima di salvare), modifica, attiva/disattiva, aggiorna subito, elimina; fonti consigliate dal catalogo; riclassificazione; parametri di previsione in sola lettura. |
@@ -530,6 +532,17 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 | GET · POST | `/portfolio/exclusions` | Esclusioni `{kind: market/event/category, value, label}` (POST admin) |
 | DELETE | `/portfolio/exclusions/{id}` | Rimuove un'esclusione (admin) |
 
+### Backtest
+
+| Metodo | Path | Descrizione |
+|---|---|---|
+| GET · POST | `/backtest/runs` | Elenco dei backtest; avvio `{resolved_after, resolved_before, max_markets, min_volume, horizons, max_calls, exclude_decided}` (POST admin, `409` se uno è già in corso) |
+| GET | `/backtest/runs/{id}` | Avanzamento e riepilogo (metriche, calibrazione, suggerimenti) |
+| GET | `/backtest/runs/{id}/cases` | Casi: `status` = `ok`, `skipped`, `all` |
+| POST | `/backtest/runs/{id}/stop` · DELETE `/backtest/runs/{id}` | Ferma o elimina (admin) |
+| GET · PUT | `/backtest/parameters` | `MODEL_WEIGHT_MAX` e `MIN_EDGE` in uso; PUT li sostituisce (admin) |
+| POST | `/backtest/parameters/reset` | Torna ai valori del `.env` (admin) |
+
 ### Allerte
 
 | Metodo | Path | Descrizione |
@@ -668,6 +681,59 @@ l'esito dei mercati già risolti. Vengono salvate anche le valutazioni che non c
 
 Il token resta solo nel `.env`: non compare nelle API, nei log o nei messaggi d'errore.
 
+## Backtest
+
+Il portafoglio simulato e le allerte misurano i risultati man mano che i mercati si
+risolvono, cioè in settimane o mesi. Il backtest dà una prima risposta subito: come avrebbe
+previsto Jev i mercati già risolti?
+
+**Come funziona.**
+1. **Mercati.** Prende i mercati Sì/No chiusi nel periodo scelto, i più scambiati per primi
+   (Gamma API, `closed=true`).
+2. **Momenti.** Per ogni mercato e ogni orizzonte (1, 7 o 30 giorni prima della chiusura)
+   ricostruisce la situazione di quel momento:
+   - il **prezzo di allora**, dallo storico della CLOB (`/prices-history`);
+   - le **notizie dei 7 giorni precedenti**, da Google News con i filtri `after:`/`before:`.
+     Quelle pubblicate dopo quel momento vengono scartate.
+3. **Selezione delle notizie.** Pertinenza (significato + termini chiave) e scelta delle
+   migliori, come nell'app.
+4. **Previsione.** Jev riceve la stessa richiesta, con «oggi» impostato a quella data e senza
+   vedere il prezzo.
+5. **Segnale e scommessa.** Blend, segnale e valutazione economica con il preset del
+   portafoglio. Il book storico non esiste: il prezzo è quello di allora più metà dello spread
+   tipico.
+6. **Confronto.** L'esito reale del mercato dice chi aveva ragione.
+
+**Casi saltati** (senza consumare chiamate):
+- prezzo storico non disponibile;
+- esito già scontato dal prezzo (sotto il 3 % o sopra il 97 %, disattivabile);
+- nessuna notizia in quei giorni.
+
+C'è un limite di chiamate a Jev per ogni backtest. Il lavoro gira in background, con
+avanzamento e pulsante per fermarlo. Se il server si riavvia, il backtest risulta interrotto.
+
+**Risultati.**
+- Brier score (più basso è meglio) di prezzo, Jev e blended, in totale, per orizzonte e per
+  categoria.
+- Quota di segnali giusti e scommesse simulate: profitto e ROI.
+- Grafico di calibrazione (previsto contro accaduto).
+- Tabella dei casi, con le notizie lette da Jev.
+
+**Parametri suggeriti.**
+- Il **peso massimo di Jev** che avrebbe dato il Brier più basso al blended.
+- Con quel peso, l'**edge minimo** che avrebbe reso di più puntando 1 $ per segnale, se ci
+  sono almeno 10 scommesse.
+- L'affidabilità è *bassa* sotto i 30 casi, *media* sotto i 100, *alta* da 100 in su.
+
+Un admin può applicarli con un clic: vengono salvati nel database, valgono per le previsioni
+successive e sostituiscono i valori del `.env` finché non premi «Ripristina i valori del
+.env». Si possono modificare solo `MODEL_WEIGHT_MAX` e `MIN_EDGE`.
+
+**Il limite.** Jev potrebbe conoscere già l'esito di eventi passati: i mercati risolti prima
+della data fino a cui arrivano le conoscenze del suo modello possono dare risultati troppo
+buoni. Per una misura onesta scegli mercati chiusi dopo quella data. Inoltre i suggerimenti
+sono calcolati sugli stessi mercati: con pochi casi rischiano di adattarsi al caso.
+
 ## Calibrazione
 
 Quando un mercato seguito si risolve, il sync lo rileva e salva l'esito.
@@ -735,6 +801,9 @@ backend/
 │   ├── profiles.py         # preset di rischio
 │   ├── economics.py        # valutazione economica (funzioni pure)
 │   └── portfolio.py        # portafoglio simulato
+├── backtest/
+│   ├── engine.py           # ricostruzione del passato: prezzo storico, notizie di allora, Jev
+│   └── analysis.py         # metriche, calibrazione e parametri suggeriti
 ├── alerts/
 │   ├── service.py          # rilevamento, valutazione immediata, prezzi dopo l'allerta
 │   └── telegram.py         # notifiche Telegram

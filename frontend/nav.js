@@ -15,6 +15,7 @@ export const NAV = [
   ] },
   { group: "Risultati", items: [
     { id: "portafoglio", href: "#/portafoglio", label: "Portafoglio", icon: "wallet" },
+    { id: "backtest", href: "#/backtest", label: "Backtest", icon: "history" },
     { id: "calibrazione", href: "#/calibrazione", label: "Calibrazione", icon: "target" },
   ] },
 ];

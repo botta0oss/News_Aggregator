@@ -269,6 +269,13 @@ def build_jev_request(market: Market, evidence: list, now: Optional[datetime] = 
     return state, questions
 
 
+def parse_forecast(response) -> tuple[float, float]:
+    """(P(YES) according to Jev, evidence strength 0-1) from a System One response."""
+    model_p = float(response.nouls["resolves_yes"].noul)
+    evidence_strength = float(response.scores["evidence_strength"].score) / (len(EVIDENCE_CRITERIA) - 1)
+    return model_p, evidence_strength
+
+
 async def predict_market(session: AsyncSession, market: Market, max_wait: Optional[float] = None) -> MarketPrediction:
     """Runs a Jev forecast for one market and stores it together with the betting signal."""
     if not jev.is_enabled():
@@ -282,9 +289,7 @@ async def predict_market(session: AsyncSession, market: Market, max_wait: Option
 
     state, questions = build_jev_request(market, evidence)
     response = await jev.system_one(state, questions, max_wait=max_wait)
-
-    model_p = float(response.nouls["resolves_yes"].noul)
-    evidence_strength = float(response.scores["evidence_strength"].score) / (len(EVIDENCE_CRITERIA) - 1)
+    model_p, evidence_strength = parse_forecast(response)
 
     for i, (link, *_rest) in enumerate(evidence):
         relevant = response.nouls.get(f"relevant_n{i}")

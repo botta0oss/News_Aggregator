@@ -787,3 +787,19 @@ th.num .th-sort { flex-direction: row-reverse; }
 .chip:has(input:checked) { border-color: var(--accent); color: var(--text-primary); }
 .econ-body.is-loading { opacity: .55; transition: opacity var(--dur) var(--ease); }
 .econ-error { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+
+/* ---------- Backtest ---------- */
+.params { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px 24px; }
+.param { display: grid; gap: 2px; align-content: start; }
+.param b { font-size: 1.15rem; }
+.compact-table td.best { color: var(--text-primary); font-weight: 600; }
+.compact-table tr.best-row td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.compact-table tr.selected td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.compact-table tr.clickable { cursor: pointer; }
+.compact-table tr.clickable:hover td { background: var(--surface-2); }
+.chart-table { margin-top: 10px; }
+.chart-table summary, .cases-table details summary { cursor: pointer; color: var(--accent-text); font-size: 0.88rem; display: inline-flex; align-items: center; min-height: 32px; }
+.chart.reliability svg { display: block; margin: 8px auto 0; width: 100%; max-width: 520px; height: auto; }
+.cases-table .q-cell { min-width: 240px; }
+.cases-table details { margin-top: 4px; }
+.notice.small { font-size: 0.85rem; margin: 0 0 12px; }

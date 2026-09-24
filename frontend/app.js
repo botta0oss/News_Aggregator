@@ -10,6 +10,7 @@ import { viewMethod } from "./views/method.js";
 import { viewPortfolio } from "./views/portfolio.js";
 import { bulkPredict } from "./views/bulk.js";
 import { viewAlerts } from "./views/alerts.js";
+import { viewBacktest } from "./views/backtest.js";
 import { renderNav, markCurrent, setBadge, setupCollapse, setupMenu } from "./nav.js";
 import { economicsCard, verdictBadge } from "./economics.js";
 
@@ -251,6 +252,7 @@ const routes = [
   [/^#\/metodo$/, "metodo", () => viewMethod(ctx)],
   [/^#\/portafoglio$/, "portafoglio", () => viewPortfolio(ctx)],
   [/^#\/allerte$/, "allerte", () => viewAlerts(ctx)],
+  [/^#\/backtest(?:\/([\w-]+))?$/, "backtest", (id) => viewBacktest(ctx, id)],
 ];
 
 async function route({ quiet = false } = {}) {

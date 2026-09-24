@@ -6,7 +6,7 @@ markets with the current implied probability of YES.
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 import httpx
 from backend.config import settings
@@ -37,6 +37,9 @@ class PolymarketMarket:
     best_ask: Optional[float] = None
     taker_fee_bps: Optional[float] = None
     order_min_size: Optional[float] = None
+    start_date: Optional[datetime] = None
+    closed_time: Optional[datetime] = None   # when trading actually stopped (can be before end_date)
+    category: Optional[str] = None           # Polymarket's own category/tag, when present
 
     @property
     def url(self) -> Optional[str]:
@@ -122,6 +125,9 @@ def parse_market(raw: dict) -> Optional[PolymarketMarket]:
         best_ask=best_ask if 0.0 < best_ask <= 1.0 else None,
         taker_fee_bps=_float(fee) if fee is not None else None,
         order_min_size=_float(raw.get("orderMinSize")) or None,
+        start_date=_datetime(raw.get("startDate") or raw.get("createdAt")),
+        closed_time=_datetime(raw.get("closedTime")),
+        category=raw.get("category") or None,
     )
 
 
@@ -181,6 +187,78 @@ async def fetch_market(market_id: str, client: Optional[httpx.AsyncClient] = Non
     finally:
         if own_client:
             await client.aclose()
+
+
+async def fetch_resolved_markets(
+    resolved_after: datetime,
+    resolved_before: datetime,
+    limit: int = 100,
+    min_volume: float = 10000.0,
+    client: Optional[httpx.AsyncClient] = None,
+) -> list[PolymarketMarket]:
+    """Closed binary markets with a clear YES/NO outcome, most traded first (for backtests)."""
+    own_client = client is None
+    client = client or _client()
+    markets: list[PolymarketMarket] = []
+    try:
+        offset = 0
+        for _ in range(40):  # at most 40 pages
+            res = await client.get("/markets", params={
+                "closed": "true",
+                "order": "volumeNum",
+                "ascending": "false",
+                "end_date_min": resolved_after.date().isoformat(),
+                "end_date_max": resolved_before.date().isoformat(),
+                "volume_num_min": min_volume,
+                "limit": PAGE_SIZE,
+                "offset": offset,
+            })
+            res.raise_for_status()
+            page = res.json()
+            if not isinstance(page, list) or not page:
+                break
+            for raw in page:
+                market = parse_market(raw)
+                if (market and market.resolved_yes is not None and market.volume >= min_volume
+                        and market.yes_token_id and market.end_date is not None):
+                    markets.append(market)
+            if len(markets) >= limit or len(page) < PAGE_SIZE:
+                break
+            offset += PAGE_SIZE
+    finally:
+        if own_client:
+            await client.aclose()
+    return markets[:limit]
+
+
+async def fetch_price_history(token_id: str, start: datetime, end: datetime,
+                              client: Optional[httpx.AsyncClient] = None) -> list[tuple[datetime, float]]:
+    """Price points (time, price) of a share between two dates, from the CLOB (hourly)."""
+    own_client = client is None
+    client = client or httpx.AsyncClient(base_url=settings.POLYMARKET_CLOB_URL, timeout=20.0)
+    try:
+        res = await client.get("/prices-history", params={
+            "market": token_id, "startTs": int(start.timestamp()), "endTs": int(end.timestamp()), "fidelity": 60,
+        })
+        res.raise_for_status()
+        points = []
+        for point in (res.json() or {}).get("history") or []:
+            t, p = point.get("t"), _float(point.get("p"), -1.0)
+            if isinstance(t, (int, float)) and 0.0 <= p <= 1.0:
+                points.append((datetime.fromtimestamp(t, tz=timezone.utc), p))
+        return sorted(points)
+    finally:
+        if own_client:
+            await client.aclose()
+
+
+def price_at(history: list[tuple[datetime, float]], when: datetime, max_gap_hours: float = 48.0) -> Optional[float]:
+    """Last price at or before `when`, if not older than `max_gap_hours`."""
+    before = [(t, p) for t, p in history if t <= when]
+    if not before:
+        return None
+    t, p = before[-1]
+    return p if (when - t).total_seconds() <= max_gap_hours * 3600 else None
 
 
 # ---------------------------------------------------------------------------

@@ -258,3 +258,84 @@ export function equityChart(points, initial) {
   }
   return wrap;
 }
+
+/**
+ * Reliability diagram: for each probability bin, mean forecast (x) vs how often YES happened (y).
+ * On the diagonal = well calibrated. Point size grows with the number of cases in the bin.
+ * Jev = aqua diamonds (solid), blended = blue circles (dashed), market = orange circles (thin).
+ */
+export function reliabilityChart(calibration) {
+  const series = [
+    ["market", "Prezzo mercato", calibration.market, "circle", "var(--series-market)", null, 1.5],
+    ["jev", "Stima Jev", calibration.model, "diamond", "var(--series-jev)", null, 2],
+    ["blended", "Blended", calibration.blended, "circle", "var(--series-blended)", "5 4", 2],
+  ];
+  const maxN = Math.max(1, ...series.flatMap(([, , bins]) => bins.map((b) => b.n)));
+  const wrap = h("div", { class: "chart reliability" });
+  const holder = h("div", {});
+  wrap.append(holder);
+
+  const draw = () => {
+    const width = Math.min(520, Math.max(260, holder.clientWidth || 420));
+    const height = Math.round(width * 0.8);
+    const m = { l: 44, r: 12, t: 12, b: 34 };
+    const iw = width - m.l - m.r, ih = height - m.t - m.b;
+    const x = (v) => m.l + clamp01(v) * iw;
+    const y = (v) => m.t + (1 - clamp01(v)) * ih;
+    const svg = s("svg", { viewBox: `0 0 ${width} ${height}`, width, height, role: "img",
+      "aria-label": "Calibrazione: probabilità prevista contro frequenza reale del SÌ" });
+    for (const v of [0, 0.25, 0.5, 0.75, 1]) {
+      svg.append(s("line", { class: "gridline", x1: m.l, x2: m.l + iw, y1: y(v), y2: y(v) }));
+      svg.append(s("text", { class: "tick", x: m.l - 8, y: y(v) + 4, "text-anchor": "end" }, `${v * 100}%`));
+      svg.append(s("text", { class: "tick", x: x(v), y: m.t + ih + 16, "text-anchor": "middle" }, `${v * 100}%`));
+    }
+    svg.append(s("text", { class: "tick", x: m.l + iw / 2, y: height - 2, "text-anchor": "middle" }, "probabilità prevista"));
+    svg.append(s("line", { x1: x(0), y1: y(0), x2: x(1), y2: y(1), stroke: "var(--axis)", "stroke-dasharray": "3 4" }));
+    svg.append(s("text", { class: "tick", x: x(0.97), y: y(0.97) + 16, "text-anchor": "end" }, "calibrazione perfetta"));
+
+    for (const [key, label, bins, shape, color, dash, sw] of series) {
+      if (!bins.length) continue;
+      const d = bins.map((b, i) => `${i ? "L" : "M"}${x(b.mean_forecast).toFixed(1)},${y(b.frequency).toFixed(1)}`).join("");
+      svg.append(s("path", { d, fill: "none", stroke: color, "stroke-width": sw, "stroke-dasharray": dash, opacity: 0.9 }));
+      for (const b of bins) {
+        const r = 3 + 5 * Math.sqrt(b.n / maxN);
+        const cx = x(b.mean_forecast), cy = y(b.frequency);
+        const mark = shape === "diamond"
+          ? s("path", { d: `M${cx},${cy - r - 1}L${cx + r + 1},${cy}L${cx},${cy + r + 1}L${cx - r - 1},${cy}Z`, fill: color, stroke: "var(--surface)", "stroke-width": 1.5 })
+          : s("circle", { cx, cy, r, fill: key === "market" ? "var(--surface)" : color, stroke: color, "stroke-width": 2 });
+        mark.setAttribute("tabindex", "0");
+        mark.setAttribute("aria-label", `${label}: previsto ${fmt.pct(b.mean_forecast)}, accaduto ${fmt.pct(b.frequency)} su ${b.n} casi`);
+        const tip = (e) => showTooltip(ttRows(label, [[key, "Previsto in media", fmt.pct(b.mean_forecast)], [null, "SÌ accaduto", fmt.pct(b.frequency)], [null, "Casi", fmt.int(b.n)]]), e.clientX, e.clientY);
+        mark.addEventListener("mousemove", tip);
+        mark.addEventListener("mouseleave", hideTooltip);
+        mark.addEventListener("focus", () => { const rc = mark.getBoundingClientRect(); tip({ clientX: rc.right, clientY: rc.top }); });
+        mark.addEventListener("blur", hideTooltip);
+        svg.append(mark);
+      }
+    }
+    holder.replaceChildren(svg);
+  };
+  requestAnimationFrame(draw);
+  if ("ResizeObserver" in window) {
+    let lastWidth = 0;
+    new ResizeObserver((entries) => {
+      const w = Math.round(entries[0].contentRect.width);
+      if (w && w !== lastWidth) { lastWidth = w; draw(); }
+    }).observe(holder);
+  }
+
+  const legend = h("div", { class: "legend" },
+    h("span", {}, h("span", { class: "key market" }), "Prezzo mercato"),
+    h("span", {}, h("span", { class: "key jev" }), "Stima Jev"),
+    h("span", {}, h("span", { class: "key blended" }), "Blended"),
+    h("span", { class: "muted small" }, "punti più grandi = più casi"));
+  const rows = [];
+  series.forEach(([key, label, bins]) => bins.forEach((b) => rows.push(h("tr", {},
+    h("td", {}, label), h("td", { class: "num" }, `${Math.round(b.lo * 100)}–${Math.round(b.hi * 100)}%`),
+    h("td", { class: "num" }, fmt.pct(b.mean_forecast)), h("td", { class: "num" }, fmt.pct(b.frequency)), h("td", { class: "num" }, fmt.int(b.n))))));
+  const table = h("details", { class: "chart-table" }, h("summary", {}, "Mostra tabella"),
+    h("div", { class: "table-wrap" }, h("table", { class: "compact-table" },
+      h("thead", {}, h("tr", {}, ...["Serie", "Fascia", "Previsto", "Accaduto", "Casi"].map((t, i) => h("th", { scope: "col", class: i ? "num" : null }, t)))),
+      h("tbody", {}, rows))));
+  return h("div", {}, legend, wrap, table);
+}
