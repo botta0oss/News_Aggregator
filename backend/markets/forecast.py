@@ -14,15 +14,21 @@ EPS = 1e-6
 @dataclass
 class Signal:
     blended_probability: float
+    model_weight: float    # w: share of the Jev estimate in the blend
     edge: float
     signal: str            # BUY_YES / BUY_NO / HOLD
     kelly_fraction: float  # suggested fraction of bankroll (already scaled by KELLY_FRACTION)
 
 
+def model_weight(evidence_strength: float, max_weight: Optional[float] = None) -> float:
+    """w = max_weight * evidence_strength, clamped to [0, 1]."""
+    max_weight = settings.MODEL_WEIGHT_MAX if max_weight is None else max_weight
+    return max(0.0, min(1.0, max_weight * max(0.0, min(1.0, evidence_strength))))
+
+
 def blend_probability(model_p: float, market_p: float, evidence_strength: float, max_weight: Optional[float] = None) -> float:
     """Linear pool: w * model + (1 - w) * market, with w = max_weight * evidence_strength."""
-    max_weight = settings.MODEL_WEIGHT_MAX if max_weight is None else max_weight
-    w = max(0.0, min(1.0, max_weight * max(0.0, min(1.0, evidence_strength))))
+    w = model_weight(evidence_strength, max_weight)
     return w * model_p + (1.0 - w) * market_p
 
 
@@ -58,6 +64,7 @@ def compute_signal(
 
     return Signal(
         blended_probability=round(blended, 4),
+        model_weight=round(model_weight(evidence_strength), 4),
         edge=round(edge, 4),
         signal=signal,
         kelly_fraction=round(stake * kelly_scale, 4),

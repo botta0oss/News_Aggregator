@@ -15,6 +15,13 @@ class Source(Base):
     url: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    # Main topic of the feed (e.g. "Crypto"), used as a hint by the classifier
+    category_hint: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Outcome of the last fetch, shown in the settings page
+    last_fetched_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_status: Mapped[Optional[str]] = mapped_column(Text, nullable=True)   # ok / error
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_new_items: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
 class Cluster(Base):
     __tablename__ = 'clusters'
@@ -57,6 +64,13 @@ class ProcessedArticle(Base):
     composite_score: Mapped[float] = mapped_column(Float, nullable=True, default=0.5)
     # Legacy scale (1 to 10)
     importance_score: Mapped[int] = mapped_column(Integer, nullable=True, default=5)
+
+    # Classification details
+    category_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    region: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_opinion: Mapped[Optional[float]] = mapped_column(Float, nullable=True)        # P(opinion / analysis piece)
+    market_relevance: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 0-1, affects bettable events
+    classifier: Mapped[Optional[str]] = mapped_column(Text, nullable=True)           # jev / heuristic
     
     processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
@@ -112,6 +126,7 @@ class MarketPrediction(Base):
     model_probability: Mapped[float] = mapped_column(Float, nullable=False)    # raw Jev P(YES)
     evidence_strength: Mapped[float] = mapped_column(Float, nullable=False)    # 0-1
     blended_probability: Mapped[float] = mapped_column(Float, nullable=False)  # shrunk toward market
+    model_weight: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # weight w of Jev in the blend
     edge: Mapped[float] = mapped_column(Float, nullable=False)                 # blended - market
     signal: Mapped[str] = mapped_column(Text, nullable=False)                  # BUY_YES / BUY_NO / HOLD
     kelly_fraction: Mapped[float] = mapped_column(Float, default=0.0)          # suggested bankroll fraction

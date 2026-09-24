@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     MIN_EVIDENCE: float = 0.5                 # minimum normalized evidence strength to emit a signal
     KELLY_FRACTION: float = 0.25              # fractional Kelly sizing
 
+    # Feed fetching
+    FEED_TIMEOUT_SECONDS: float = 20.0
+    FEED_MAX_BYTES: int = 5_000_000
+    ALLOW_PRIVATE_FEEDS: bool = False         # allow feeds on private/internal addresses (SSRF risk)
+    AI_BATCH_SIZE: int = 100                  # articles summarized and classified per run
+
     # Authentication
     SESSION_TTL_HOURS: int = 168              # absolute session lifetime (7 days)
     SESSION_IDLE_MINUTES: int = 720           # session ends after 12 h without activity

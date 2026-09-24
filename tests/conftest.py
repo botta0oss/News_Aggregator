@@ -92,6 +92,7 @@ async def db(monkeypatch):
     from backend.config import settings
     from backend.db.database import engine
     from backend.db.models import Base
+    from backend.db.migrations import run_migrations
     from backend.ingestor import scheduler
     from backend.markets import service
     from backend.auth.deps import login_limiter
@@ -101,6 +102,7 @@ async def db(monkeypatch):
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
+            await run_migrations(conn)
     except Exception as e:  # pragma: no cover
         pytest.skip(f"Test database not available: {e}")
     monkeypatch.setattr(service, "get_title_embedding", fake_embedding)

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.ai import jev
 from backend.config import settings
 from backend.db.database import get_db
-from backend.db.models import Article, Market, MarketArticleLink, MarketPrediction, ProcessedArticle
+from backend.db.models import Article, Market, MarketArticleLink, MarketPrediction, ProcessedArticle, Source
 from backend.api.schemas import StatusResponse
 
 router = APIRouter(prefix="/status", tags=["status"])
@@ -23,6 +23,13 @@ async def get_status(db: AsyncSession = Depends(get_db)):
         "prediction_auto": settings.PREDICTION_AUTO,
         "min_edge": settings.MIN_EDGE,
         "min_evidence": settings.MIN_EVIDENCE,
+        "model_weight_max": settings.MODEL_WEIGHT_MAX,
+        "kelly_fraction": settings.KELLY_FRACTION,
+        "market_match_threshold": settings.MARKET_MATCH_THRESHOLD,
+        "market_news_window_hours": settings.MARKET_NEWS_WINDOW_HOURS,
+        "market_max_articles": settings.MARKET_MAX_ARTICLES,
+        "sources_active": await count(select(func.count(Source.id)).where(Source.active == True)),  # noqa: E712
+        "sources_with_errors": await count(select(func.count(Source.id)).where(Source.active == True, Source.last_status == "error")),  # noqa: E712
         "articles": await count(select(func.count(Article.id))),
         "processed_articles": await count(select(func.count(ProcessedArticle.id))),
         "last_article_at": (await db.execute(select(func.max(Article.fetched_at)))).scalar(),
