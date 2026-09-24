@@ -3,6 +3,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.ai import jev
+from backend.auth.deps import require_admin
 from backend.api.schemas import (
     CalibrationResponse, MarketDetailResponse, MarketListResponse, MarketResponse,
     OpportunityResponse, PredictionResponse,
@@ -69,7 +70,7 @@ async def _sync_job():
         await run_market_pipeline(session)
 
 
-@router.post("/sync")
+@router.post("/sync", dependencies=[Depends(require_admin)])
 async def trigger_market_sync(background_tasks: BackgroundTasks):
     background_tasks.add_task(_sync_job)
     return {"status": "started", "message": "Polymarket sync triggered"}
@@ -130,7 +131,7 @@ async def get_market(market_id: str, db: AsyncSession = Depends(get_db)):
     return data
 
 
-@router.post("/{market_id}/predict", response_model=PredictionResponse)
+@router.post("/{market_id}/predict", response_model=PredictionResponse, dependencies=[Depends(require_admin)])
 async def predict(market_id: str, refresh_price: bool = Query(True), db: AsyncSession = Depends(get_db)):
     """Runs a Jev forecast now (costs one TypeSafe API call)."""
     market = await db.get(Market, market_id)

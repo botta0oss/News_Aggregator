@@ -17,6 +17,7 @@ opportunità.
 - [Architettura](#architettura)
 - [Avvio rapido](#avvio-rapido)
 - [Dashboard](#dashboard)
+- [Accesso e sicurezza](#accesso-e-sicurezza)
 - [Configurazione](#configurazione)
 - [Come nasce una previsione](#come-nasce-una-previsione)
 - [API](#api)
@@ -68,10 +69,11 @@ Stack: **FastAPI**, **SQLAlchemy async + asyncpg**, **PostgreSQL + pgvector**,
 ```bash
 cp .env.example .env        # inserisci almeno TYPESAFE_API_KEY
 docker compose up --build
+docker compose exec api python -m backend.auth.cli create-user tuonome --role admin
 ```
 
-Il compose avvia anche Postgres con pgvector. Dashboard su http://localhost:8000,
-documentazione interattiva delle API su http://localhost:8000/docs.
+Il compose avvia anche Postgres con pgvector. Dashboard su http://localhost:8000 (accedi
+con l'utente appena creato), documentazione interattiva delle API su http://localhost:8000/docs.
 
 ### In locale
 
@@ -81,6 +83,7 @@ Serve un PostgreSQL con l'estensione [pgvector](https://github.com/pgvector/pgve
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # imposta DATABASE_URL e le chiavi
+python -m backend.auth.cli create-user tuonome --role admin
 uvicorn backend.main:app --reload
 ```
 
@@ -112,6 +115,63 @@ Scelte di design:
 - **Forme distinte:** cerchio e rombo, linea continua e tratteggiata. Ogni grafico ha legenda con valori e tabella alternativa.
 - **Numeri in carattere monospazio** (Fira Code) e prezzi in centesimi, come su Polymarket.
 - **Accessibilità:** navigabile da tastiera, target touch di 44 px, rispetta la riduzione del movimento, nessuno scroll orizzontale da 375 px in su.
+
+## Accesso e sicurezza
+
+Tutta l'API, tranne il login, richiede un utente autenticato. I file statici della
+dashboard sono pubblici ma non contengono dati.
+
+**Ruoli**
+
+| Ruolo | Può fare |
+|---|---|
+| `admin` | Tutto: consultare i dati, aggiornare notizie e mercati, chiedere previsioni a Jev (a pagamento) |
+| `viewer` | Consultare notizie, mercati, previsioni e calibrazione |
+
+**Gestione utenti** (non c'è registrazione pubblica):
+
+```bash
+python -m backend.auth.cli create-user alice --role admin   # chiede la password
+python -m backend.auth.cli create-user bob                   # viewer
+python -m backend.auth.cli list-users
+python -m backend.auth.cli set-password alice                # chiude anche tutte le sue sessioni
+python -m backend.auth.cli disable bob                       # disattiva e disconnette
+python -m backend.auth.cli enable bob
+python -m backend.auth.cli revoke-sessions alice
+```
+
+In alternativa, al primo avvio senza utenti viene creato un admin da `ADMIN_USERNAME` e
+`ADMIN_PASSWORD`. Dopo il primo avvio togli `ADMIN_PASSWORD` dal file `.env`.
+
+**Come funziona**
+
+- **Password:** hash Argon2id, minimo 12 caratteri, non possono contenere lo username.
+  Gli hash con parametri vecchi vengono aggiornati al login successivo.
+- **Sessioni lato server:** il cookie `nm_session` contiene un token casuale di 256 bit;
+  nel database c'è solo il suo hash SHA-256. Il cookie è `HttpOnly`, `SameSite=Lax` e
+  `Secure` (tranne su `localhost` in HTTP).
+- **Scadenza:** ogni sessione dura al massimo `SESSION_TTL_HOURS` e termina dopo
+  `SESSION_IDLE_MINUTES` di inattività. Logout, cambio password e disattivazione dell'utente
+  la revocano subito.
+- **CSRF:** ogni richiesta che modifica dati deve inviare nell'header `X-CSRF-Token` il
+  token della sessione. La dashboard lo fa da sola.
+- **Tentativi di login:** dopo `LOGIN_MAX_ATTEMPTS` errori per IP e username, o
+  `LOGIN_MAX_ATTEMPTS_PER_IP` per IP, il login viene bloccato per `LOGIN_WINDOW_MINUTES`.
+  La risposta è la stessa sia che l'utente esista sia che no, e dura lo stesso tempo.
+- **Header di sicurezza:** Content-Security-Policy senza script inline, `X-Frame-Options:
+  DENY`, `nosniff`, HSTS quando la richiesta arriva in HTTPS.
+- **CORS:** disattivato. La dashboard è sulla stessa origine; eventuali origini esterne
+  vanno elencate in `CORS_ORIGINS` (il carattere jolly `*` viene ignorato).
+
+**Messa online**
+
+1. Metti l'app dietro un reverse proxy con HTTPS (Caddy, nginx, Traefik).
+2. Avvia uvicorn con `--proxy-headers` (già nel Dockerfile), così il limite dei tentativi
+   vede il vero IP del client. Se il proxy non gira sulla stessa macchina, aggiungi
+   `--forwarded-allow-ips` con il suo indirizzo.
+3. Imposta `API_DOCS_ENABLED=false` per non pubblicare lo schema dell'API.
+4. Il limite dei tentativi è in memoria: con più worker ognuno ha i suoi contatori. Con più
+   worker aggiungi un limite anche sul proxy.
 
 ## Configurazione
 
@@ -161,7 +221,23 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | Variabile | Default | Descrizione |
 |---|---|---|
 | `INGEST_INTERVAL_MINUTES` | `60` | Intervallo della pipeline |
-| `FRONTEND_ORIGIN` | `http://localhost:8000` | Origine consentita per CORS |
+| `CORS_ORIGINS` | – | Origini esterne ammesse, separate da virgola. La dashboard non ne ha bisogno |
+| `API_DOCS_ENABLED` | `true` | Pubblica `/docs` e `/openapi.json`. Disattiva in produzione |
+
+</details>
+
+<details>
+<summary><b>Accesso</b></summary>
+
+| Variabile | Default | Descrizione |
+|---|---|---|
+| `SESSION_TTL_HOURS` | `168` | Durata massima di una sessione (7 giorni) |
+| `SESSION_IDLE_MINUTES` | `720` | Chiusura dopo inattività (12 ore) |
+| `SESSION_COOKIE_SECURE` | `auto` | `auto` = `Secure` tranne su localhost in HTTP; oppure `true` / `false` |
+| `LOGIN_MAX_ATTEMPTS` | `5` | Tentativi falliti per IP e username prima del blocco |
+| `LOGIN_MAX_ATTEMPTS_PER_IP` | `20` | Tentativi falliti per IP, qualunque username |
+| `LOGIN_WINDOW_MINUTES` | `15` | Finestra e durata del blocco |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | – | Admin creato al primo avvio se non esistono utenti |
 
 </details>
 
@@ -215,7 +291,19 @@ per il NO la formula simmetrica sul prezzo del NO.
 
 ## API
 
-Documentazione interattiva completa su `/docs`.
+Documentazione interattiva completa su `/docs` (se `API_DOCS_ENABLED=true`). Tutti gli
+endpoint richiedono una sessione; quelli `POST` anche l'header `X-CSRF-Token`, e quelli che
+avviano lavori o chiamate a pagamento (`/ingest`, `/markets/sync`, `/markets/{id}/predict`)
+il ruolo `admin`.
+
+### Accesso
+
+| Metodo | Path | Descrizione |
+|---|---|---|
+| POST | `/auth/login` | `{username, password}` → cookie di sessione, utente e token CSRF |
+| POST | `/auth/logout` | Chiude la sessione corrente |
+| GET | `/auth/me` | Utente corrente e token CSRF |
+| POST | `/auth/password` | `{current_password, new_password}`; chiude le altre sessioni |
 
 ### Notizie
 
@@ -319,6 +407,7 @@ pytest
 | `tests/test_forecast.py` | Blending, Kelly, segnali, Brier score |
 | `tests/test_polymarket.py` | Parsing e filtri dei mercati Gamma |
 | `tests/test_markets_e2e.py` | Flusso completo: raccolta → mercati → previsione → API → risoluzione |
+| `tests/test_auth.py` | Password, cookie, CSRF, ruoli, limite tentativi, scadenze, logout, header di sicurezza |
 
 ## Struttura del progetto
 
@@ -326,6 +415,7 @@ pytest
 backend/
 ├── main.py                 # app FastAPI, avvio e chiusura
 ├── config.py               # impostazioni da .env
+├── auth/                   # password, sessioni, ruoli, CLI utenti
 ├── ai/
 │   ├── jev.py              # client TypeSafe condiviso
 │   ├── typesafe_evaluator.py  # classificazione e punteggi delle notizie
@@ -353,7 +443,7 @@ feeds.yaml                  # elenco dei feed
 - **Commissioni e spread** non sono modellati: `MIN_EDGE` deve coprirli.
 - **Collegamento per similarità dei titoli**: notizie rilevanti con titoli diversi dalla
   domanda del mercato possono sfuggire.
-- **Dashboard senza autenticazione**: non esporla su internet così com'è, perché chiunque
-  potrebbe avviare aggiornamenti e previsioni a pagamento.
+- **Nessun recupero password via email**: un admin reimposta la password da riga di
+  comando con `set-password`.
 
 [Polymarket]: https://polymarket.com

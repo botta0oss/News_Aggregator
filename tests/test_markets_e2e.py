@@ -7,34 +7,18 @@ from datetime import datetime, timezone
 
 import httpx
 import pytest
-from sqlalchemy import text, select
+from sqlalchemy import select
 
 from backend.config import settings
-from backend.db.database import engine, SessionLocal
-from backend.db.models import Base, Article, Market, MarketArticleLink, ProcessedArticle, Source
+from backend.db.database import SessionLocal
+from backend.db.models import Article, Market, MarketArticleLink, ProcessedArticle
 from backend.markets import service
 from backend.ingestor import scheduler
-from tests.conftest import fake_embedding
+from tests.conftest import login_client
 from tests.test_polymarket import gamma_market
 
 FED_Q = "Will the Fed cut interest rates in December 2026?"
 OTHER_Q = "Will Bitcoin reach 200k dollars in 2026?"
-
-
-@pytest.fixture
-async def db(monkeypatch):
-    try:
-        async with engine.begin() as conn:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-            await conn.run_sync(Base.metadata.drop_all)
-            await conn.run_sync(Base.metadata.create_all)
-    except Exception as e:  # pragma: no cover
-        pytest.skip(f"Test database not available: {e}")
-    monkeypatch.setattr(service, "get_title_embedding", fake_embedding)
-    monkeypatch.setattr(scheduler, "get_title_embedding", fake_embedding)
-    monkeypatch.setattr(settings, "MARKET_MATCH_THRESHOLD", 0.5)
-    yield
-    await engine.dispose()
 
 
 def gamma_client(active, single=None):
@@ -116,8 +100,7 @@ async def test_full_market_flow(db, monkeypatch, jev_client):
         assert link.relevance == 0.8 and link.impact == "raises_yes"
 
     # 5. API
-    from backend.main import app
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://api") as api:
+    async with login_client("admin") as api:
         r = await api.get("/markets", params={"only_linked": True})
         assert r.status_code == 200 and r.json()["total"] == 1
         assert r.json()["markets"][0]["latest_prediction"]["signal"] == "BUY_YES"
@@ -158,7 +141,7 @@ async def test_full_market_flow(db, monkeypatch, jev_client):
         async with SessionLocal() as session:
             stats = await service.sync_markets(session, client=client)
     assert stats["resolved"] == 1
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://api") as api:
+    async with login_client("viewer") as api:
         cal = (await api.get("/predictions/calibration")).json()
     assert cal["resolved_markets"] == 1
     assert cal["brier_model"] < cal["brier_market"]

@@ -73,6 +73,10 @@ const ICONS = {
   arrowUp: ["M12 19V5", "M5 12l7-7 7 7"],
   arrowDown: ["M12 5v14", "M19 12l-7 7-7-7"],
   minus: ["M5 12h14"],
+  user: ["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2", "M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"],
+  logout: ["M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", "M16 17l5-5-5-5", "M21 12H9"],
+  lock: ["M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z", "M7 11V7a5 5 0 0 1 10 0v4"],
+  eye: ["M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"],
   news: ["M4 4h13a1 1 0 0 1 1 1v14a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2z", "M18 9h2a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2", "M8 8h6", "M8 12h6", "M8 16h4"],
 };
 
@@ -136,24 +140,42 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(path, { method = "GET", params } = {}) {
+let csrfToken = null;
+
+/** Set after login / session check; sent on every state-changing request. */
+export function setCsrfToken(token) {
+  csrfToken = token;
+}
+
+/**
+ * Calls the API with the session cookie. A 401 means the session ended: the app listens for
+ * the "auth:required" event and shows the login screen.
+ */
+export async function api(path, { method = "GET", params, body, handle401 = true } = {}) {
   const url = new URL(path, window.location.origin);
   for (const [k, v] of Object.entries(params || {})) {
     if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
   }
+  const headers = { Accept: "application/json" };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (method !== "GET" && csrfToken) headers["X-CSRF-Token"] = csrfToken;
   let res;
   try {
-    res = await fetch(url, { method, headers: { Accept: "application/json" } });
+    res = await fetch(url, {
+      method, headers, credentials: "same-origin",
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
   } catch {
-    throw new ApiError(0, "Impossibile contattare il server");
+    throw new ApiError(0, "Impossibile contattare il server. Controlla la connessione e riprova.");
   }
-  const body = await res.json().catch(() => null);
+  const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
-    const detail = body && body.detail;
+    const detail = data && data.detail;
     const message = typeof detail === "string" ? detail : Array.isArray(detail) ? detail.map((d) => d.msg).join("; ") : `Errore ${res.status}`;
+    if (res.status === 401 && handle401) window.dispatchEvent(new CustomEvent("auth:required"));
     throw new ApiError(res.status, message);
   }
-  return body;
+  return data;
 }
 
 // ---------- Feedback ----------

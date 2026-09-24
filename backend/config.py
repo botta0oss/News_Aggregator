@@ -40,13 +40,24 @@ class Settings(BaseSettings):
     MIN_EVIDENCE: float = 0.5                 # minimum normalized evidence strength to emit a signal
     KELLY_FRACTION: float = 0.25              # fractional Kelly sizing
 
+    # Authentication
+    SESSION_TTL_HOURS: int = 168              # absolute session lifetime (7 days)
+    SESSION_IDLE_MINUTES: int = 720           # session ends after 12 h without activity
+    SESSION_COOKIE_SECURE: str = "auto"       # "auto" (Secure except on localhost), "true", "false"
+    LOGIN_MAX_ATTEMPTS: int = 5               # failed logins per IP + username before a lockout
+    LOGIN_MAX_ATTEMPTS_PER_IP: int = 20       # failed logins per IP (any username)
+    LOGIN_WINDOW_MINUTES: int = 15
+    ADMIN_USERNAME: Optional[str] = None      # creates the first admin at startup if no user exists
+    ADMIN_PASSWORD: Optional[str] = None
+
     # Scheduler & Server
     INGEST_INTERVAL_MINUTES: int = 60
-    FRONTEND_ORIGIN: str = "http://localhost:8000"
+    CORS_ORIGINS: str = ""                    # comma-separated extra origins; the dashboard itself needs none
+    API_DOCS_ENABLED: bool = True             # /docs and /openapi.json (disable in production)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    @field_validator("TYPESAFE_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", mode="before")
+    @field_validator("TYPESAFE_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "ADMIN_PASSWORD", mode="before")
     @classmethod
     def _ignore_placeholder_keys(cls, v):
         # Treat empty values and the ".env.example" placeholders as "not configured"

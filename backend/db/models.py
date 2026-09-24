@@ -116,3 +116,31 @@ class MarketPrediction(Base):
     signal: Mapped[str] = mapped_column(Text, nullable=False)                  # BUY_YES / BUY_NO / HOLD
     kelly_fraction: Mapped[float] = mapped_column(Float, default=0.0)          # suggested bankroll fraction
     article_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class User(Base):
+    """Dashboard account. Passwords are stored only as Argon2id hashes."""
+    __tablename__ = 'users'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username: Mapped[str] = mapped_column(Text, nullable=False, unique=True)  # normalized lower-case
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    role: Mapped[str] = mapped_column(Text, nullable=False, default="viewer")  # admin / viewer
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    password_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class UserSession(Base):
+    """Server-side login session. Only the SHA-256 of the cookie token is stored."""
+    __tablename__ = 'user_sessions'
+    token_hash: Mapped[str] = mapped_column(Text, primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    csrf_token: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    ip: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    user = relationship("User")
