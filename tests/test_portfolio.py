@@ -175,3 +175,47 @@ async def test_portfolio_api_permissions_settings_reset(db, book):
         assert (await api.post("/portfolio/reset", json={"bankroll": 2500, "preset": "prudente"})).status_code == 200
         body = (await api.get("/portfolio")).json()
         assert body["equity"] == 2500 and body["counts"]["open"] == 0 and body["profile"]["key"] == "prudente"
+
+
+async def test_split_resolution_pays_half(db, book):
+    async with SessionLocal() as s:
+        m = await make_market(s)
+        await portfolio.apply_economics(s, m, await make_prediction(s, m))
+        bet = (await s.execute(select(PaperBet))).scalar_one()
+        m.resolution, m.closed = "split", True
+        await s.commit()
+        assert await portfolio.settle_bets(s) == 1
+        await s.refresh(bet)
+        assert bet.status == "void" and bet.payout == pytest.approx(bet.shares * 0.5)
+        assert bet.pnl == pytest.approx(bet.shares * 0.5 - bet.stake - bet.fee)
+        summ = await portfolio.summary(s)
+        assert summ["counts"]["void"] == 1 and summ["hit_rate"] is None
+        assert summ["equity"] == pytest.approx(1000 + bet.pnl)
+
+
+async def test_fee_rate_from_category_unless_the_market_is_fee_free(db, book, monkeypatch):
+    from backend.betting import fees
+    async with SessionLocal() as s:
+        m = await make_market(s)
+        m.category = "Crypto"
+        assert (await portfolio.build_quote(m, "YES")).fee_bps == 0      # conftest: CLOB says fee-free
+
+        async def enabled(token_id, client=None):
+            return True
+        monkeypatch.setattr(fees, "fees_enabled", enabled)
+        assert (await portfolio.build_quote(m, "YES")).fee_bps == pytest.approx(700)
+        m.category = "Foreign Affairs"
+        assert (await portfolio.build_quote(m, "YES")).fee_bps == 0
+
+        async def unknown(token_id, client=None):
+            return None
+        monkeypatch.setattr(fees, "fees_enabled", unknown)
+        m.category = "Politics"
+        assert (await portfolio.build_quote(m, "YES")).fee_bps == pytest.approx(400)
+
+
+def test_parse_fee_switch():
+    from backend.betting.fees import parse_fee_enabled
+    assert parse_fee_enabled({"base_fee": 0}) is False
+    assert parse_fee_enabled({"base_fee": 1000}) is True
+    assert parse_fee_enabled({"other": 1}) is None and parse_fee_enabled("x") is None

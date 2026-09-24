@@ -55,6 +55,10 @@ STATEMENTS = [
     "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS multi_event_id TEXT",
     "ALTER TABLE backtest_cases ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'binary'",
     "ALTER TABLE backtest_cases ADD COLUMN IF NOT EXISTS details JSONB",
+    # Final outcome including 50-50 splits (resolved_yes stays for yes/no)
+    "ALTER TABLE markets ADD COLUMN IF NOT EXISTS resolution TEXT",
+    """UPDATE markets SET resolution = CASE WHEN resolved_yes THEN 'yes' ELSE 'no' END
+       WHERE resolution IS NULL AND resolved_yes IS NOT NULL""",
 ]
 
 

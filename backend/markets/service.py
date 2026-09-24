@@ -52,6 +52,7 @@ def _apply_market(market: Market, data: polymarket.PolymarketMarket) -> None:
     market.active = data.active
     market.closed = data.closed
     market.resolved_yes = data.resolved_yes
+    market.resolution = data.resolution
     for field in ("yes_token_id", "no_token_id", "best_bid", "best_ask", "taker_fee_bps", "order_min_size"):
         value = getattr(data, field)
         if value is not None:
@@ -83,7 +84,7 @@ async def sync_markets(session: AsyncSession, client=None) -> dict:
     await session.commit()
 
     # Tracked markets no longer in the active list: check whether they closed/resolved
-    stmt = select(Market).where(Market.resolved_yes.is_(None), Market.multi_event_id.is_(None))
+    stmt = select(Market).where(Market.resolution.is_(None), Market.multi_event_id.is_(None))
     if seen_ids:
         stmt = stmt.where(Market.id.not_in(seen_ids))
     stmt = stmt.order_by(Market.updated_at.asc()).limit(MAX_RESOLUTION_CHECKS)
@@ -100,7 +101,7 @@ async def sync_markets(session: AsyncSession, client=None) -> dict:
             market.updated_at = datetime.now(timezone.utc)
             continue
         _apply_market(market, data)
-        if data.resolved_yes is not None:
+        if data.resolution is not None:
             resolved += 1
     await session.commit()
     return {"synced": len(fetched), "created": created, "checked": len(stale), "resolved": resolved}

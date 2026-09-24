@@ -26,6 +26,24 @@ def test_parse_skips_non_binary_and_detects_resolution():
     assert polymarket.parse_market(gamma_market(4, "Q?", yes="0", closed=True)).resolved_yes is False
 
 
+def test_resolution_waits_for_the_oracle_and_detects_splits():
+    def parsed(yes, uma=None, closed=True):
+        raw = gamma_market(5, "Q?", yes=yes, closed=closed)
+        if uma is not None:
+            raw["umaResolutionStatus"] = uma
+        return polymarket.parse_market(raw)
+    assert parsed("1", "resolved").resolution == "yes"
+    assert parsed("0", "resolved").resolution == "no"
+    # Proposed or disputed on the oracle: the price can still flip
+    assert parsed("1", "proposed").resolution is None and parsed("1", "proposed").resolved_yes is None
+    assert parsed("0", "disputed").resolution is None
+    # 50-50 only with the oracle's confirmation; a market closed at 0.5 otherwise is not final
+    split = parsed("0.5", "resolved")
+    assert split.resolution == "split" and split.resolved_yes is None
+    assert parsed("0.5").resolution is None
+    assert parsed("1", "resolved", closed=False).resolution is None
+
+
 async def test_fetch_active_markets_filters_volume():
     def handler(request: httpx.Request):
         assert request.url.path == "/markets"

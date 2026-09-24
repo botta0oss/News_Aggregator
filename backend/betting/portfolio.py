@@ -5,9 +5,10 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.betting import fees
 from backend.betting.economics import Exposure, Quote, estimated_quote, evaluate, model_sigma, Evaluation
 from backend.betting.profiles import get_profile
 from backend.config import settings
@@ -63,9 +64,12 @@ async def reset_portfolio(db: AsyncSession, bankroll: float, preset: Optional[st
     return row
 
 
+SETTLED = ("won", "lost", "void")  # void: market resolved 50-50
+
+
 async def ledger(db: AsyncSession) -> dict:
     s = await get_settings(db)
-    realized = (await db.execute(select(func.coalesce(func.sum(PaperBet.pnl), 0.0)).where(PaperBet.status.in_(("won", "lost"))))).scalar()
+    realized = (await db.execute(select(func.coalesce(func.sum(PaperBet.pnl), 0.0)).where(PaperBet.status.in_(SETTLED)))).scalar()
     open_outlay = (await db.execute(
         select(func.coalesce(func.sum(PaperBet.stake + PaperBet.fee), 0.0)).where(PaperBet.status == "open")
     )).scalar()
@@ -126,8 +130,9 @@ async def update_market_category(db: AsyncSession, market: Market) -> Optional[s
 async def build_quote(market: Market, side: str) -> Quote:
     """Order book of the side to buy; falls back to an estimate from price, spread and liquidity."""
     mid = market.yes_price if side == "YES" else 1.0 - market.yes_price
-    fee_bps = market.taker_fee_bps if market.taker_fee_bps is not None else settings.DEFAULT_FEE_BPS
     token = market.yes_token_id if side == "YES" else market.no_token_id
+    fee_bps = await fees.market_fee_bps(token, market.category)
+    market.taker_fee_bps = fee_bps
     if token:
         try:
             book = await polymarket.fetch_order_book(token)
@@ -238,16 +243,21 @@ async def apply_economics(db: AsyncSession, market: Market, prediction: MarketPr
 
 
 async def settle_bets(db: AsyncSession) -> int:
-    """Closes open bets on resolved markets: a winning share pays 1 $."""
+    """Closes open bets on resolved markets: a winning share pays 1 $, a 50-50 split 0,50 $ per share."""
     rows = (await db.execute(
         select(PaperBet, Market).join(Market, Market.id == PaperBet.market_id)
-        .where(PaperBet.status == "open", Market.resolved_yes.is_not(None))
+        .where(PaperBet.status == "open", or_(Market.resolution.is_not(None), Market.resolved_yes.is_not(None)))
     )).all()
     for bet, market in rows:
-        won = market.resolved_yes if bet.side == "YES" else not market.resolved_yes
-        bet.payout = bet.shares if won else 0.0
+        resolution = market.resolution or ("yes" if market.resolved_yes else "no")
+        if resolution == "split":
+            bet.payout = bet.shares * 0.5
+            bet.status = "void"
+        else:
+            won = (resolution == "yes") == (bet.side == "YES")
+            bet.payout = bet.shares if won else 0.0
+            bet.status = "won" if won else "lost"
         bet.pnl = bet.payout - bet.stake - bet.fee
-        bet.status = "won" if won else "lost"
         bet.settled_at = _now()
     await db.commit()
     return len(rows)
@@ -269,7 +279,7 @@ async def summary(db: AsyncSession) -> dict:
     open_value = unrealized = 0.0
     counts = Counter(bet.status for bet, _ in bets)
     expected_settled = 0.0
-    settled_rows = sorted((r for r in bets if r[0].status in ("won", "lost")), key=lambda r: r[0].settled_at)
+    settled_rows = sorted((r for r in bets if r[0].status in SETTLED), key=lambda r: r[0].settled_at)
     first = min([s.started_at] + [r[0].created_at for r in settled_rows])
     curve = [{"t": first.isoformat(), "equity": s.bankroll}]
     running = s.bankroll
@@ -294,7 +304,7 @@ async def summary(db: AsyncSession) -> dict:
         "unrealized_pnl": unrealized,
         "total_value": led["cash"] + open_value,
         "roi": (led["cash"] + open_value - s.bankroll) / s.bankroll if s.bankroll else None,
-        "counts": {"open": counts["open"], "won": counts["won"], "lost": counts["lost"], "excluded": counts["excluded"]},
+        "counts": {"open": counts["open"], "won": counts["won"], "lost": counts["lost"], "void": counts["void"], "excluded": counts["excluded"]},
         "hit_rate": counts["won"] / settled if settled else None,
         "expected_pnl_settled": expected_settled,
         "equity_curve": curve,

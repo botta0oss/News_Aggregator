@@ -97,6 +97,7 @@ class Market(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     closed: Mapped[bool] = mapped_column(Boolean, default=False)
     resolved_yes: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)  # set once resolved
+    resolution: Mapped[Optional[str]] = mapped_column(Text, nullable=True)       # yes / no / split, once final
     # Trading data for the economics engine
     yes_token_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     no_token_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

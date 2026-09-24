@@ -6,7 +6,7 @@ const money = fmt.money;
 const sideBadge = (side) => h("span", { class: `badge ${side === "YES" ? "badge-accent" : "badge-outline"}` }, side === "YES" ? "SÌ" : "NO");
 const STATUS = {
   won: ["badge-good", "check", "Vinta"], lost: ["badge-critical", "x", "Persa"],
-  open: ["badge-outline", "pause", "Aperta"], excluded: ["", "minus", "Esclusa"],
+  void: ["badge-outline", "minus", "Annullata 50-50"], open: ["badge-outline", "pause", "Aperta"], excluded: ["", "minus", "Esclusa"],
 };
 const statusBadge = (st) => { const [cls, ic, label] = STATUS[st]; return h("span", { class: `badge ${cls}` }, icon(ic), label); };
 const pnlCls = (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
@@ -20,7 +20,7 @@ export async function viewPortfolio(ctx) {
   const refresh = () => ctx.rerender();
   const s = data.settings;
   const open = bets.filter((b) => b.status === "open");
-  const settled = bets.filter((b) => b.status === "won" || b.status === "lost");
+  const settled = bets.filter((b) => ["won", "lost", "void"].includes(b.status));
   const excluded = bets.filter((b) => b.status === "excluded");
 
   const betAction = (bet, path, label, done) => {
@@ -102,7 +102,7 @@ export async function viewPortfolio(ctx) {
       h("a", { class: "btn btn-ghost", href: "#/metodo" }, icon("help"), "Come funziona")),
     h("div", { class: "kpis" },
       statTile("Valore attuale", money(data.total_value), data.roi != null ? `${fmt.pts(data.roi).replace(" pt", "%")} da capitale ${money(s.bankroll)}` : ""),
-      statTile("Profitti realizzati", fmt.signedMoney(data.realized_pnl), `${data.counts.won} vinte · ${data.counts.lost} perse`),
+      statTile("Profitti realizzati", fmt.signedMoney(data.realized_pnl), `${data.counts.won} vinte · ${data.counts.lost} perse${data.counts.void ? ` · ${data.counts.void} annullate` : ""}`),
       statTile("Profitti latenti", fmt.signedMoney(data.unrealized_pnl), `${data.counts.open} aperte · ${money(data.invested)} investiti`),
       statTile("Scommesse vinte", data.hit_rate != null ? fmt.pct(data.hit_rate) : "–", `liquidità ${money(data.cash)}`),
     ),

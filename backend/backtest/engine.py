@@ -25,6 +25,7 @@ from backend.ai.ratelimit import RateLimited
 from backend.ai.usage import BudgetExceeded, feature
 from backend.ai.typesafe_evaluator import _heuristic_evaluation
 from backend.backtest.analysis import summarize
+from backend.betting.fees import category_rate
 from backend.betting.economics import Exposure, estimated_quote, evaluate
 from backend.betting.profiles import get_profile
 from backend.config import settings
@@ -225,12 +226,12 @@ async def _jev_with_retries(state, questions):
 
 
 def _simulate_bet(signal, price: float, blended: float, model_p: float, evidence: float, weight: float,
-                  days: float, liquidity: float, preset: str) -> dict:
+                  days: float, liquidity: float, preset: str, category: Optional[str] = None) -> dict:
     """Economic evaluation with the price of that moment (no historical order book: estimated)."""
     from backend.betting.economics import model_sigma
     side = "NO" if signal.signal == "BUY_NO" else "YES"
     mid = price if side == "YES" else 1 - price
-    quote = estimated_quote(mid, settings.DEFAULT_SPREAD, liquidity, settings.DEFAULT_FEE_BPS, None)
+    quote = estimated_quote(mid, settings.DEFAULT_SPREAD, liquidity, category_rate(category) * 10_000, None)
     sigma = model_sigma(model_p, evidence, weight, settings.MODEL_PSEUDO_COUNT)
     ev = evaluate(signal=signal.signal, p_yes=blended, sigma=sigma, quote=quote, days=max(1.0, days),
                   profile=get_profile(preset), equity=settings.PAPER_BANKROLL, available_cash=settings.PAPER_BANKROLL,
@@ -341,7 +342,8 @@ async def _eval_binary(case, market, as_of, params, histories, preset) -> bool:
     model_p, strength = parse_forecast(response)
     signal = compute_signal(model_p, price, strength)
     bet = _simulate_bet(signal, price, signal.blended_probability, model_p, strength, signal.model_weight,
-                        (market.end_date - as_of).total_seconds() / 86400, market.liquidity or market.volume * 0.02, preset)
+                        (market.end_date - as_of).total_seconds() / 86400, market.liquidity or market.volume * 0.02, preset,
+                        case.category)
     won = (bet["side"] == "YES") == market.resolved_yes
     case.model_probability = round(model_p, 4)
     case.evidence_strength = round(strength, 4)
@@ -413,7 +415,8 @@ async def _eval_multi(case, event, as_of, params, histories, preset) -> bool:
     if signal == "BUY_YES" and best:
         sig = SimpleNamespace(signal="BUY_YES", blended_probability=best["blended"], model_weight=w)
         bet = _simulate_bet(sig, best["price"], best["blended"], best["model"], strength, w,
-                            (event.end_date - as_of).total_seconds() / 86400, event.liquidity or event.volume * 0.02, preset)
+                            (event.end_date - as_of).total_seconds() / 86400, event.liquidity or event.volume * 0.02, preset,
+                            case.category)
         case.verdict = bet["verdict"]
         if bet["verdict"] != "NO" and bet["outlay"] > 0:
             case.outlay = bet["outlay"]

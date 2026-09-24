@@ -84,7 +84,7 @@ async def list_bets(status: Literal["open", "settled", "excluded", "all"] = Quer
     if status == "open":
         stmt = stmt.where(PaperBet.status == "open")
     elif status == "settled":
-        stmt = stmt.where(PaperBet.status.in_(("won", "lost")))
+        stmt = stmt.where(PaperBet.status.in_(("won", "lost", "void")))
     elif status == "excluded":
         stmt = stmt.where(PaperBet.status == "excluded")
     rows = (await db.execute(stmt.order_by(PaperBet.created_at.desc()).limit(limit))).all()

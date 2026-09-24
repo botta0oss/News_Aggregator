@@ -5,7 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/postgres"
-    SIMILARITY_THRESHOLD: float = 0.92
+    SIMILARITY_THRESHOLD: float = 0.92        # near-identical titles: same news
+    STORY_SIMILARITY_THRESHOLD: float = 0.82  # title + text this close: same story rewritten by another outlet
+    STORY_WINDOW_HOURS: float = 48            # how far back a story is looked for
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
     # TypeSafe Jev (Composite Scoring, Classification & Forecasting)
@@ -81,7 +83,7 @@ class Settings(BaseSettings):
 
     # Betting economics (simulated portfolio)
     RISK_FREE_RATE: float = 0.04              # annual return of the risk-free alternative (e.g. T-bills)
-    DEFAULT_FEE_BPS: float = 0.0              # taker fee when the market does not report one
+    DEFAULT_FEE_BPS: float = 500.0            # taker fee rate (bps, applied to p × (1 − p)) for unknown categories
     DEFAULT_SPREAD: float = 0.02              # assumed bid-ask spread when the order book is unavailable
     MODEL_PSEUDO_COUNT: float = 20.0          # how many "observations" a fully-evidenced Jev estimate is worth
     PAPER_BANKROLL: float = 1000.0            # initial simulated bankroll (USD), editable in the dashboard

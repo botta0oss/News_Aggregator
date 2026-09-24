@@ -63,6 +63,7 @@ def _market_dict(market: Market, links: int = 0, prediction: Optional[MarketPred
         "liquidity": market.liquidity,
         "closed": market.closed,
         "resolved_yes": market.resolved_yes,
+        "resolution": market.resolution,
         "linked_articles": links,
         "latest_prediction": PredictionResponse.model_validate(prediction) if prediction else None,
     }

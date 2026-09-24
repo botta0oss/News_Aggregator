@@ -78,6 +78,7 @@ class MarketResponse(BaseModel):
     liquidity: float
     closed: bool
     resolved_yes: Optional[bool]
+    resolution: Optional[str] = None
     linked_articles: int = 0
     latest_prediction: Optional[PredictionResponse] = None
 

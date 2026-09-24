@@ -231,6 +231,8 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 |---|---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://postgres:password@localhost:5432/postgres` | Connessione al database |
 | `SIMILARITY_THRESHOLD` | `0.92` | Similarità oltre cui due titoli sono la stessa notizia |
+| `STORY_SIMILARITY_THRESHOLD` | `0.82` | Similarità di titolo + testo oltre cui due articoli raccontano la stessa storia (titoli riscritti da testate diverse) |
+| `STORY_WINDOW_HOURS` | `48` | Quanto indietro si cerca la stessa storia |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Modello di embedding (384 dimensioni) |
 | `TYPESAFE_API_KEY` | – | Chiave TypeSafe. Senza chiave niente previsioni, classificazione euristica |
 | `TYPESAFE_MODEL` | `jev-latest` | Modello Jev |
@@ -299,7 +301,7 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 |---|---|---|
 | `POLYMARKET_CLOB_URL` | `https://clob.polymarket.com` | API pubblica del book (sola lettura) |
 | `RISK_FREE_RATE` | `0.04` | Rendimento annuo dell'alternativa senza rischio, base della soglia di rendimento |
-| `DEFAULT_FEE_BPS` | `0` | Commissione (in punti base) quando il mercato non ne dichiara una |
+| `DEFAULT_FEE_BPS` | `500` | Tasso di commissione (punti base, applicato a `p × (1 − p)`) per le categorie sconosciute |
 | `DEFAULT_SPREAD` | `0.02` | Spread ipotizzato quando il book non è disponibile |
 | `MODEL_PSEUDO_COUNT` | `20` | Quante "osservazioni" vale una stima Jev con evidenze piene (regola l'incertezza) |
 | `PAPER_BANKROLL` | `1000` | Capitale iniziale simulato (modificabile dalla dashboard) |
@@ -391,6 +393,10 @@ cambiano.
    - La freschezza si dimezza ogni `EVIDENCE_HALF_LIFE_HOURS`.
    - Le notizie che Jev ha già giudicato non rilevanti per quel mercato vengono tolte.
 
+   Una **storia** raggruppa gli articoli con titolo quasi identico (`SIMILARITY_THRESHOLD`) o con
+   titolo + testo molto simili nelle ultime `STORY_WINDOW_HOURS` ore
+   (`STORY_SIMILARITY_THRESHOLD`: le testate riscrivono i titoli). Le conferme contano le
+   testate diverse, non gli articoli: una fonte che ripete la notizia non la rende più certa.
    Jev legge le `MARKET_MAX_ARTICLES` più utili: una per storia, al massimo 3 per fonte. Per ogni
    notizia riceve età, tipo (cronaca o opinione), affidabilità della fonte e numero di testate che
    l'hanno riportata, oltre ai giorni che mancano alla scadenza del mercato.
@@ -625,7 +631,11 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
 
 1. **Prezzo reale.** Legge il book del lato da comprare dal CLOB di Polymarket (API
    pubblica, sola lettura) e calcola il prezzo medio che pagheresti per quella cifra.
-   Commissione: `tasso × min(prezzo, 1 − prezzo)` per quota. Senza book usa prezzo medio +
+   Commissione (solo per chi compra dal book, come qui): `tasso × prezzo × (1 − prezzo)` per
+   quota, massima a 50¢ e nulla agli estremi. Il tasso dipende dalla categoria (Esteri 0,
+   Politica/Tecnologia/Economia 4%, Sport 3%, Cultura/Scienza 5%, Cripto 7%; categoria
+   sconosciuta: `DEFAULT_FEE_BPS`). L'endpoint CLOB `/fee-rate` dice se il mercato ha le
+   commissioni attive: se risponde 0 la commissione è zero. Senza book usa prezzo medio +
    metà spread e la liquidità dichiarata, e lo segnala.
 2. **Probabilità prudente.** `p_prudente = p_blended − z × σ`, dove
    `σ = w × √(p_jev (1 − p_jev) / (MODEL_PSEUDO_COUNT × evidenze + 1))`. Dopo 30 mercati
@@ -637,7 +647,8 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
 5. **Quanto puntare.** Il capitale di Kelly è calcolato sul book, perché comprare di più
    peggiora il prezzo. Se ne prende una frazione (in base al preset) e poi si applicano i
    limiti per mercato, evento, categoria, totale investito, liquidità disponibile e quota del
-   book. Il **prezzo massimo** da pagare è `p_prudente − margine minimo`.
+   book. Il **prezzo massimo** da pagare è il prezzo a cui `prezzo + commissione` lascia
+   esattamente il margine minimo: `prezzo + commissione(prezzo) = p_prudente − margine minimo`.
 6. **Verdetto.** *Conviene*, *Conviene poco* (la puntata è stata ridotta a meno della metà
    dai limiti) oppure *Non conviene*, sempre con i motivi.
 
@@ -649,7 +660,10 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
 
 **Portafoglio simulato** (pagina *Portafoglio*):
 - **Scommesse automatiche:** ogni previsione con verdetto *Conviene* o *Conviene poco* diventa una scommessa virtuale al prezzo reale del momento, al massimo una aperta per mercato.
-- **Chiusura:** avviene quando il mercato si risolve; una quota vincente vale 1 $.
+- **Chiusura:** avviene quando il mercato si risolve in modo definitivo (prezzo a 1/0 e, se
+  Gamma lo riporta, `umaResolutionStatus` = «resolved»: un esito solo proposto o contestato
+  può ancora cambiare). Una quota vincente vale 1 $; se il mercato si chiude 50-50 ogni quota
+  vale 0,50 $ e la scommessa risulta «annullata» (fuori dalla percentuale di vittorie).
 - **Cosa mostra:** valore attuale, profitti realizzati e latenti, percentuale di vittorie, curva del capitale e confronto tra profitto atteso e reale.
 - **Esclusioni:**
   - singole scommesse, anche già chiuse (non contano nei risultati e si possono riammettere);
