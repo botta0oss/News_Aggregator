@@ -57,15 +57,11 @@ def calculate_composite_score(
     w_clickbait: float = 0.40
 ) -> float:
     """
-    Computes a weighted linear composite score with clickbait penalty.
-    All inputs and outputs are normalized to [0.0, 1.0].
+    Weighted average of the quality dimensions minus a clickbait penalty, in [0.0, 1.0].
+    The positive weights are normalized, so a flawless article scores 1 (not their sum, 0.85).
     """
-    score = (
-        (w_authority * authority) +
-        (w_tech * tech_depth) +
-        (w_urgency * urgency) -
-        (w_clickbait * clickbait)
-    )
+    positive = (w_authority * authority + w_tech * tech_depth + w_urgency * urgency) / (w_authority + w_tech + w_urgency)
+    score = positive - w_clickbait * clickbait
     # Clamp between 0.0 and 1.0
     return max(0.0, min(1.0, round(score, 4)))
 

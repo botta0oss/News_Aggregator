@@ -7,6 +7,7 @@ portfolio. The output says whether to bet, how much, at what maximum price, and 
 import math
 from dataclasses import dataclass, field, asdict
 from typing import Optional
+from backend.betting.fees import fee_per_share
 from backend.betting.profiles import RiskProfile
 
 MIN_ORDER_USD = 1.0
@@ -24,7 +25,7 @@ class Quote:
     """What it costs to buy one side. `asks` = [(price, shares)] cheapest first."""
     asks: list
     mid: float                    # current price of the side (implied probability)
-    fee_bps: float = 0.0
+    fee_bps: float = 0.0          # taker fee rate in basis points (fee per share = rate × p × (1 − p))
     min_order_shares: Optional[float] = None
     source: str = "book"          # book / estimate
 
@@ -84,9 +85,18 @@ class Evaluation:
 
 # ---------- Building blocks ----------
 
-def fee_per_share(price: float, fee_bps: float) -> float:
-    """Polymarket-style taker fee: rate × min(price, 1 − price) per share."""
-    return (fee_bps / 10_000) * min(price, 1.0 - price)
+def max_price_for(target: float, fee_bps: float) -> float:
+    """Highest price x with x + fee(x) <= target (price plus fee is increasing in x)."""
+    if target <= 0:
+        return 0.0
+    r = fee_bps / 10_000
+    if r <= 1e-12:
+        return min(target, 1.0)
+    # r·x² − (1 + r)·x + target = 0, smaller root
+    disc = (1 + r) ** 2 - 4 * r * target
+    if disc < 0:
+        return 1.0
+    return min(1.0, ((1 + r) - math.sqrt(disc)) / (2 * r))
 
 
 def model_sigma(p_jev: float, evidence: float, weight: float, pseudo_count: float, calibration_factor: float = 1.0) -> float:
@@ -184,12 +194,25 @@ def fill(asks: list, budget: float, max_price: float, fee_bps: float) -> tuple[f
     return shares, spent, fee
 
 
+# Synthetic book: share of the depth at each level, one spread apart (real books thin out
+# away from the best price, so a large order pays progressively more)
+ESTIMATED_LEVELS = (0.4, 0.3, 0.2, 0.1)
+
+
 def estimated_quote(mid: float, spread: float, liquidity: float, fee_bps: float, min_order_shares=None) -> Quote:
-    """Fallback without an order book: one level at mid + half spread, depth from the reported liquidity."""
-    price = min(0.99, mid + spread / 2)
-    size = max(0.0, liquidity * 0.5) / price if price > 0 else 0.0
-    return Quote(asks=[(price, size)] if size > 0 else [], mid=mid, fee_bps=fee_bps,
-                 min_order_shares=min_order_shares, source="estimate")
+    """Fallback without an order book: levels from mid + half spread upward, one spread apart,
+    holding in total half the reported liquidity (in dollars)."""
+    depth = max(0.0, liquidity * 0.5)
+    asks = []
+    for k, share in enumerate(ESTIMATED_LEVELS):
+        price = round(min(0.99, mid + spread / 2 + k * max(spread, 0.01)), 4)
+        if price <= 0 or depth <= 0:
+            break
+        if asks and price <= asks[-1][0]:
+            asks[-1] = (asks[-1][0], asks[-1][1] + depth * share / price)  # capped at 0.99: merge
+        else:
+            asks.append((price, depth * share / price))
+    return Quote(asks=asks, mid=mid, fee_bps=fee_bps, min_order_shares=min_order_shares, source="estimate")
 
 
 # ---------- Evaluation ----------
@@ -211,7 +234,8 @@ def evaluate(
     side = "NO" if signal == "BUY_NO" else "YES"
     p_side = p_yes if side == "YES" else 1.0 - p_yes
     p_cons = max(0.0, p_side - profile.z * sigma)
-    limit_price = max(0.0, min(0.99, p_cons - profile.min_net_edge))
+    # Most worth paying per share: price plus fee must leave the preset's minimum net edge
+    limit_price = max(0.0, min(0.99, max_price_for(p_cons - profile.min_net_edge, quote.fee_bps)))
     hurdle = risk_free_rate + profile.min_apr_premium
     asks = quote.asks
     best = asks[0][0] if asks else None
@@ -220,7 +244,7 @@ def evaluate(
     reasons: list[Reason] = []
     notes: list[str] = []
     if quote.source == "estimate":
-        notes.append("Book non disponibile: prezzo stimato come prezzo medio + metà spread, profondità dalla liquidità dichiarata.")
+        notes.append("Book non disponibile: book stimato a 4 livelli, da prezzo medio + metà spread in su, con la profondità dalla liquidità dichiarata.")
 
     if signal == "HOLD":
         reasons.append(Reason("no_signal", "Il modello non vede una differenza sufficiente rispetto al prezzo."))

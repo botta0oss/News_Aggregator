@@ -59,6 +59,9 @@ class PredictionResponse(BaseModel):
     model_name: Optional[str]
     market_probability: float
     model_probability: float
+    calibrated_probability: Optional[float] = None
+    blend_method: Optional[str] = None
+    model_samples: Optional[int] = None
     evidence_strength: float
     blended_probability: float
     model_weight: Optional[float] = None
@@ -78,6 +81,7 @@ class MarketResponse(BaseModel):
     liquidity: float
     closed: bool
     resolved_yes: Optional[bool]
+    resolution: Optional[str] = None
     linked_articles: int = 0
     latest_prediction: Optional[PredictionResponse] = None
 
@@ -116,6 +120,9 @@ class CalibrationResponse(BaseModel):
     brier_market: Optional[float]
     brier_model: Optional[float]
     brier_blended: Optional[float]
+    gain_model: Optional[dict] = None
+    gain_blended: Optional[dict] = None
+    signal_clv: Optional[dict] = None
 
 class StatusResponse(BaseModel):
     jev_enabled: bool
@@ -126,6 +133,10 @@ class StatusResponse(BaseModel):
     min_edge: float
     min_evidence: float
     model_weight_max: float
+    blend_method: str = "logodds"
+    jev_calib_a: float = 0.0
+    jev_calib_b: float = 1.0
+    jev_samples: int = 1
     kelly_fraction: float
     market_match_threshold: float
     market_news_window_hours: int

@@ -24,6 +24,7 @@ opportunità.
 - [API](#api)
 - [Flusso di lavoro consigliato](#flusso-di-lavoro-consigliato)
 - [Valutazione economica e portafoglio simulato](#valutazione-economica-e-portafoglio-simulato)
+- [Strategia di acquisto e vendita](#strategia-di-acquisto-e-vendita)
 - [Allerte notizie–prezzo](#allerte-notizieprezzo)
 - [Backtest](#backtest)
 - [Mercati a più esiti](#mercati-a-più-esiti)
@@ -51,7 +52,8 @@ opportunità.
 | **Previsione** | Jev stima la probabilità del SÌ a partire da regole del mercato e notizie. |
 | **Segnale** | Confronta la stima con il prezzo: `BUY_YES`, `BUY_NO` o `HOLD`. |
 | **Valutazione economica** | Decide se conviene davvero e quanto puntare: prezzo reale dal book, commissioni, incertezza della stima, rendimento annualizzato, Kelly sul book e limiti di rischio. |
-| **Portafoglio simulato** | Ogni scommessa che conviene diventa una scommessa virtuale, chiusa alla risoluzione, per misurare i risultati prima di usare soldi veri. |
+| **Strategia** | Per ogni mercato dice cosa fare (compra SÌ/NO, aspetta, evita, tieni, vendi), con quali ordini limite, a che prezzi la decisione cambierebbe e perché sì o perché no. |
+| **Portafoglio simulato** | Ogni scommessa che conviene diventa una scommessa virtuale, venduta quando il piano lo dice o chiusa alla risoluzione, per misurare i risultati prima di usare soldi veri. |
 | **Allerte** | Quando esce una notizia fresca e pertinente per un mercato, Jev lo valuta subito. Se conviene arriva una notifica su Telegram; poi si registra il prezzo dopo 15 minuti, 1, 6 e 24 ore per misurare se l'allerta ha anticipato il mercato. |
 
 ## Architettura
@@ -72,7 +74,7 @@ flowchart LR
 ```
 
 Stack: **FastAPI**, **SQLAlchemy async + asyncpg**, **PostgreSQL + pgvector**,
-**sentence-transformers** (`all-MiniLM-L6-v2`), **APScheduler**, **typesafe-sdk**.
+**sentence-transformers** (`paraphrase-multilingual-MiniLM-L12-v2`), **APScheduler**, **typesafe-sdk**.
 
 ## Avvio rapido
 
@@ -231,7 +233,9 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 |---|---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://postgres:password@localhost:5432/postgres` | Connessione al database |
 | `SIMILARITY_THRESHOLD` | `0.92` | Similarità oltre cui due titoli sono la stessa notizia |
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Modello di embedding (384 dimensioni) |
+| `STORY_SIMILARITY_THRESHOLD` | `0.82` | Similarità di titolo + testo oltre cui due articoli raccontano la stessa storia (titoli riscritti da testate diverse) |
+| `STORY_WINDOW_HOURS` | `48` | Quanto indietro si cerca la stessa storia |
+| `EMBEDDING_MODEL` | `paraphrase-multilingual-MiniLM-L12-v2` | Modello di embedding (384 dimensioni, multilingue: una notizia italiana trova il mercato scritto in inglese). Se lo cambi, all'avvio i vettori salvati vengono ricalcolati in background, prima le notizie più recenti |
 | `TYPESAFE_API_KEY` | – | Chiave TypeSafe. Senza chiave niente previsioni, classificazione euristica |
 | `TYPESAFE_MODEL` | `jev-latest` | Modello Jev |
 | `SUMMARIZER_PROVIDER` | `auto` | `gemini`, `groq`, `ollama` o `auto` |
@@ -253,7 +257,7 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | `MARKET_CANDIDATE_MARGIN` | `0.15` | Candidati: similarità semantica ≥ soglia − margine |
 | `MARKET_MATCH_TERM_WEIGHT` | `0.3` | Peso dei termini chiave nella pertinenza |
 | `MARKET_MATCH_NO_ENTITY_PENALTY` | `0.6` | Moltiplicatore se la notizia non cita nessun nome della domanda |
-| `MARKET_NEWS_WINDOW_HOURS` | `72` | Solo notizie delle ultime N ore |
+| `MARKET_NEWS_WINDOW_HOURS` | `168` | Solo notizie degli ultimi N ore (7 giorni: per molti mercati una settimana di contesto conta) |
 | `MARKET_MAX_ARTICLES` | `8` | Notizie passate a Jev per ogni previsione |
 | `EVIDENCE_HALF_LIFE_HOURS` | `48` | Il peso di una notizia si dimezza ogni N ore (minimo 25 %) |
 | `EVIDENCE_MIN_JEV_RELEVANCE` | `0.25` | Notizie che Jev ha giudicato meno rilevanti di così per un mercato non gli vengono più passate |
@@ -266,6 +270,9 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | `PREDICTION_AUTO` | `false` | Previsioni automatiche dopo ogni raccolta (ogni previsione è una chiamata a pagamento) |
 | `PREDICTION_MAX_PER_RUN` | `10` | Tetto di previsioni automatiche per esecuzione |
 | `MODEL_WEIGHT_MAX` | `0.5` | Peso massimo di Jev rispetto al prezzo di mercato |
+| `BLEND_METHOD` | `logodds` | Come si uniscono Jev e prezzo: `logodds` o `linear` |
+| `JEV_CALIB_A` / `JEV_CALIB_B` | `0` / `1` | Calibrazione di Platt della stima di Jev (si stimano col backtest) |
+| `JEV_SAMPLES` | `1` | Chiamate a Jev per previsione, mediate (ognuna si paga) |
 | `MIN_EDGE` | `0.05` | Edge minimo per emettere un segnale |
 | `MIN_EVIDENCE` | `0.5` | Forza minima delle evidenze per emettere un segnale |
 | `KELLY_FRACTION` | `0.25` | Frazione del criterio di Kelly usata per la puntata |
@@ -299,7 +306,7 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 |---|---|---|
 | `POLYMARKET_CLOB_URL` | `https://clob.polymarket.com` | API pubblica del book (sola lettura) |
 | `RISK_FREE_RATE` | `0.04` | Rendimento annuo dell'alternativa senza rischio, base della soglia di rendimento |
-| `DEFAULT_FEE_BPS` | `0` | Commissione (in punti base) quando il mercato non ne dichiara una |
+| `DEFAULT_FEE_BPS` | `500` | Tasso di commissione (punti base, applicato a `p × (1 − p)`) per le categorie sconosciute |
 | `DEFAULT_SPREAD` | `0.02` | Spread ipotizzato quando il book non è disponibile |
 | `MODEL_PSEUDO_COUNT` | `20` | Quante "osservazioni" vale una stima Jev con evidenze piene (regola l'incertezza) |
 | `PAPER_BANKROLL` | `1000` | Capitale iniziale simulato (modificabile dalla dashboard) |
@@ -387,10 +394,16 @@ cambiano.
    con pertinenza ≥ `MARKET_MATCH_THRESHOLD`.
 4. **Utilità per Jev.** L'utilità di ogni notizia è `pertinenza × affidabilità della fonte ×
    freschezza × giudizio di Jev`.
-   - L'affidabilità dipende da autorevolezza, clickbait e articoli d'opinione.
+   - L'affidabilità dipende da autorevolezza, clickbait e articoli d'opinione. L'autorevolezza
+     di un singolo articolo è una stima rumorosa: per le testate con almeno 5 articoli
+     classificati vale per metà la media della testata.
    - La freschezza si dimezza ogni `EVIDENCE_HALF_LIFE_HOURS`.
    - Le notizie che Jev ha già giudicato non rilevanti per quel mercato vengono tolte.
 
+   Una **storia** raggruppa gli articoli con titolo quasi identico (`SIMILARITY_THRESHOLD`) o con
+   titolo + testo molto simili nelle ultime `STORY_WINDOW_HOURS` ore
+   (`STORY_SIMILARITY_THRESHOLD`: le testate riscrivono i titoli). Le conferme contano le
+   testate diverse, non gli articoli: una fonte che ripete la notizia non la rende più certa.
    Jev legge le `MARKET_MAX_ARTICLES` più utili: una per storia, al massimo 3 per fonte. Per ogni
    notizia riceve età, tipo (cronaca o opinione), affidabilità della fonte e numero di testate che
    l'hanno riportata, oltre ai giorni che mancano alla scadenza del mercato.
@@ -424,13 +437,26 @@ indipendente e confrontabile con il prezzo.
 ### 2. Dalla stima al segnale
 
 I mercati liquidi di solito sono già ben calibrati, quindi la stima di Jev non viene usata
-così com'è: viene avvicinata al prezzo, tanto più quanto le evidenze sono deboli.
+così com'è:
+
+1. **Calibrazione (scala di Platt).** `logit P_cal = JEV_CALIB_A + JEV_CALIB_B × logit P_jev`,
+   con `logit p = ln(p / (1 − p))`. I due numeri si stimano col backtest sui mercati risolti:
+   `B < 1` ammorbidisce un Jev troppo sicuro di sé, `B > 1` rende più netto uno troppo
+   prudente. Di base (0 e 1) la stima resta com'è.
+2. **Unione col prezzo in log-odds**, con un peso che cresce con la forza delle evidenze:
 
 ```
-w        = MODEL_WEIGHT_MAX × evidence_strength
-blended  = w × P_jev + (1 − w) × prezzo
-edge     = blended − prezzo
+w              = MODEL_WEIGHT_MAX × evidence_strength
+logit(blended) = w × logit(P_cal) + (1 − w) × logit(prezzo)
+edge           = blended − prezzo
 ```
+
+La media in log-odds è il modo standard di unire previsioni calibrate: la media semplice
+(`BLEND_METHOD=linear`, il metodo di prima) le rende sistematicamente troppo timide. Con
+`w = 0` il blended è il prezzo, con `w = 1` è Jev.
+
+Con `JEV_SAMPLES > 1` ogni previsione chiede a Jev più volte e fa la media (in log-odds)
+delle risposte: meno rumore, ma ogni chiamata si paga.
 
 - `edge ≥ MIN_EDGE` ed evidenze ≥ `MIN_EVIDENCE` → **BUY_YES**
 - `edge ≤ −MIN_EDGE` ed evidenze ≥ `MIN_EVIDENCE` → **BUY_NO**
@@ -447,9 +473,9 @@ per il NO la formula simmetrica sul prezzo del NO.
 | Stima Jev | 0.80 |
 | Forza evidenze | 3/4 → 0.75 |
 | Peso `w` | 0.5 × 0.75 = 0.375 |
-| Probabilità blended | 0.375 × 0.80 + 0.625 × 0.35 ≈ **0.519** |
-| Edge | **+0.169** → `BUY_YES` |
-| Puntata (Kelly semplice) | (0.519 − 0.35) / 0.65 × 0.25 ≈ **6.5 % del bankroll** |
+| Probabilità blended | logit⁻¹(0.375 × logit 0.80 + 0.625 × logit 0.35) ≈ **0.533** |
+| Edge | **+0.183** → `BUY_YES` |
+| Puntata (Kelly semplice) | (0.533 − 0.35) / 0.65 × 0.25 ≈ **7.0 % del bankroll** |
 
 La puntata effettiva la decide poi la [valutazione economica](#valutazione-economica-e-portafoglio-simulato), che tiene conto di prezzo reale, costi, incertezza, tempo e limiti.
 
@@ -520,7 +546,7 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 | GET | `/predictions/opportunities` | Mercati con edge maggiore. Filtri: `min_edge`, `min_evidence`, `include_hold` |
 | GET | `/predictions/calibration` | Brier score sui mercati risolti |
 | GET | `/status` | Configurazione (Jev attivo, soglie) e contatori per la dashboard |
-| GET | `/markets/{id}/economics` | Valutazione economica dal vivo dell'ultima previsione (`preset` opzionale) |
+| GET | `/markets/{id}/economics` | Valutazione economica dal vivo dell'ultima previsione e piano (`strategy`: azione, ordini, prezzi, motivi; `preset` opzionale) |
 | POST | `/markets/{id}/paper-bet` | Aggiunge subito la scommessa simulata, se conviene (admin) |
 
 ### Portafoglio simulato
@@ -528,10 +554,11 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 | Metodo | Path | Descrizione |
 |---|---|---|
 | GET | `/portfolio` | Riepilogo, curva del capitale, preset disponibili |
-| PUT | `/portfolio/settings` | `{preset, auto_paper}` (admin) |
+| PUT | `/portfolio/settings` | `{preset, auto_paper, auto_sell}` (admin) |
 | POST | `/portfolio/reset` | `{bankroll, preset}`: cancella le scommesse simulate e ricomincia (admin) |
-| GET | `/portfolio/bets` | Scommesse: `status` = `open`, `settled`, `excluded`, `all` |
+| GET | `/portfolio/bets` | Scommesse: `status` = `open`, `settled`, `excluded`, `all`; quelle aperte hanno il piano d'uscita (`plan`) |
 | POST | `/portfolio/bets/{id}/exclude` · `/include` | Esclude o riammette una scommessa (admin) |
+| POST | `/portfolio/bets/{id}/sell` | Vende subito una scommessa aperta sul book (admin) |
 | GET · POST | `/portfolio/exclusions` | Esclusioni `{kind: market/event/category, value, label}` (POST admin) |
 | DELETE | `/portfolio/exclusions/{id}` | Rimuove un'esclusione (admin) |
 
@@ -543,7 +570,7 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 | GET | `/backtest/runs/{id}` | Avanzamento e riepilogo (metriche, calibrazione, suggerimenti) |
 | GET | `/backtest/runs/{id}/cases` | Casi: `status` = `ok`, `skipped`, `all` |
 | POST | `/backtest/runs/{id}/stop` · DELETE `/backtest/runs/{id}` | Ferma o elimina (admin) |
-| GET · PUT | `/backtest/parameters` | `MODEL_WEIGHT_MAX` e `MIN_EDGE` in uso; PUT li sostituisce (admin) |
+| GET · PUT | `/backtest/parameters` | `MODEL_WEIGHT_MAX`, `MIN_EDGE`, `JEV_CALIB_A`, `JEV_CALIB_B` in uso; PUT li sostituisce (admin) |
 | POST | `/backtest/parameters/reset` | Torna ai valori del `.env` (admin) |
 
 ### Uso e costi
@@ -625,19 +652,28 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
 
 1. **Prezzo reale.** Legge il book del lato da comprare dal CLOB di Polymarket (API
    pubblica, sola lettura) e calcola il prezzo medio che pagheresti per quella cifra.
-   Commissione: `tasso × min(prezzo, 1 − prezzo)` per quota. Senza book usa prezzo medio +
-   metà spread e la liquidità dichiarata, e lo segnala.
+   Commissione (solo per chi compra dal book, come qui): `tasso × prezzo × (1 − prezzo)` per
+   quota, massima a 50¢ e nulla agli estremi. Il tasso dipende dalla categoria (Esteri 0,
+   Politica/Tecnologia/Economia 4%, Sport 3%, Cultura/Scienza 5%, Cripto 7%; categoria
+   sconosciuta: `DEFAULT_FEE_BPS`). L'endpoint CLOB `/fee-rate` dice se il mercato ha le
+   commissioni attive: se risponde 0 la commissione è zero. Senza book stima un book a 4
+   livelli, da prezzo medio + metà spread in su, uno spread l'uno dall'altro (40/30/20/10%
+   della metà della liquidità dichiarata): chi compra molto paga progressivamente di più.
+   Lo segnala sempre.
 2. **Probabilità prudente.** `p_prudente = p_blended − z × σ`, dove
    `σ = w × √(p_jev (1 − p_jev) / (MODEL_PSEUDO_COUNT × evidenze + 1))`. Dopo 30 mercati
-   risolti σ viene corretta con i risultati: allargata se le previsioni blended hanno fatto
-   peggio del prezzo, ristretta se hanno fatto meglio.
+   risolti σ viene moltiplicata per `√(Brier osservato / Brier atteso)`, dove il Brier atteso
+   è quello che avrebbero previsioni perfettamente calibrate (media di `p (1 − p)`): allargata
+   se le previsioni blended sono state troppo sicure, ristretta se sono state prudenti (fattore
+   tra 0,75 e 2).
 3. **Margine netto.** `p_prudente − (prezzo + commissione)` deve superare la soglia del preset.
 4. **Tempo.** Il rendimento atteso prudente viene annualizzato sui giorni che mancano alla
    scadenza e deve superare `RISK_FREE_RATE` + il premio del preset.
 5. **Quanto puntare.** Il capitale di Kelly è calcolato sul book, perché comprare di più
    peggiora il prezzo. Se ne prende una frazione (in base al preset) e poi si applicano i
    limiti per mercato, evento, categoria, totale investito, liquidità disponibile e quota del
-   book. Il **prezzo massimo** da pagare è `p_prudente − margine minimo`.
+   book. Il **prezzo massimo** da pagare è il prezzo a cui `prezzo + commissione` lascia
+   esattamente il margine minimo: `prezzo + commissione(prezzo) = p_prudente − margine minimo`.
 6. **Verdetto.** *Conviene*, *Conviene poco* (la puntata è stata ridotta a meno della metà
    dai limiti) oppure *Non conviene*, sempre con i motivi.
 
@@ -649,12 +685,67 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
 
 **Portafoglio simulato** (pagina *Portafoglio*):
 - **Scommesse automatiche:** ogni previsione con verdetto *Conviene* o *Conviene poco* diventa una scommessa virtuale al prezzo reale del momento, al massimo una aperta per mercato.
-- **Chiusura:** avviene quando il mercato si risolve; una quota vincente vale 1 $.
+- **Vendita:** dopo ogni aggiornamento dei mercati e ogni nuova previsione le posizioni aperte
+  vengono riviste con la [strategia](#strategia-di-acquisto-e-vendita): se il piano dice
+  «Vendi», le quote vengono vendute sul book (stato «venduta», con prezzo e motivo). Si può
+  disattivare («Vendi automaticamente») o vendere a mano. Le vendite in guadagno contano come
+  vinte.
+- **Chiusura:** avviene quando il mercato si risolve in modo definitivo (prezzo a 1/0 e, se
+  Gamma lo riporta, `umaResolutionStatus` = «resolved»: un esito solo proposto o contestato
+  può ancora cambiare). Una quota vincente vale 1 $; se il mercato si chiude 50-50 ogni quota
+  vale 0,50 $ e la scommessa risulta «annullata» (fuori dalla percentuale di vittorie).
 - **Cosa mostra:** valore attuale, profitti realizzati e latenti, percentuale di vittorie, curva del capitale e confronto tra profitto atteso e reale.
 - **Esclusioni:**
   - singole scommesse, anche già chiuse (non contano nei risultati e si possono riammettere);
   - mercati, eventi o categorie, che le scommesse automatiche saltano.
-- **Impostazioni:** si possono scegliere il preset, attivare o disattivare le scommesse automatiche, oppure ricominciare con un nuovo capitale.
+- **Impostazioni:** si possono scegliere il preset, attivare o disattivare le scommesse e le vendite automatiche, oppure ricominciare con un nuovo capitale.
+
+## Strategia di acquisto e vendita
+
+La scheda **Cosa fare** del dettaglio di un mercato (e di ogni esito dei mercati a più esiti)
+trasforma previsione e valutazione economica in istruzioni (`backend/betting/strategy.py`):
+
+| Azione | Quando | Cosa indica |
+|---|---|---|
+| **Compra SÌ / NO** | La valutazione dice *Conviene* | Ordine limite: quote, prezzo massimo, cifra. Appena comprate, un ordine limite di vendita |
+| **Aspetta** | Il vantaggio c'è, ma al prezzo attuale costi e incertezza se lo mangiano | Il prezzo a cui conviene: un ordine in attesa |
+| **Evita** | Il problema non è il prezzo: mercato poco liquido, scadenza oltre il preset, limiti di rischio pieni | I motivi |
+| **Nessuna azione** | La stima è vicina al prezzo | A che prezzo comprare SÌ o NO diventerebbe conveniente |
+| **Tieni** | C'è una posizione e il prezzo è ancora sotto la stima | L'ordine limite di vendita |
+| **Vendi** | Il prezzo ha raggiunto la stima, o una nuova previsione l'ha girata | Quante quote e a che prezzo |
+
+**Prezzi a cui la decisione cambia.** Per ogni prezzo del SÌ tra 1¢ e 99¢ la stima blended
+viene ricalcolata come nella previsione (Jev calibrato unito a quel prezzo) e si rifanno i
+controlli: segnale (`MIN_EDGE`), margine dopo commissioni e incertezza, rendimento annuo.
+Il più alto prezzo che li passa tutti è «compra SÌ sotto»; il più basso per il NO è «compra
+NO sopra». Il dettaglio li mostra su una scala dei prezzi insieme al prezzo attuale.
+
+**Quando vendere.** Tenere una quota vale la probabilità che vinca, scontata per il tempo in
+cui il capitale resta bloccato al rendimento che il preset chiede (tasso senza rischio + premio).
+Vendere vale il prezzo di acquisto offerto meno la commissione. Il prezzo di vendita è il più
+basso a cui vendere rende almeno quanto tenere:
+
+```
+vendi se  bid − commissione(bid)  ≥  P(lato vince | prezzo = bid) / (1 + rendimento richiesto)^(giorni/365)
+```
+
+Con poco tempo alla scadenza coincide quasi con la stima; con molti mesi è più basso, perché
+incassare prima libera il capitale. Non c'è uno stop-loss fisso: se il prezzo scende ma la
+stima no, la quota è ancora più conveniente. Si vende invece quando una nuova previsione dice
+che conviene il lato opposto.
+
+**Perché sì / perché no.** Ogni piano elenca i motivi: la differenza tra stima e prezzo, le
+notizie che Jev ha giudicato a favore o contro (con i titoli), il margine dopo i costi, il
+rendimento annuo, il tempo, la probabilità di perdere, il book stimato, le esclusioni e i
+risultati passati (vantaggio sul prezzo nei mercati risolti e prezzo di chiusura dei segnali).
+
+**Fiducia** *alta*, *media* o *bassa*: sale con notizie forti e risultati passati buoni;
+scende con notizie deboli, stima incerta, prezzi stimati senza book e risultati passati
+assenti o negativi.
+
+Il piano compare anche nelle opportunità (con i prezzi del momento della previsione), nel
+portafoglio (piano d'uscita di ogni posizione aperta) e nelle notifiche Telegram (ordine di
+acquisto e di vendita).
 
 ## Allerte notizie–prezzo
 
@@ -755,31 +846,42 @@ nella sezione **Più esiti**, perché si leggono come una distribuzione.
   scelta multipla), senza vedere i prezzi.
   - Riceve i `MULTI_MAX_OUTCOMES` esiti più probabili (12 di default); gli altri vengono
     sommati in «Altri esiti».
-  - I prezzi vengono normalizzati a 100 %, così il margine del mercato sparisce.
-  - Blend ed edge sono calcolati esito per esito, con lo stesso peso dei mercati Sì/No.
-  - Il segnale indica di comprare SÌ sull'esito più sottovalutato, se l'edge supera
-    `MIN_EDGE` e le evidenze `MIN_EVIDENCE`.
+  - I prezzi vengono normalizzati a 100 %, così il margine del mercato sparisce dal
+    riferimento.
+  - Il blend unisce le due distribuzioni in modo log-lineare (`p ∝ Jev^w × mercato^(1−w)`,
+    poi normalizzato), con lo stesso peso dei mercati Sì/No.
+  - L'edge si misura sul **prezzo vero** della quota SÌ, quello che si paga: normalizzare
+    toglie il margine dal riferimento, non dal costo.
+  - Il segnale indica l'esito più lontano dal suo prezzo, se l'edge supera `MIN_EDGE` e le
+    evidenze `MIN_EVIDENCE`: **compra SÌ** se è sottovalutato, **compra NO** se è
+    sopravvalutato (spesso un favorito su cui il mercato è troppo ottimista).
+- **Arbitraggio.** Vince un solo esito, quindi un SÌ di ogni esito paga sempre 1 $ e un NO
+  di ogni esito paga sempre N − 1 $. Se al miglior prezzo del book comprare tutto il set
+  costa meno, commissioni incluse, l'evento mostra il badge «Arbitraggio» con il guadagno per
+  set. Si conosce solo il primo livello del book: la quantità può essere piccola e il prezzo
+  cambiare in fretta.
 - **Vista.** Nell'elenco, per ogni evento, i primi esiti con la barra del prezzo e i
   marcatori di Jev (rombo) e blended (cerchio). Nel dettaglio: tutti gli esiti, la tabella,
   le notizie (con l'esito che ciascuna favorisce) e lo storico.
 
 **Economia, portafoglio, allerte e backtest.** Per gli esiti vale tutto quello che vale per i
 mercati Sì/No:
-- **Valutazione economica.** Dopo ogni previsione vengono valutati i 3 esiti più sottovalutati
-  sulla loro quota SÌ: prezzo reale del book, commissioni, incertezza, rendimento annualizzato,
+- **Valutazione economica.** Dopo ogni previsione vengono valutati i 3 esiti più lontani dal
+  prezzo, sulla quota SÌ se sottovalutati e sulla quota NO se sopravvalutati: prezzo reale del book, commissioni, incertezza, rendimento annualizzato,
   Kelly e limiti del preset. Nel dettaglio dell'evento la scheda «Conviene?» permette di
   scegliere l'esito.
 - **Portafoglio simulato.** L'esito migliore diventa una scommessa simulata, se conviene. Il
   limite per evento vale per tutti gli esiti insieme, così non si punta su tre candidati della
   stessa elezione oltre il rischio del preset. Esclusioni per evento e categoria e chiusura alla
   risoluzione funzionano come per i mercati Sì/No.
-- **Opportunità.** Gli eventi con un esito sottovalutato compaiono in un blocco a parte, sotto i
-  mercati Sì/No.
+- **Opportunità.** Gli eventi con un esito sotto- o sopravvalutato compaiono in un blocco a
+  parte, sotto i mercati Sì/No.
 - **Allerte.** Una notizia fresca e pertinente collegata a un evento fa ricalcolare subito la
-  distribuzione (una chiamata). Se conviene arriva una notifica «Compra SÌ su …» e il prezzo
+  distribuzione (una chiamata). Se conviene arriva una notifica «Compra SÌ su …» (o «Compra NO su …») e il prezzo
   successivo viene misurato come per i mercati Sì/No.
 - **Backtest.** Scegli «Più esiti» tra i tipi di mercato. Per ogni evento risolto vengono
-  ricostruiti i prezzi storici dei 12 esiti più scambiati. Il risultato riporta:
+  ricostruiti i prezzi storici e gli esiti mostrati a Jev sono i più probabili secondo il
+  prezzo di allora. Il risultato riporta:
   - il Brier a più esiti (0 = perfetto, 2 = certo e sbagliato);
   - la probabilità data al vincitore;
   - quante volte il favorito ha vinto, per Jev e per il mercato;
@@ -801,8 +903,16 @@ previsto Jev i mercati già risolti?
 2. **Momenti.** Per ogni mercato e ogni orizzonte (1, 7 o 30 giorni prima della chiusura)
    ricostruisce la situazione di quel momento:
    - il **prezzo di allora**, dallo storico della CLOB (`/prices-history`);
-   - le **notizie dei 7 giorni precedenti**, da Google News con i filtri `after:`/`before:`.
-     Quelle pubblicate dopo quel momento vengono scartate.
+   - le **notizie dei 7 giorni precedenti**, da una di due fonti (scelta nel modulo):
+     - **archivio**: gli articoli che questa app aveva già salvato a quella data
+       (`fetched_at ≤ momento`). Nessuna notizia successiva può entrare: è la misura onesta,
+       ma copre solo il periodo in cui l'app era attiva;
+     - **Google News** con i filtri `after:`/`before:`: copre qualsiasi periodo, ma i filtri
+       per data lasciano passare pagine aggiornate dopo, e i risultati possono sembrare
+       migliori di quanto sono. Quelle con data successiva vengono comunque scartate.
+
+     Di base si usa l'archivio quando ha notizie per quel caso, altrimenti Google News. Ogni
+     caso registra la fonte usata e i risultati dei soli casi d'archivio sono mostrati a parte.
 3. **Selezione delle notizie.** Pertinenza (significato + termini chiave) e scelta delle
    migliori, come nell'app.
 4. **Previsione.** Jev riceve la stessa richiesta, con «oggi» impostato a quella data e senza
@@ -811,6 +921,11 @@ previsto Jev i mercati già risolti?
    portafoglio. Il book storico non esiste: il prezzo è quello di allora più metà dello spread
    tipico.
 6. **Confronto.** L'esito reale del mercato dice chi aveva ragione.
+
+Per gli eventi a più esiti, gli esiti mostrati a Jev sono i più probabili **secondo il prezzo di
+allora** (fino a `MULTI_MAX_OUTCOMES`, tra i 30 più scambiati), come dal vivo. Se il vincitore
+era poco quotato finisce negli «altri esiti»: sceglierli sapendo chi ha vinto renderebbe i
+risultati migliori del vero.
 
 **Casi saltati** (senza consumare chiamate):
 - prezzo storico non disponibile;
@@ -823,24 +938,36 @@ avanzamento e pulsante per fermarlo. Se il server si riavvia, il backtest risult
 **Risultati.**
 - Brier score (più basso è meglio) di prezzo, Jev e blended, in totale, per orizzonte e per
   categoria.
+- **Vantaggio sul prezzo** (Brier del prezzo − Brier del blended) con l'**intervallo al 95%**,
+  calcolato con un bootstrap che ricampiona i mercati interi: gli orizzonti di uno stesso
+  mercato condividono l'esito e non sono casi indipendenti. Se l'intervallo comprende lo zero,
+  il vantaggio può essere dovuto al caso.
 - Quota di segnali giusti e scommesse simulate: profitto e ROI.
 - Grafico di calibrazione (previsto contro accaduto).
 - Tabella dei casi, con le notizie lette da Jev.
 
 **Parametri suggeriti.**
-- Il **peso massimo di Jev** che avrebbe dato il Brier più basso al blended.
+- La **calibrazione di Jev** (scala di Platt: regressione logistica dell'esito su
+  `logit P_jev`, con una leggera penalità verso «nessuna correzione»).
+- Con Jev calibrato, il **peso massimo di Jev** che dà il Brier più basso al blended.
 - Con quel peso, l'**edge minimo** che avrebbe reso di più puntando 1 $ per segnale, se ci
   sono almeno 10 scommesse.
-- L'affidabilità è *bassa* sotto i 30 casi, *media* sotto i 100, *alta* da 100 in su.
+- **Verifica fuori campione.** I mercati vengono ordinati per data di chiusura: i parametri si
+  stimano sul 70% più vecchio e si provano sul 30% più recente, come si userebbero dal vivo.
+  Un valore è *consigliato* solo se migliora anche lì; i valori mostrati sono poi ristimati su
+  tutti i mercati. Servono almeno 10 mercati per parte, altrimenti nulla è consigliato.
+- L'affidabilità dipende dai **mercati diversi** (non dai casi): *bassa* sotto 30, *media*
+  sotto 100, *alta* da 100 in su.
 
-Un admin può applicarli con un clic: vengono salvati nel database, valgono per le previsioni
-successive e sostituiscono i valori del `.env` finché non premi «Ripristina i valori del
-.env». Si possono modificare solo `MODEL_WEIGHT_MAX` e `MIN_EDGE`.
+Un admin può applicare i valori consigliati con un clic: vengono salvati nel database,
+valgono per le previsioni successive e sostituiscono i valori del `.env` finché non premi
+«Ripristina i valori del .env». Si possono modificare solo `MODEL_WEIGHT_MAX`, `MIN_EDGE`,
+`JEV_CALIB_A` e `JEV_CALIB_B`.
 
 **Il limite.** Jev potrebbe conoscere già l'esito di eventi passati: i mercati risolti prima
 della data fino a cui arrivano le conoscenze del suo modello possono dare risultati troppo
-buoni. Per una misura onesta scegli mercati chiusi dopo quella data. Inoltre i suggerimenti
-sono calcolati sugli stessi mercati: con pochi casi rischiano di adattarsi al caso.
+buoni. Per una misura onesta scegli mercati chiusi dopo quella data e, quando l'archivio li
+copre, le sole notizie dell'archivio.
 
 ## Calibrazione
 
@@ -853,7 +980,18 @@ Quando un mercato seguito si risolve, il sync lo rileva e salva l'esito.
 - `brier_blended`: la probabilità blended usata per i segnali.
 
 Il sistema aggiunge valore solo se `brier_blended` è stabilmente **inferiore** a
-`brier_market` su molti mercati. Con pochi mercati risolti il confronto non è significativo.
+`brier_market` su molti mercati. Con pochi mercati risolti il confronto non è significativo:
+`gain_blended` e `gain_model` danno il vantaggio sul prezzo con l'intervallo al 95%
+(bootstrap sui mercati). Se l'intervallo comprende lo zero, il vantaggio può essere dovuto al caso.
+
+**Prezzo di chiusura (CLV).** Il sync registra l'ultimo prezzo di ogni mercato mentre si
+scambia ancora (`last_trading_price`): è la «chiusura», la stima del mercato quando tutte le
+informazioni sono note. Comprare stabilmente sotto la chiusura è il segno più affidabile di un
+vantaggio reale e si misura molto prima che i mercati risolti bastino per il Brier:
+- `signal_clv` in Calibrazione: di quanto il prezzo si è mosso verso ogni segnale fino alla chiusura;
+- nel portafoglio simulato: chiusura del lato comprato − prezzo medio pagato, per scommessa e
+  in media (`clv`; `clv_open` è il movimento finora sulle aperte);
+- nelle allerte: movimento dal prezzo dell'allerta alla chiusura, nella direzione consigliata.
 
 ## Sviluppo e test
 
@@ -883,16 +1021,19 @@ In CI un database non raggiungibile fa fallire i test invece di saltarli.
 | File | Contenuto |
 |---|---|
 | `tests/test_pipeline.py` | Punteggio composito, euristica, valutatore Jev, riassunti |
-| `tests/test_forecast.py` | Blending, Kelly, segnali, Brier score |
-| `tests/test_polymarket.py` | Parsing e filtri dei mercati Gamma |
+| `tests/test_forecast.py` | Calibrazione di Platt, unione in log-odds (anche a più esiti), Kelly, segnali, Brier score |
+| `tests/test_polymarket.py` | Parsing e filtri dei mercati Gamma, esito definitivo (oracolo UMA) e 50-50 |
+| `tests/test_dedup.py` | Stessa storia da testate diverse raggruppata, conferme contate per testata |
+| `tests/test_reembed.py` | Cambio del modello di embedding (vettori ricalcolati), affidabilità storica della testata |
 | `tests/test_markets_e2e.py` | Flusso completo: raccolta → mercati → previsione → API → risoluzione |
 | `tests/test_auth.py` | Password, cookie, CSRF, ruoli, limite tentativi, scadenze, logout, header di sicurezza |
 | `tests/test_sources.py` | Fetcher (pulizia HTML, reindirizzamenti, blocco reti interne, limiti), catalogo, migrazioni, API delle fonti |
 | `tests/test_search.py` | Ricerca su titolo, testo e riassunto, prefissi, sintassi, evidenziazioni, filtri, uso dell'indice |
-| `tests/test_economics.py` | Book, commissioni, Kelly sul book, incertezza, annualizzazione, verdetti e limiti dei preset |
+| `tests/test_economics.py` | Book, commissioni `p × (1 − p)`, prezzo massimo al netto della commissione, book stimato a livelli, Kelly sul book, incertezza, annualizzazione, verdetti e limiti dei preset |
 | `tests/test_markets_sort.py` | Ordinamento dei mercati per ogni campo e direzione, valori mancanti in fondo, paginazione stabile |
 | `tests/test_ratelimit.py` | Limitatore (distanziamento, pausa, concorrenza), Groq sotto rate limit e con modelli di ragionamento, coda che riprende, 429 sulla previsione manuale, file senza cache |
-| `tests/test_portfolio.py` | Scommesse automatiche, esclusioni, chiusura, profitti e perdite, curva, API e permessi |
+| `tests/test_portfolio.py` | Scommesse automatiche, esclusioni, chiusura (anche 50-50), vendita automatica e a mano, piano nell'API, commissioni per categoria, prezzo di chiusura (CLV), profitti e perdite, curva, API e permessi |
+| `tests/test_strategy.py` | Prezzi a cui comprare e vendere, azioni (compra, aspetta, evita, tieni, vendi), motivi, fiducia |
 
 ## Struttura del progetto
 

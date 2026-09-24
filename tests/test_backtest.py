@@ -71,12 +71,65 @@ def test_suggestion_trusts_an_informative_model_and_ignores_noise():
     assert good["min_edge"]["suggested"] is not None
 
 
+def dated(cases, rng):
+    """Gives each case its own market, resolving one day after the previous one."""
+    for i, c in enumerate(cases):
+        c["market_id"], c["end_date"] = f"m{i}", NOW - timedelta(days=len(cases) - i)
+    return cases
+
+
+def test_suggestions_are_validated_on_later_markets():
+    rng = random.Random(5)
+    cases = []
+    for _ in range(200):
+        truth = rng.random()
+        yes = rng.random() < truth
+        price = 0.5 + (truth - 0.5) * 0.1                            # market barely informed
+        cases.append(case(price, truth, 1.0, yes))
+    s = analysis.suggest(dated(cases, rng))
+    assert s["validated"] and s["markets"] == 200
+    v = s["validation"]
+    assert v["test_markets"] == 60 and v["train_markets"] == 140
+    assert v["brier_test_suggested"] < v["brier_test_current"]
+    assert s["model_weight_max"]["recommended"] and s["calibration"]["recommended"]
+    # Too few markets: nothing is recommended, whatever the in-sample fit says
+    small = analysis.suggest(dated(cases[:12], rng))
+    assert not small["validated"] and not small["model_weight_max"]["recommended"] and small["confidence"] == "bassa"
+
+
+def test_platt_fit_corrects_an_overconfident_model():
+    rng = random.Random(9)
+    cases = []
+    for _ in range(400):
+        truth = rng.choice([0.3, 0.7])
+        yes = rng.random() < truth
+        model = 0.95 if truth > 0.5 else 0.05             # right direction, far too sure
+        cases.append(case(0.5, model, 1.0, yes))
+    s = analysis.suggest(dated(cases, rng))
+    assert s["calibration"]["suggested"]["b"] < 0.6
+
+
+def test_bootstrap_resamples_markets_not_cases():
+    rng = random.Random(1)
+    cases = []
+    for i in range(40):
+        yes = rng.random() < 0.5
+        for h in (1, 7, 30):  # three horizons of the same market share the outcome
+            cases.append({**case(0.5, 0.8 if yes else 0.3, 0.8, yes, horizon=h), "market_id": f"m{i}"})
+    g = analysis.brier_gain(cases, "model_probability")
+    assert g["markets"] == 40 and g["lo"] < g["mean"] < g["hi"]
+    assert g["mean"] > 0 and g["lo"] > 0          # clearly better than the price
+    one = analysis.cluster_bootstrap([{"market_id": "x", "v": 1.0}], lambda c: c["v"])
+    assert one == {"mean": 1.0, "lo": None, "hi": None, "markets": 1}
+
+
 def test_summary_metrics_and_calibration():
     cases = [case(0.3, 0.8, 0.8, True), case(0.6, 0.2, 0.8, False, horizon=1), {**case(0.5, 0.5, 0.5, True), "status": "skipped", "note": "Nessuna notizia"}]
     cases[0].update(signal="BUY_YES", verdict="GO", outlay=10.0, pnl=20.0, side="YES")
     s = analysis.summarize(cases)
     o = s["overall"]
     assert o["n"] == 2 and o["bets"] == 1 and o["pnl"] == 20.0 and o["roi"] == 2.0
+    assert o["gain_model"]["mean"] > 0 and s["news_sources"] == {"google": 2} and s["leak_free"] is None
     assert o["brier_model"] < o["brier_market"]
     assert [h["horizon_days"] for h in s["by_horizon"]] == [1, 7]
     assert s["skipped"] == {"Nessuna notizia": 1}
@@ -242,3 +295,67 @@ async def test_multi_outcome_backtest(db, jev_client, monkeypatch):
         assert case["signal"] == "BUY_YES"
         assert (await api.post("/backtest/runs", json={"resolved_after": "2026-01-01", "resolved_before": "2026-02-01",
                                                         "kinds": []})).status_code == 422
+
+
+async def test_archive_news_has_no_look_ahead(db, jev_client, services, monkeypatch):
+    """News source "archive": only articles the app had saved by that date, no Google search."""
+    from backend.db.database import SessionLocal
+    from backend.db.models import Article, Source
+    jev_client(noul_value=0.8, score_value=3.0)
+    as_of = NOW - timedelta(days=27)  # market 1 ends 20 days ago, horizon 7
+    async with SessionLocal() as s:
+        src = Source(name="Reuters", url="https://r.test/rss")
+        s.add(src)
+        await s.flush()
+        for title, fetched in (("Fed officials signal interest rates cut in March", as_of - timedelta(days=2)),
+                               ("Fed cuts interest rates in March, officials say", as_of + timedelta(hours=5))):
+            s.add(Article(source_id=src.id, title=title, url=f"https://r.test/{fetched.timestamp()}",
+                          url_hash=str(fetched.timestamp()), fetched_at=fetched, published_at=fetched,
+                          title_embedding=fake_embedding(title), content_embedding=fake_embedding(title)))
+        await s.commit()
+    async with login_client("admin") as api:
+        r = await api.post("/backtest/runs", json={
+            "resolved_after": (NOW - timedelta(days=60)).date().isoformat(),
+            "resolved_before": (NOW - timedelta(days=1)).date().isoformat(), "news_source": "archive"})
+        await engine.wait()
+        run = (await api.get(f"/backtest/runs/{r.json()['id']}")).json()
+        cases = (await api.get(f"/backtest/runs/{r.json()['id']}/cases")).json()
+    assert services == []  # Google never searched
+    fed = next(c for c in cases if c["market_id"] == "1")
+    assert fed["details"]["news_source"] == "archive"
+    assert [n["title"] for n in fed["news"]] == ["Fed officials signal interest rates cut in March"]
+    assert run["summary"]["news_sources"] == {"archive": 1} and run["summary"]["leak_free"]["n"] == 1
+
+
+async def test_multi_backtest_does_not_pick_outcomes_by_the_winner(db, jev_client, monkeypatch):
+    """The winner priced low at the time falls into "other outcomes" instead of being forced in."""
+    event = resolved_event()                     # Arsenal (t1) won
+    prices = {"t0": 0.45, "t1": 0.03, "t2": 0.25, "t3": 0.15, "t4": 0.10}
+    monkeypatch.setattr(settings, "MULTI_MAX_OUTCOMES", 3)
+
+    async def events(after, before, limit, min_volume, client=None):
+        return [event]
+
+    async def history(token, start, end, client=None):
+        return [(start + timedelta(hours=6 * i), prices[token]) for i in range(int((end - start).total_seconds() // 21600) + 1)]
+
+    async def feed(url):
+        as_of = event.end_date - timedelta(days=7)
+        return parse_feed(rss([("Real Madrid and Arsenal ready for the Champions League final", "BBC", as_of - timedelta(days=1))]))
+
+    monkeypatch.setattr(engine.polymarket, "fetch_resolved_events", events)
+    monkeypatch.setattr(engine.polymarket, "fetch_price_history", history)
+    monkeypatch.setattr(engine, "fetch_feed", feed)
+    monkeypatch.setattr(engine, "get_title_embedding", fake_embedding)
+    jev_client(noul_value=0.9, score_value=3.0, choice_index=0)
+    async with login_client("admin") as api:
+        r = await api.post("/backtest/runs", json={
+            "resolved_after": (NOW - timedelta(days=60)).date().isoformat(),
+            "resolved_before": (NOW - timedelta(days=1)).date().isoformat(), "kinds": ["multi"], "news_source": "google"})
+        await engine.wait()
+        case = (await api.get(f"/backtest/runs/{r.json()['id']}/cases")).json()[0]
+    assert case["status"] == "ok"
+    d = case["details"]
+    assert d["winner_listed"] is False and d["winner"].startswith("Altri esiti")
+    # Listed by price at the time: Real Madrid, Inter, Bayern; Chelsea and the winner Arsenal are "other"
+    assert [o["label"] for o in d["outcomes"]][:3] == ["Real Madrid", "Inter", "Bayern"] and len(d["outcomes"]) == 4

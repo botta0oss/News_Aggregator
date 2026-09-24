@@ -1,6 +1,6 @@
 // "Come funziona": how news becomes a Polymarket signal, with the live configuration values.
 import { h, fmt, GLOSSARY } from "../ui.js";
-import { explainSentence } from "../explain.js";
+import { calibrated, explainSentence, pool } from "../explain.js";
 
 const EXAMPLE = { model_probability: 0.8, market_probability: 0.35, evidence_strength: 0.75, model_weight: null, blended_probability: null, edge: null, signal: "BUY_YES" };
 
@@ -16,7 +16,7 @@ export async function viewMethod(ctx) {
 
   const ex = { ...EXAMPLE };
   ex.model_weight = maxW * ex.evidence_strength;
-  ex.blended_probability = ex.model_weight * ex.model_probability + (1 - ex.model_weight) * ex.market_probability;
+  ex.blended_probability = pool(calibrated(ex.model_probability, st), ex.market_probability, ex.model_weight, st.blend_method);
   ex.edge = ex.blended_probability - ex.market_probability;
   const exKelly = ((ex.blended_probability - ex.market_probability) / (1 - ex.market_probability)) * kelly;
 
@@ -81,8 +81,15 @@ export async function viewMethod(ctx) {
       stage(5, "Probabilità finale (blended)",
         p("Un mercato liquido aggrega le opinioni di molte persone e di solito è ben calibrato. Per questo la stima di Jev non sostituisce il prezzo: ",
           "si fa una media pesata, e il peso di Jev cresce solo quando le notizie sono forti."),
+        p(h("b", {}, "Calibrazione."), " Prima, la stima di Jev viene corretta con quanto si è visto sui mercati già risolti: se Jev è stato troppo sicuro di sé la sua stima viene ammorbidita, se è stato troppo prudente viene resa più netta (scala di Platt, stimata dal backtest). ",
+          (st.jev_calib_a ?? 0) === 0 && (st.jev_calib_b ?? 1) === 1 ? "Per ora nessuna correzione è attiva." : `Correzione attiva: a ${fmt.num3(st.jev_calib_a)}, b ${fmt.num3(st.jev_calib_b)}.`),
+        h("p", { class: "formula" }, "logit(Jev corretto) = a + b × logit(stima Jev)"),
         h("p", { class: "formula" }, `w = ${fmt.pct(maxW)} × forza delle evidenze`),
-        h("p", { class: "formula" }, "blended = w × stima Jev + (1 − w) × prezzo"),
+        st.blend_method === "linear"
+          ? h("p", { class: "formula" }, "blended = w × Jev corretto + (1 − w) × prezzo")
+          : h("p", { class: "formula" }, "logit(blended) = w × logit(Jev corretto) + (1 − w) × logit(prezzo)"),
+        st.blend_method === "linear" ? null : p("La media si fa sulle quote logaritmiche (logit p = ln(p / (1 − p))): è il modo standard di unire previsioni ben calibrate. Una media semplice le rende troppo timide."),
+        (st.jev_samples ?? 1) > 1 ? p(`Ogni previsione chiede a Jev ${st.jev_samples} volte e fa la media delle risposte: meno rumore, ma ogni chiamata si paga.`) : null,
         p("Con evidenze deboli la probabilità finale resta vicina al prezzo; con evidenze decisive Jev può pesare al massimo il ", h("b", {}, fmt.pct(maxW)), "."),
       ),
       stage(6, "Edge e soglie",
@@ -109,7 +116,19 @@ export async function viewMethod(ctx) {
         p("Ogni scommessa che conviene entra automaticamente nel ", h("a", { href: "#/portafoglio" }, "portafoglio simulato"),
           ", al prezzo reale del momento, e si chiude quando il mercato si risolve. Puoi escludere singole scommesse, mercati, eventi o categorie."),
       ),
-      stage(9, "Verifica sui risultati",
+      stage(9, "Cosa fare: comprare, aspettare, vendere",
+        p("La scheda «Cosa fare» del mercato trasforma tutto questo in istruzioni:"),
+        h("ul", { class: "bullets" },
+          h("li", {}, h("b", {}, "Compra SÌ / NO"), " con un ordine limite: il prezzo massimo, le quote e la cifra. Appena comprate, un ordine limite di vendita."),
+          h("li", {}, h("b", {}, "Aspetta"), " quando il vantaggio c'è ma al prezzo attuale costi e incertezza se lo mangiano: l'app indica il prezzo a cui conviene (ordine in attesa)."),
+          h("li", {}, h("b", {}, "Evita"), " quando il problema non è il prezzo: mercato poco liquido, scadenza troppo lontana, limiti di rischio già pieni."),
+          h("li", {}, h("b", {}, "Nessuna azione"), " quando la stima è vicina al prezzo; l'app dice comunque a che prezzo comprare SÌ o NO diventerebbe conveniente."),
+          h("li", {}, h("b", {}, "Tieni / Vendi"), " se hai già una posizione: si vende quando il prezzo raggiunge la stima (incassare subito rende più che aspettare la risoluzione, tenuto conto delle commissioni e del rendimento chiesto al capitale) o quando una nuova previsione gira la stima."),
+        ),
+        h("p", { class: "formula" }, "vendi se prezzo − commissione ≥ stima al prezzo attuale ÷ (1 + rendimento richiesto)^(giorni/365)"),
+        p("Niente stop-loss fisso: se il prezzo scende ma le notizie non cambiano, la quota è ancora più conveniente. Ogni piano elenca i motivi a favore e contro (notizie, margini, tempo, risultati passati) e un livello di fiducia."),
+      ),
+      stage(10, "Verifica sui risultati",
         p("Quando un mercato si risolve, la pagina ", h("a", { href: "#/calibrazione" }, "Calibrazione"),
           " confronta l'errore (Brier score) delle previsioni con quello del prezzo; il ", h("a", { href: "#/portafoglio" }, "portafoglio simulato"),
           " mostra se, dopo costi e limiti, i segnali avrebbero fatto guadagnare. Se su molti mercati non battono il prezzo, i segnali non vanno seguiti con soldi veri."),
@@ -136,7 +155,7 @@ export async function viewMethod(ctx) {
         h("h2", { id: "h-limits" }, "Cosa tenere presente"),
         h("ul", { class: "bullets" },
           h("li", {}, "L'app non piazza ordini: i segnali sono indicazioni da verificare."),
-          h("li", {}, "Commissioni e spread non sono calcolati: l'edge minimo deve coprirli."),
+          h("li", {}, "Il segnale non considera commissioni e spread: li considera la valutazione economica («Conviene?»), che decide se e quanto puntare."),
           h("li", {}, "Il prezzo cambia: una previsione vecchia di ore può non valere più. Controlla sempre il prezzo attuale."),
           h("li", {}, "Il collegamento usa i titoli: una notizia importante con un titolo diverso dalla domanda può sfuggire."),
           h("li", {}, "Jev può sbagliare, soprattutto con poche notizie o regole di risoluzione complicate. Leggi le regole del mercato."),

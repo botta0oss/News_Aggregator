@@ -97,6 +97,9 @@ class Market(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     closed: Mapped[bool] = mapped_column(Boolean, default=False)
     resolved_yes: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)  # set once resolved
+    resolution: Mapped[Optional[str]] = mapped_column(Text, nullable=True)       # yes / no / split, once final
+    # Last YES price seen while the market was still trading: the "closing line" for CLV
+    last_trading_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     # Trading data for the economics engine
     yes_token_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     no_token_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -143,6 +146,9 @@ class MarketPrediction(Base):
     model_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     market_probability: Mapped[float] = mapped_column(Float, nullable=False)   # price at prediction time
     model_probability: Mapped[float] = mapped_column(Float, nullable=False)    # raw Jev P(YES)
+    calibrated_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # after Platt scaling
+    blend_method: Mapped[Optional[str]] = mapped_column(Text, nullable=True)   # logodds / linear
+    model_samples: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Jev calls averaged
     evidence_strength: Mapped[float] = mapped_column(Float, nullable=False)    # 0-1
     blended_probability: Mapped[float] = mapped_column(Float, nullable=False)  # shrunk toward market
     model_weight: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # weight w of Jev in the blend
@@ -189,6 +195,7 @@ class BettingSettings(Base):
     bankroll: Mapped[float] = mapped_column(Float, nullable=False)        # initial capital (USD)
     preset: Mapped[str] = mapped_column(Text, nullable=False)
     auto_paper: Mapped[bool] = mapped_column(Boolean, default=True)       # bet automatically on every GO/SMALL
+    auto_sell: Mapped[bool] = mapped_column(Boolean, default=True)        # sell open bets when the plan says so
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
@@ -208,12 +215,14 @@ class PaperBet(Base):
     p_conservative: Mapped[float] = mapped_column(Float, nullable=False)
     expected_profit: Mapped[float] = mapped_column(Float, default=0.0)
     preset: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(Text, default="open", index=True)  # open / won / lost / excluded
+    status: Mapped[str] = mapped_column(Text, default="open", index=True)  # open / won / lost / void / sold / excluded
     placed_by: Mapped[str] = mapped_column(Text, default="auto")          # auto / manual
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     settled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     payout: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    exit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # average sale price, if sold
+    exit_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)     # why it was sold
 
     market = relationship("Market")
 
@@ -322,6 +331,14 @@ class BacktestCase(Base):
     kind: Mapped[str] = mapped_column(Text, default="binary", server_default="binary")
     details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class AppMeta(Base):
+    """Internal facts about the stored data (e.g. which embedding model produced the vectors)."""
+    __tablename__ = 'app_meta'
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class AppSetting(Base):

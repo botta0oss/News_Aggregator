@@ -6,7 +6,7 @@ from backend.config import settings
 from backend.db.database import SessionLocal
 from backend.db.models import Article, Cluster, ProcessedArticle, Source
 from sqlalchemy import select
-from backend.db.crud import article_exists_by_hash, find_similar_article, get_unprocessed_articles
+from backend.db.crud import article_exists_by_hash, distinct_sources, find_similar_article, get_unprocessed_articles
 from backend.ingestor.fetcher import FeedError, fetch_and_parse_feed
 from backend.ingestor.sources import seed_sources_if_empty
 from backend.ingestor.deduplicator import embedding_text, hash_url, get_title_embedding
@@ -128,7 +128,9 @@ async def store_entries(session, source_id, entries, publisher_in_title: bool = 
 
         embedding = await asyncio.to_thread(get_title_embedding, title)
         content_embedding = await asyncio.to_thread(get_title_embedding, embedding_text(title, entry.get("content_raw")))
-        similar_article = await find_similar_article(session, embedding, settings.SIMILARITY_THRESHOLD)
+        similar_article = await find_similar_article(
+            session, embedding, settings.SIMILARITY_THRESHOLD, content_embedding,
+            settings.STORY_SIMILARITY_THRESHOLD, settings.STORY_WINDOW_HOURS)
 
         cluster_id = None
         if similar_article:
@@ -140,11 +142,6 @@ async def store_entries(session, source_id, entries, publisher_in_title: bool = 
                 cluster_id = new_cluster.id
             else:
                 cluster_id = similar_article.cluster_id
-
-            # Increment source count
-            cluster = await session.get(Cluster, cluster_id)
-            if cluster:
-                cluster.source_count += 1
 
         new_article = Article(
             source_id=source_id,
@@ -159,6 +156,12 @@ async def store_entries(session, source_id, entries, publisher_in_title: bool = 
             publisher=publisher,
         )
         session.add(new_article)
+        if cluster_id:
+            # Corroboration = distinct outlets, not articles (a feed repeating itself adds nothing)
+            await session.flush()
+            cluster = await session.get(Cluster, cluster_id)
+            if cluster:
+                cluster.source_count = await distinct_sources(session, cluster_id)
         await session.commit()
         added.append(new_article)
     return added

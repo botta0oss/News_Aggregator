@@ -160,3 +160,14 @@ def _reset_rate_limiters():
     yield
     ratelimit.reset_limiters()
     usage.reset()
+
+
+@pytest.fixture(autouse=True)
+def _no_fee_lookup(monkeypatch):
+    """No CLOB calls from tests: markets are fee-free unless a test says otherwise."""
+    from backend.betting import fees
+
+    async def fee_free(token_id, client=None):
+        return False
+    monkeypatch.setattr(fees, "fees_enabled", fee_free)
+    yield

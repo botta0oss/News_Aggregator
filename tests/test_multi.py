@@ -1,3 +1,4 @@
+import math
 """Multi-outcome events: parsing, separation from YES/NO markets, distribution forecast, API."""
 import json
 from datetime import datetime, timezone
@@ -66,7 +67,10 @@ def test_distribution_blend_and_signal(monkeypatch):
     out, w = service.blend_distribution(items, {"o0": 0.2, "o1": 0.6, "o2": 0.1, "o3": 0.1}, evidence_strength=1.0)
     assert w == 0.5
     arsenal = next(o for o in out if o["label"] == "Arsenal")
-    assert arsenal["blended"] == pytest.approx(0.5 * 0.6 + 0.5 * 0.25, abs=1e-3)
+    model = [0.2, 0.6, 0.1, 0.1]
+    raw = [math.sqrt(m * i["market"]) for m, i in zip(model, items)]
+    assert arsenal["blended"] == pytest.approx(raw[1] / sum(raw), abs=1e-3)
+    assert arsenal["edge"] == pytest.approx(arsenal["blended"] - arsenal["price"], abs=1e-3)  # against the price paid
     assert sum(o["blended"] for o in out) == pytest.approx(1.0, abs=1e-3)
     signal, best, edge = service.pick_signal(out, evidence_strength=1.0)
     assert signal == "BUY_YES" and best == "1" and edge == pytest.approx(arsenal["edge"])
@@ -104,15 +108,18 @@ async def test_events_are_kept_apart_and_forecast(db, monkeypatch, jev_client):
         assert r.status_code == 200, r.text
         pred = r.json()
         arsenal = next(o for o in pred["outcomes"] if o["label"] == "Arsenal")
-        assert arsenal["model"] > arsenal["market"] and pred["best_outcome_id"] == arsenal["id"]
-        assert pred["signal"] == "BUY_YES"
+        madrid = next(o for o in pred["outcomes"] if o["label"] == "Real Madrid")
+        assert arsenal["model"] > arsenal["market"] and arsenal["edge"] > 0
+        # Jev gives Real Madrid 7.5% against a 50% price: the largest gap is a NO on the favourite
+        assert pred["best_outcome_id"] == madrid["id"] and pred["signal"] == "BUY_NO"
+        assert abs(madrid["edge"]) > arsenal["edge"]
         request = captured[-1]
         assert "Arsenal" in request["questions"]["winner"]["criteria"].values()
         assert [o["name"] for o in request["state"]["market"]["outcomes"]][:2] == ["Real Madrid", "Arsenal"]
         assert "0.25" not in json.dumps(request["state"])  # prices not leaked
 
         detail = (await api.get("/multi/ev1")).json()
-        assert detail["latest_prediction"]["signal"] == "BUY_YES" and len(detail["outcomes"]) == 5
+        assert detail["latest_prediction"]["signal"] == "BUY_NO" and len(detail["outcomes"]) == 5
         assert detail["evidence"][0]["relevance"] == 0.9
         assert "arsenal" in [t.lower() for t in detail["evidence"][0]["matched_terms"]]
         assert (await api.get("/multi", params={"q": "arsenal"})).json()["total"] == 1
@@ -174,16 +181,22 @@ async def test_forecast_is_evaluated_and_bet_on(db, monkeypatch, jev_client):
     async with login_client("admin") as api:
         pred = (await api.post("/multi/ev1/predict")).json()
         arsenal = next(o for o in pred["outcomes"] if o["label"] == "Arsenal")
+        madrid = next(o for o in pred["outcomes"] if o["label"] == "Real Madrid")
         ev = pred["economics"][arsenal["id"]]
         assert ev["side"] == "YES" and ev["verdict"] in ("GO", "SMALL") and ev["outlay"] > 0
+        ev_no = pred["economics"][madrid["id"]]
+        assert ev_no["side"] == "NO" and ev_no["verdict"] in ("GO", "SMALL")
 
-        # The automatic simulated bet is on Arsenal's YES share, linked to the event
+        # The automatic simulated bet is on the best one, Real Madrid's NO share, linked to the event
         bets = (await api.get("/portfolio/bets")).json()
-        assert len(bets) == 1 and bets[0]["market_id"] == arsenal["id"] and bets[0]["multi_event_id"] == "ev1"
+        assert len(bets) == 1 and bets[0]["market_id"] == madrid["id"] and bets[0]["side"] == "NO"
+        assert bets[0]["multi_event_id"] == "ev1"
 
         # The live "Conviene?" card works on an outcome like on a YES/NO market
         live = (await api.get(f"/markets/{arsenal['id']}/economics", params={"preset": "prudente"})).json()
-        assert live["evaluation"]["side"] == "YES" and live["open_bet"] is not None
+        assert live["evaluation"]["side"] == "YES" and live["open_bet"] is None
+        live = (await api.get(f"/markets/{madrid['id']}/economics", params={"preset": "prudente"})).json()
+        assert live["evaluation"]["side"] == "NO" and live["open_bet"] is not None
 
         opps = (await api.get("/multi/opportunities")).json()
         assert [o["id"] for o in opps] == ["ev1"] and opps[0]["latest_prediction"]["economics"]
@@ -231,9 +244,45 @@ async def test_event_alert(db, monkeypatch, jev_client):
         stats = await alerts.run_alerts(session)
         assert stats["evaluated"] == 1 and stats["opportunities"] == 1 and stats["notified"] == 1
         alert = (await session.execute(select(Alert))).scalar_one()
-        assert alert.multi_event_id == "ev1" and alert.side == "YES"
+        assert alert.multi_event_id == "ev1" and alert.side == "NO"
         assert (await alerts.run_alerts(session))["triggers"] == 0  # links checked once
-    assert "Compra SÌ su Arsenal" in sent[0] and TITLE in sent[0]
+    assert "Compra NO su Real Madrid" in sent[0] and TITLE in sent[0]
     async with login_client("viewer") as api:
         items = (await api.get("/alerts")).json()
         assert items[0]["market"]["multi_event_id"] == "ev1"
+
+
+def test_arbitrage_on_mutually_exclusive_outcomes():
+    from backend.multi.arbitrage import find
+    # YES asks add up to 0.95: buying one of each pays 1 whatever wins
+    arb = find([(0.50, 0.49), (0.30, 0.29), (0.15, 0.14)], fee_bps=0)
+    assert arb.kind == "buy_all_yes" and arb.profit == pytest.approx(0.05)
+    # Fees can eat the gap: 7% rate costs about 1.4 cents here
+    assert find([(0.50, 0.49), (0.30, 0.29), (0.19, 0.18)], fee_bps=700) is None
+    # YES bids add up to 1.10: every NO (1 - bid) costs 1.90 and pays 2
+    arb = find([(0.56, 0.55), (0.36, 0.35), (0.21, 0.20)], fee_bps=0)
+    assert arb.kind == "buy_all_no" and arb.payout == 2 and arb.profit == pytest.approx(0.10)
+    # A missing quote or a fair book: nothing
+    assert find([(0.5, 0.49), (None, 0.3), (0.2, 0.19)], 0) is None
+    assert find([(0.51, 0.49), (0.31, 0.29), (0.19, 0.17)], 0) is None
+
+
+async def test_arbitrage_is_shown_on_the_event(db):
+    async with gamma([gamma_event()]) as client:
+        async with SessionLocal() as session:
+            await service.sync_events(session, client=client)
+            for i, m in enumerate((await session.execute(select(Market).where(Market.multi_event_id == "ev1"))).scalars().all()):
+                m.best_ask, m.best_bid = m.yes_price - 0.01, m.yes_price - 0.02   # asks add up to 0.95
+            await session.commit()
+    async with login_client("viewer") as api:
+        detail = (await api.get("/multi/ev1")).json()
+        assert detail["arbitrage"]["kind"] == "buy_all_yes" and detail["arbitrage"]["profit"] > 0
+        assert (await api.get("/multi")).json()["events"][0]["arbitrage"] is not None
+
+
+def test_pick_signal_buys_no_on_an_overpriced_favourite(monkeypatch):
+    monkeypatch.setattr(settings, "MIN_EDGE", 0.05)
+    monkeypatch.setattr(settings, "MIN_EVIDENCE", 0.5)
+    outcomes = [{"id": "a", "edge": -0.12}, {"id": "b", "edge": 0.06}, {"id": service.OTHER_ID, "edge": 0.3}]
+    assert service.pick_signal(outcomes, 0.8) == ("BUY_NO", "a", -0.12)
+    assert service.pick_signal([{"id": "a", "edge": -0.02}, {"id": "b", "edge": 0.07}], 0.8) == ("BUY_YES", "b", 0.07)

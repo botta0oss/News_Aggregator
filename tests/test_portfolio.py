@@ -175,3 +175,143 @@ async def test_portfolio_api_permissions_settings_reset(db, book):
         assert (await api.post("/portfolio/reset", json={"bankroll": 2500, "preset": "prudente"})).status_code == 200
         body = (await api.get("/portfolio")).json()
         assert body["equity"] == 2500 and body["counts"]["open"] == 0 and body["profile"]["key"] == "prudente"
+
+
+async def test_split_resolution_pays_half(db, book):
+    async with SessionLocal() as s:
+        m = await make_market(s)
+        await portfolio.apply_economics(s, m, await make_prediction(s, m))
+        bet = (await s.execute(select(PaperBet))).scalar_one()
+        m.resolution, m.closed = "split", True
+        await s.commit()
+        assert await portfolio.settle_bets(s) == 1
+        await s.refresh(bet)
+        assert bet.status == "void" and bet.payout == pytest.approx(bet.shares * 0.5)
+        assert bet.pnl == pytest.approx(bet.shares * 0.5 - bet.stake - bet.fee)
+        summ = await portfolio.summary(s)
+        assert summ["counts"]["void"] == 1 and summ["hit_rate"] is None
+        assert summ["equity"] == pytest.approx(1000 + bet.pnl)
+
+
+async def test_fee_rate_from_category_unless_the_market_is_fee_free(db, book, monkeypatch):
+    from backend.betting import fees
+    async with SessionLocal() as s:
+        m = await make_market(s)
+        m.category = "Crypto"
+        assert (await portfolio.build_quote(m, "YES")).fee_bps == 0      # conftest: CLOB says fee-free
+
+        async def enabled(token_id, client=None):
+            return True
+        monkeypatch.setattr(fees, "fees_enabled", enabled)
+        assert (await portfolio.build_quote(m, "YES")).fee_bps == pytest.approx(700)
+        m.category = "Foreign Affairs"
+        assert (await portfolio.build_quote(m, "YES")).fee_bps == 0
+
+        async def unknown(token_id, client=None):
+            return None
+        monkeypatch.setattr(fees, "fees_enabled", unknown)
+        m.category = "Politics"
+        assert (await portfolio.build_quote(m, "YES")).fee_bps == pytest.approx(400)
+
+
+def test_parse_fee_switch():
+    from backend.betting.fees import parse_fee_enabled
+    assert parse_fee_enabled({"base_fee": 0}) is False
+    assert parse_fee_enabled({"base_fee": 1000}) is True
+    assert parse_fee_enabled({"other": 1}) is None and parse_fee_enabled("x") is None
+
+
+async def test_closing_line_value(db, book):
+    from backend.markets import service as market_service
+    async with SessionLocal() as s:
+        m = await make_market(s)
+        await portfolio.apply_economics(s, m, await make_prediction(s, m))
+        bet = (await s.execute(select(PaperBet))).scalar_one()
+        # Still trading at 0.45: provisional move, no closing line yet
+        m.yes_price = 0.45
+        await s.commit()
+        summ = await portfolio.summary(s)
+        assert summ["clv"]["n"] == 0
+        assert summ["clv_open"]["avg"] == pytest.approx(0.45 - bet.avg_price, abs=1e-4)
+        # The sync records the last trading price, and keeps it when the market closes at 1
+        data = polymarket.PolymarketMarket(id=m.id, question=m.question, slug=None, event_slug=m.event_slug,
+                                           description=None, end_date=m.end_date, yes_price=0.52, volume=1e6,
+                                           liquidity=5e4, active=True, closed=False, resolved_yes=None)
+        market_service._apply_market(m, data)
+        data.closed, data.yes_price, data.resolved_yes, data.resolution = True, 1.0, True, "yes"
+        market_service._apply_market(m, data)
+        await s.commit()
+        assert m.last_trading_price == 0.52 and m.yes_price == 1.0
+        summ = await portfolio.summary(s)
+        assert summ["clv"] == {"n": 1, "avg": pytest.approx(0.52 - bet.avg_price, abs=1e-4), "share_positive": 1.0}
+    async with login_client("viewer") as api:
+        bets = (await api.get("/portfolio/bets")).json()
+        assert bets[0]["clv"] == pytest.approx(0.52 - bet.avg_price, abs=1e-4)
+        cal = (await api.get("/predictions/calibration")).json()
+        # The BUY_YES signal was made at 0.35 and the market closed at 0.52
+        assert cal["signal_clv"]["n"] == 1 and cal["signal_clv"]["avg"] == pytest.approx(0.17)
+        assert cal["resolved_markets"] == 1 and cal["gain_blended"]["markets"] == 1
+
+
+async def test_economics_returns_the_plan(db, book):
+    async with SessionLocal() as s:
+        await portfolio.update_settings(s, auto_paper=False)
+        m = await make_market(s)
+        await make_prediction(s, m)
+    async with login_client("viewer") as api:
+        data = (await api.get("/markets/m-fed/economics")).json()
+        plan = data["strategy"]
+        assert plan["action"] == "BUY" and plan["side"] == "YES"
+        assert plan["orders"][0]["limit"] == data["evaluation"]["limit_price"]
+        assert plan["levels"]["sell_above"] > plan["orders"][0]["limit"]
+        assert plan["pros"] and plan["cons"] and plan["exit"]
+    async with login_client("admin") as api:
+        assert (await api.post("/markets/m-fed/paper-bet")).status_code == 200
+        plan = (await api.get("/markets/m-fed/economics")).json()["strategy"]
+        assert plan["action"] == "HOLD" and plan["orders"][0]["type"] == "sell"
+
+
+async def test_open_bet_is_sold_when_the_price_reaches_the_estimate(db, book):
+    async with SessionLocal() as s:
+        m = await make_market(s)
+        await portfolio.apply_economics(s, m, await make_prediction(s, m))
+        bet = (await s.execute(select(PaperBet))).scalar_one()
+        # Still below the target: the plan is to hold, with a sale target
+    async with login_client("viewer") as api:
+        item = (await api.get("/portfolio/bets")).json()[0]
+        assert item["plan"]["action"] == "HOLD" and item["plan"]["sell_above"] > 0.5
+        target = item["plan"]["sell_above"]
+    # The price climbs to the target: the review sells into the bids
+    book["yes-fed"] = polymarket.OrderBook(asks=[(target + 0.01, 5000)], bids=[(target, 5000)])
+    async with SessionLocal() as s:
+        m = await s.get(Market, "m-fed")
+        m.yes_price, m.best_bid, m.best_ask = target, target, target + 0.01
+        await s.commit()
+        assert await portfolio.review_open_bets(s) == 1
+        bet = await s.get(PaperBet, bet.id)
+        assert bet.status == "sold" and bet.exit_price == pytest.approx(target)
+        # Proceeds net of the sale fee, minus what was paid (stake and both fees)
+        assert bet.pnl == pytest.approx(bet.shares * target - bet.stake - bet.fee)
+        assert bet.pnl > 0 and "raggiunto la stima" in bet.exit_reason
+        summ = await portfolio.summary(s)
+        assert summ["counts"]["sold"] == 1 and summ["hit_rate"] == 1.0
+        assert summ["realized_pnl"] == pytest.approx(bet.pnl)
+
+
+async def test_auto_sell_off_and_manual_sell(db, book):
+    async with SessionLocal() as s:
+        await portfolio.update_settings(s, auto_sell=False)
+        m = await make_market(s)
+        await portfolio.apply_economics(s, m, await make_prediction(s, m))
+        m.yes_price = 0.9
+        book["yes-fed"] = polymarket.OrderBook(asks=[(0.91, 5000)], bids=[(0.9, 5000)])
+        await s.commit()
+        assert await portfolio.review_open_bets(s) == 0   # automatic selling is off
+        bet = (await s.execute(select(PaperBet))).scalar_one()
+    async with login_client("viewer") as api:
+        assert (await api.post(f"/portfolio/bets/{bet.id}/sell")).status_code == 403
+    async with login_client("admin") as api:
+        r = await api.post(f"/portfolio/bets/{bet.id}/sell")
+        assert r.status_code == 200 and r.json()["status"] == "sold" and r.json()["exit_reason"] == "Venduta a mano"
+        assert (await api.post(f"/portfolio/bets/{bet.id}/sell")).status_code == 409
+        assert (await api.put("/portfolio/settings", json={"auto_sell": True})).json()["auto_sell"] is True

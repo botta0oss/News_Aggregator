@@ -6,10 +6,21 @@ const money = fmt.money;
 const sideBadge = (side) => h("span", { class: `badge ${side === "YES" ? "badge-accent" : "badge-outline"}` }, side === "YES" ? "SÌ" : "NO");
 const STATUS = {
   won: ["badge-good", "check", "Vinta"], lost: ["badge-critical", "x", "Persa"],
-  open: ["badge-outline", "pause", "Aperta"], excluded: ["", "minus", "Esclusa"],
+  void: ["badge-outline", "minus", "Annullata 50-50"], sold: ["badge-accent", "down", "Venduta"], open: ["badge-outline", "pause", "Aperta"], excluded: ["", "minus", "Esclusa"],
 };
 const statusBadge = (st) => { const [cls, ic, label] = STATUS[st]; return h("span", { class: `badge ${cls}` }, icon(ic), label); };
 const pnlCls = (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
+// Exit plan of an open bet: hold with a sale target, or sell now
+const planCell = (b) => {
+  const p = b.plan;
+  if (!p) return h("span", { class: "muted small" }, "–");
+  if (p.action === "SELL") {
+    return h("span", { class: "badge badge-warning", title: p.flipped ? "La previsione si è girata contro questa posizione" : "Il prezzo ha raggiunto la stima" },
+      icon("down"), p.flipped ? "Vendi: stima girata" : "Vendi: obiettivo raggiunto");
+  }
+  return h("span", { class: "small", title: "Ordine limite di vendita: a quel prezzo incassare rende più che aspettare la risoluzione" },
+    "Tieni", p.sell_above != null ? h("span", { class: "muted" }, ` · vendi a ${fmt.cents(p.sell_above)}`) : null);
+};
 
 export async function viewPortfolio(ctx) {
   const [data, bets, exclusions, categories] = await Promise.all([
@@ -20,7 +31,7 @@ export async function viewPortfolio(ctx) {
   const refresh = () => ctx.rerender();
   const s = data.settings;
   const open = bets.filter((b) => b.status === "open");
-  const settled = bets.filter((b) => b.status === "won" || b.status === "lost");
+  const settled = bets.filter((b) => ["won", "lost", "void", "sold"].includes(b.status));
   const excluded = bets.filter((b) => b.status === "excluded");
 
   const betAction = (bet, path, label, done) => {
@@ -49,7 +60,7 @@ export async function viewPortfolio(ctx) {
     h("thead", {}, h("tr", {},
       h("th", {}, "Mercato"), h("th", {}, "Lato"), h("th", { class: "num" }, "Quote"), h("th", { class: "num" }, "Prezzo medio"),
       h("th", { class: "num" }, "Costo"), h("th", { class: "num" }, "Prezzo attuale"), h("th", { class: "num" }, "Valore"),
-      h("th", { class: "num" }, "Profitto latente"), h("th", {}, "Scade"), admin ? h("th", {}, h("span", { class: "sr-only" }, "Azioni")) : null,
+      h("th", { class: "num" }, "Profitto latente"), h("th", {}, "Piano"), h("th", {}, "Scade"), admin ? h("th", {}, h("span", { class: "sr-only" }, "Azioni")) : null,
     )),
     h("tbody", {}, open.map((b) => h("tr", {},
       h("td", { class: "q-cell" }, marketLink(b)), h("td", {}, sideBadge(b.side)),
@@ -57,8 +68,10 @@ export async function viewPortfolio(ctx) {
       h("td", { class: "num" }, money(b.outlay)), h("td", { class: "num" }, fmt.cents(b.current_price)),
       h("td", { class: "num" }, money(b.current_value)),
       h("td", { class: `num ${pnlCls(b.unrealized_pnl)}` }, fmt.signedMoney(b.unrealized_pnl)),
+      h("td", { class: "nowrap" }, planCell(b)),
       h("td", { class: "nowrap" }, fmt.date(b.end_date)),
       admin ? h("td", { class: "row-actions" },
+        betAction(b, `/portfolio/bets/${b.id}/sell`, "Vendi ora", "Scommessa venduta al prezzo del book"),
         betAction(b, `/portfolio/bets/${b.id}/exclude`, "Escludi", "Scommessa esclusa dalla simulazione"), excludeMarket(b)) : null,
     ))),
   )) : h("p", { class: "secondary" }, "Nessuna posizione aperta.");
@@ -71,11 +84,13 @@ export async function viewPortfolio(ctx) {
     )),
     h("tbody", {}, settled.map((b) => h("tr", {},
       h("td", { class: "q-cell" }, marketLink(b)), h("td", {}, sideBadge(b.side)), h("td", { class: "num" }, money(b.outlay)),
-      h("td", {}, statusBadge(b.status)), h("td", { class: `num ${pnlCls(b.expected_profit)}` }, fmt.signedMoney(b.expected_profit)),
+      h("td", {}, statusBadge(b.status), b.status === "sold"
+        ? h("div", { class: "muted small", title: b.exit_reason || "" }, `a ${fmt.cents(b.exit_price)}${b.exit_reason === "Venduta a mano" ? " · a mano" : ""}`) : null),
+      h("td", { class: `num ${pnlCls(b.expected_profit)}` }, fmt.signedMoney(b.expected_profit)),
       h("td", { class: `num ${pnlCls(b.pnl)}` }, fmt.signedMoney(b.pnl)), h("td", {}, fmt.date(b.settled_at)),
       admin ? h("td", { class: "row-actions" }, betAction(b, `/portfolio/bets/${b.id}/exclude`, "Escludi", "Scommessa esclusa dai risultati")) : null,
     ))),
-  )) : h("p", { class: "secondary" }, "Nessuna scommessa chiusa: si chiudono quando i mercati si risolvono.");
+  )) : h("p", { class: "secondary" }, "Nessuna scommessa chiusa: si chiudono quando i mercati si risolvono o quando il piano dice di vendere.");
 
   const excludedList = excluded.length ? h("details", { class: "card rules" },
     h("summary", {}, `Scommesse escluse dalla simulazione (${excluded.length})`),
@@ -98,13 +113,16 @@ export async function viewPortfolio(ctx) {
 
   return h("div", {},
     ctx.pageHead("Portafoglio simulato",
-      "Ogni segnale che conviene diventa una scommessa virtuale al prezzo reale del momento, chiusa quando il mercato si risolve. Serve a capire se i segnali fanno guadagnare prima di usare soldi veri.",
+      "Ogni segnale che conviene diventa una scommessa virtuale al prezzo reale del momento, venduta quando il piano lo dice o chiusa quando il mercato si risolve. Serve a capire se i segnali fanno guadagnare prima di usare soldi veri.",
       h("a", { class: "btn btn-ghost", href: "#/metodo" }, icon("help"), "Come funziona")),
     h("div", { class: "kpis" },
       statTile("Valore attuale", money(data.total_value), data.roi != null ? `${fmt.pts(data.roi).replace(" pt", "%")} da capitale ${money(s.bankroll)}` : ""),
-      statTile("Profitti realizzati", fmt.signedMoney(data.realized_pnl), `${data.counts.won} vinte · ${data.counts.lost} perse`),
+      statTile("Profitti realizzati", fmt.signedMoney(data.realized_pnl), `${data.counts.won} vinte · ${data.counts.lost} perse${data.counts.sold ? ` · ${data.counts.sold} vendute` : ""}${data.counts.void ? ` · ${data.counts.void} annullate` : ""}`),
       statTile("Profitti latenti", fmt.signedMoney(data.unrealized_pnl), `${data.counts.open} aperte · ${money(data.invested)} investiti`),
       statTile("Scommesse vinte", data.hit_rate != null ? fmt.pct(data.hit_rate) : "–", `liquidità ${money(data.cash)}`),
+      statTile("Prezzo di chiusura", data.clv?.n ? fmt.pts(data.clv.avg) : "–",
+        data.clv?.n ? `${fmt.pct(data.clv.share_positive)} comprate sotto la chiusura · ${fmt.count(data.clv.n, "mercato chiuso", "mercati chiusi")}`
+          : data.clv_open?.n ? `finora ${fmt.pts(data.clv_open.avg)} sulle aperte` : "nessun mercato chiuso ancora"),
     ),
     !bets.length ? h("p", { class: "note", style: { marginBottom: "16px" } }, icon("alert"),
       s.auto_paper ? "Ancora nessuna scommessa: la prima arriva con la prossima previsione che supera i controlli economici del preset."
@@ -144,6 +162,12 @@ function settingsCard(ctx, data, refresh) {
     catch (e) { auto.checked = !auto.checked; toast(e.message, { error: true }); }
   });
 
+  const autoSell = h("input", { type: "checkbox", class: "switch", id: "auto-sell", checked: s.auto_sell !== false, disabled: !admin });
+  autoSell.addEventListener("change", async () => {
+    try { await api("/portfolio/settings", { method: "PUT", body: { auto_sell: autoSell.checked } }); toast(autoSell.checked ? "Vendite automatiche attivate" : "Vendite automatiche disattivate: le posizioni restano aperte fino alla risoluzione"); }
+    catch (e) { autoSell.checked = !autoSell.checked; toast(e.message, { error: true }); }
+  });
+
   const resetArea = h("div", {});
   const paintReset = () => resetArea.replaceChildren(
     h("div", { class: "reset-row" },
@@ -173,6 +197,8 @@ function settingsCard(ctx, data, refresh) {
     h("h2", { id: "h-psettings", style: { marginBottom: "10px" } }, "Impostazioni della simulazione"),
     presetCards,
     h("label", { class: "field", for: "auto-paper", style: { margin: "14px 0 6px" } }, auto, "Aggiungi automaticamente ogni scommessa che conviene"),
+    h("label", { class: "field", for: "auto-sell", style: { margin: "0 0 6px" } }, autoSell,
+      "Vendi automaticamente quando il piano lo dice (prezzo arrivato alla stima, o previsione girata)"),
     resetArea,
     h("p", { class: "muted small", style: { marginTop: "10px" } },
       `Tasso senza rischio ${fmt.pct(data.risk_free_rate)}. `,

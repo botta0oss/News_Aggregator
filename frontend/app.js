@@ -15,6 +15,7 @@ import { viewMultiList, viewMultiDetail, eventCard } from "./views/multi.js";
 import { viewUsage } from "./views/usage.js";
 import { renderNav, markCurrent, setBadge, setupCollapse, setupMenu } from "./nav.js";
 import { economicsCard, verdictBadge } from "./economics.js";
+import { planLine } from "./strategy.js";
 
 const view = document.getElementById("view");
 let status = null;
@@ -411,6 +412,7 @@ function opportunityCard({ market, prediction: p }) {
       probTrack({ market: p.market_probability, blended: p.blended_probability, jev: p.model_probability }),
       probLegend({ market: p.market_probability, blended: p.blended_probability, jev: p.model_probability }),
       h("p", { class: "opp-explain" }, explainSentence(p, status), " ", h("a", { href: marketHref(market.id) }, "Vedi il calcolo")),
+      planLine(p.economics),
     ),
     h("div", { class: "opp-side" },
       h("div", { class: "opp-side-top" },
@@ -706,6 +708,14 @@ async function viewCalibration() {
   }
   const better = cal.brier_blended != null && cal.brier_market != null ? (cal.brier_market - cal.brier_blended) / cal.brier_market : null;
   const small = cal.resolved_markets < 30;
+  const g = cal.gain_blended;
+  const interval = g && g.lo != null
+    ? (g.lo > 0 ? "Anche nel caso peggiore dell'intervallo al 95% il blended batte il prezzo: il vantaggio non sembra dovuto al caso."
+      : g.hi < 0 ? "Anche nel caso migliore dell'intervallo al 95% il prezzo fa meglio del blended."
+        : "L'intervallo al 95% comprende lo zero: con questi mercati non si può ancora dire chi sia più accurato.")
+      + ` (vantaggio in Brier ${fmt.num3(g.mean)}, da ${fmt.num3(g.lo)} a ${fmt.num3(g.hi)})`
+    : null;
+  const sc = cal.signal_clv;
   return h("div", {}, head,
     h("div", { class: "grid-2" },
       h("section", { class: "card", "aria-labelledby": "h-verdict" },
@@ -716,6 +726,7 @@ async function viewCalibration() {
             : better > 0 ? "di errore rispetto al prezzo di mercato: le previsioni blended sono state più accurate."
               : "di errore rispetto al prezzo di mercato: il prezzo è stato più accurato delle previsioni."),
         h("p", { class: "muted small", style: { marginTop: "10px" } }, `Su ${fmt.int(cal.resolved_markets)} mercati risolti, usando l'ultima previsione fatta per ciascuno.`),
+        interval ? h("p", { class: "secondary small", style: { marginTop: "6px" } }, interval) : null,
         small ? h("p", { class: "note", style: { marginTop: "12px" } }, h("span", { class: "badge badge-warning" }, icon("alert"), "Campione piccolo"), " Con meno di 30 mercati il confronto dipende molto dal caso.") : null,
       ),
       h("section", { class: "card", "aria-labelledby": "h-brier" },
@@ -727,6 +738,14 @@ async function viewCalibration() {
         ]),
         h("p", { class: "muted small", style: { marginTop: "16px" } }, "Media di (probabilità − esito)², con esito 1 se il mercato si è risolto SÌ e 0 se NO. Chi dice sempre 50% ottiene 0,25."),
       ),
+    ),
+    h("section", { class: "card", "aria-labelledby": "h-clv", style: { marginTop: "16px" } },
+      h("div", { class: "card-head" }, h("h2", { id: "h-clv" }, "Il prezzo è andato verso i segnali?"),
+        infoTip("Closing line value: la differenza tra il prezzo di chiusura (l'ultimo prima che il mercato smettesse di scambiare) e il prezzo al momento del segnale, nella direzione consigliata. Chi compra stabilmente sotto la chiusura ha un vantaggio reale, e lo si vede molto prima che i mercati risolti siano abbastanza per il Brier.")),
+      sc?.n ? h("div", { class: "kpis" },
+        statTile("Movimento medio", fmt.pts(sc.avg), sc.interval?.lo != null ? `95%: da ${fmt.pts(sc.interval.lo)} a ${fmt.pts(sc.interval.hi)}` : "intervallo non disponibile"),
+        statTile("Segnali a favore", fmt.pct(sc.share_positive), `su ${fmt.count(sc.n, "segnale", "segnali")} in mercati chiusi`))
+        : h("p", { class: "muted small" }, "Nessun segnale su mercati già chiusi."),
     ),
   );
 }

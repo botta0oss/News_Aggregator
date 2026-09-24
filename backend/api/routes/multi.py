@@ -36,8 +36,10 @@ async def _latest(db: AsyncSession, ids: list[str]) -> dict:
     return {p.event_id: p for p in rows}
 
 
-def _event_out(e: MultiEvent, outcomes: list, links: int, pred: Optional[MultiPrediction], top: Optional[int] = None) -> dict:
+def _event_out(e: MultiEvent, outcomes: list, links: int, pred: Optional[MultiPrediction], top: Optional[int] = None,
+               arbitrage: Optional[dict] = None) -> dict:
     return {
+        "arbitrage": arbitrage,
         "id": e.id, "title": e.title, "url": _url(e), "end_date": e.end_date, "volume": e.volume,
         "liquidity": e.liquidity, "closed": e.closed, "winner_id": e.winner_id, "linked_articles": links,
         "outcome_count": len(outcomes),
@@ -75,12 +77,14 @@ async def list_events(
     key = {
         "volume": lambda e: -(e.volume or 0),
         "end_date": lambda e: (e.end_date is None, e.end_date or 0),
-        "edge": lambda e: -(preds[e.id].best_edge or 0) if e.id in preds else 1,
+        "edge": lambda e: -abs(preds[e.id].best_edge or 0) if e.id in preds else 1,
         "signal": lambda e: -(preds[e.id].created_at.timestamp()) if e.id in preds else 1,
         "news": lambda e: -links.get(e.id, 0),
     }[sort]
     events = sorted(events, key=key)[:limit]
-    return {"total": len(ids), "events": [_event_out(e, outcomes.get(e.id, []), links.get(e.id, 0), preds.get(e.id), top=5) for e in events]}
+    arb = await service.arbitrage_for(db, [e.id for e in events if not e.closed])
+    return {"total": len(ids), "events": [_event_out(e, outcomes.get(e.id, []), links.get(e.id, 0), preds.get(e.id), top=5,
+                                                     arbitrage=arb.get(e.id)) for e in events]}
 
 
 @router.get("/opportunities")
@@ -91,13 +95,14 @@ async def opportunities(
     limit: int = Query(30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    """Open events whose latest forecast finds an underpriced outcome, largest edge first."""
+    """Open events whose latest forecast finds an outcome far from its price (under- or overpriced),
+    largest edge first."""
     events = (await db.execute(select(MultiEvent).where(MultiEvent.closed == False))).scalars().all()  # noqa: E712
     preds = await _latest(db, [e.id for e in events])
     chosen = [e for e in events if e.id in preds
-              and (preds[e.id].best_edge or 0) >= min_edge and preds[e.id].evidence_strength >= min_evidence
-              and (include_hold or preds[e.id].signal == "BUY_YES")]
-    chosen.sort(key=lambda e: -(preds[e.id].best_edge or 0))
+              and abs(preds[e.id].best_edge or 0) >= min_edge and preds[e.id].evidence_strength >= min_evidence
+              and (include_hold or preds[e.id].signal in ("BUY_YES", "BUY_NO"))]
+    chosen.sort(key=lambda e: -abs(preds[e.id].best_edge or 0))
     chosen = chosen[:limit]
     out = []
     for e in chosen:
@@ -117,7 +122,8 @@ async def get_event(event_id: str, db: AsyncSession = Depends(get_db)):
                               .order_by(MultiPrediction.created_at.desc()).limit(30))).scalars().all()
     evidence = await service.get_evidence(db, event_id, limit=50)
     links = (await db.execute(select(func.count()).select_from(MultiArticleLink).where(MultiArticleLink.event_id == event_id))).scalar() or 0
-    out = _event_out(event, outcomes, links, preds[0] if preds else None)
+    arb = await service.arbitrage_for(db, [event_id]) if not event.closed else {}
+    out = _event_out(event, outcomes, links, preds[0] if preds else None, arbitrage=arb.get(event_id))
     out["description"] = event.description
     out["predictions"] = [_prediction_out(p) for p in preds]
     out["evidence"] = [{

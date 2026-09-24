@@ -89,6 +89,7 @@ async def test_fresh_news_raises_an_alert_and_notifies(db, monkeypatch, jev_clie
     msg = tg.messages[0]
     assert msg["chat_id"] == "42" and msg["parse_mode"] == "HTML" and msg["disable_notification"] is False
     assert "Compra SÌ" in msg["text"] and FED_Q in msg["text"] and "34¢" in msg["text"]
+    assert "<b>Ordine</b>: compra SÌ con limite" in msg["text"] and "vendita limite a" in msg["text"]
 
     # Every link is looked at once
     assert (await run())["triggers"] == 0

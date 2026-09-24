@@ -37,13 +37,26 @@ function legend(pred) {
     pred ? h("span", {}, h("span", { class: "key blended" }), "Blended") : null);
 }
 
+const isBuy = (pred) => pred?.signal === "BUY_YES" || pred?.signal === "BUY_NO";
+const sideLabel = (signal) => (signal === "BUY_NO" ? "NO" : "SÌ");
+
+/** Guaranteed-profit gap: one share of every outcome costs less than it surely pays. */
+function arbitrageBadge(arb) {
+  if (!arb) return null;
+  const what = arb.kind === "buy_all_yes" ? "comprando il SÌ di tutti gli esiti" : "comprando il NO di tutti gli esiti";
+  return h("span", { class: "badge badge-warning", title: `Costo ${fmt.cents(arb.cost)} per un set che paga ${fmt.money(arb.payout)} in ogni caso, ${what}, commissioni incluse. Solo al miglior prezzo del book: la quantità disponibile può essere piccola e il prezzo cambiare in fretta.` },
+    icon("alert"), `Arbitraggio ${fmt.pts(arb.profit)} per set`);
+}
+
 function signalLine(pred, outcomes) {
   if (!pred) return h("span", { class: "muted small" }, "Nessuna previsione");
   const best = pred.outcomes.find((o) => o.id === pred.best_outcome_id) || outcomes.find((o) => o.id === pred.best_outcome_id);
-  if (pred.signal === "BUY_YES" && best) {
+  if (isBuy(pred) && best) {
     const ev = pred.economics?.[best.id];
+    const no = pred.signal === "BUY_NO";
     return h("span", { class: "signal-line" },
-      h("span", { class: "badge badge-good" }, icon("up"), `Compra SÌ su ${best.label} · ${fmt.pts(pred.best_edge)}`),
+      h("span", { class: `badge ${no ? "badge-critical" : "badge-good"}` }, icon(no ? "down" : "up"),
+        `Compra ${sideLabel(pred.signal)} su ${best.label} · ${fmt.pts(pred.best_edge)}`),
       ev ? verdictBadge(ev.verdict) : null,
       ev && ev.verdict !== "NO" ? h("span", { class: "muted small" }, `${fmt.money(ev.outlay)} a max ${fmt.cents(ev.limit_price)}`) : null);
   }
@@ -89,7 +102,8 @@ export function eventCard(e) {
     h("div", { class: "meta-row small" },
       h("span", {}, `Scade ${fmt.date(e.end_date)}`), h("span", {}, `Volume ${fmt.usd(e.volume)}`),
       h("span", {}, fmt.count(e.outcome_count, "esito", "esiti")), h("span", {}, fmt.count(e.linked_articles, "notizia", "notizie"))),
-    h("div", { class: "dist" }, shown.map((o) => distRow(o, scale, pred, pred?.best_outcome_id === o.id && pred.signal === "BUY_YES"))),
+    arbitrageBadge(e.arbitrage),
+    h("div", { class: "dist" }, shown.map((o) => distRow(o, scale, pred, pred?.best_outcome_id === o.id && isBuy(pred)))),
     e.outcome_count > shown.length ? h("p", { class: "muted small" }, `+ ${fmt.count(e.outcome_count - shown.length, "altro esito", "altri esiti")}`) : null,
     h("div", { class: "multi-foot" }, signalLine(pred, e.outcomes),
       pred ? h("span", { class: "muted small", title: fmt.dateTime(pred.created_at) }, fmt.ago(pred.created_at)) : null,
@@ -121,7 +135,7 @@ export async function viewMultiDetail(ctx, id) {
     try {
       const p = await api(`/multi/${encodeURIComponent(id)}/predict`, { method: "POST" });
       const best = p.outcomes.find((o) => o.id === p.best_outcome_id);
-      toast(p.signal === "BUY_YES" ? `Previsione salvata: compra SÌ su ${best.label} (${fmt.pts(p.best_edge)})` : "Previsione salvata: nessun esito abbastanza sottovalutato");
+      toast(isBuy(p) ? `Previsione salvata: compra ${sideLabel(p.signal)} su ${best.label} (${fmt.pts(p.best_edge)})` : "Previsione salvata: nessun esito abbastanza lontano dal suo prezzo");
       ctx.rerender();
     } catch (err) {
       toast(err.message, { error: true });
@@ -148,6 +162,7 @@ export async function viewMultiDetail(ctx, id) {
         winner ? h("span", { class: "badge badge-good" }, icon("check"), `Ha vinto: ${winner.label}`) : null,
         h("span", {}, `Scade ${fmt.date(e.end_date)}`), h("span", {}, `Volume ${fmt.usd(e.volume)}`),
         h("span", {}, fmt.count(e.outcome_count, "esito", "esiti")),
+        arbitrageBadge(e.arbitrage),
         e.url ? externalLink(e.url, "Apri su Polymarket") : null)),
     h("section", { class: "card", "aria-labelledby": "h-mx-dist", style: { marginBottom: "16px" } },
       h("div", { class: "card-head" },
@@ -156,10 +171,10 @@ export async function viewMultiDetail(ctx, id) {
       h("p", { class: "muted small" }, pred
         ? `Jev ha letto ${fmt.count(pred.article_count, "notizia", "notizie")} e ha stimato la probabilità di ogni esito senza vedere i prezzi. Evidenze ${fmt.pct(pred.evidence_strength)}: la sua stima pesa per il ${fmt.pct(pred.model_weight)}. Previsione ${fmt.ago(pred.created_at)}. `
         : "I prezzi delle quote SÌ sono normalizzati in modo che la somma faccia 100%. ",
-      infoTip("Edge = blended − prezzo normalizzato. Il segnale indica l'esito più sottovalutato, se l'edge supera la soglia minima e le notizie sono abbastanza forti. Jev valuta i 12 esiti più probabili; gli altri sono sommati in «Altri esiti».", "Come si legge?")),
+      infoTip("Edge = blended − prezzo della quota SÌ (quello che si paga davvero). Il segnale indica l'esito più lontano dal suo prezzo, se l'edge supera la soglia minima e le notizie sono abbastanza forti: SÌ se è sottovalutato, NO se è sopravvalutato (spesso un favorito su cui il mercato è troppo ottimista). Jev valuta i 12 esiti più probabili; gli altri sono sommati in «Altri esiti».", "Come si legge?")),
       legend(pred),
       h("div", { class: "dist dist-full" }, rows.map((r) => distRow({ id: r.id, label: r.label, price: r.market }, scale, pred,
-        pred?.signal === "BUY_YES" && pred.best_outcome_id === r.id))),
+        isBuy(pred) && pred.best_outcome_id === r.id))),
       table,
       h("div", { class: "predict-bar" }, predictBtn, h("span", { class: "muted small" }, blocker || "Una chiamata all'API TypeSafe per tutto l'evento."))),
     pred ? economicsSection(ctx, pred) : null,
@@ -181,29 +196,30 @@ export async function viewMultiDetail(ctx, id) {
     e.predictions.length > 1 ? h("section", { class: "card", "aria-labelledby": "h-mx-hist", style: { marginBottom: "16px" } },
       h("h2", { id: "h-mx-hist", style: { marginBottom: "10px" } }, "Storico delle previsioni"),
       h("div", { class: "table-wrap" }, h("table", { class: "compact-table" },
-        h("thead", {}, h("tr", {}, ...["Quando", "Esito più sottovalutato", "Edge", "Evidenze", "Segnale"].map((t, i) => h("th", { scope: "col", class: i === 2 || i === 3 ? "num" : null }, t)))),
+        h("thead", {}, h("tr", {}, ...["Quando", "Esito più lontano dal prezzo", "Edge", "Evidenze", "Segnale"].map((t, i) => h("th", { scope: "col", class: i === 2 || i === 3 ? "num" : null }, t)))),
         h("tbody", {}, e.predictions.map((p) => {
           const best = p.outcomes.find((o) => o.id === p.best_outcome_id);
           return h("tr", {}, h("td", {}, fmt.dateTime(p.created_at)), h("td", {}, best?.label || "–"),
             h("td", { class: `num ${edgeCls(p.best_edge)}` }, fmt.pts(p.best_edge)), h("td", { class: "num" }, fmt.pct(p.evidence_strength)),
-            h("td", {}, p.signal === "BUY_YES" ? "Compra SÌ" : "Attendi"));
+            h("td", {}, isBuy(p) ? `Compra ${sideLabel(p.signal)}` : "Attendi"));
         }))))) : null,
     e.description ? h("details", { class: "card rules" }, h("summary", {}, "Regole di risoluzione"), h("p", { class: "secondary", style: { whiteSpace: "pre-line", marginTop: "10px" } }, e.description)) : null,
   );
 }
 
-/** "Conviene?" for one outcome: the same evaluation as YES/NO markets, on that outcome's YES share. */
+/** "Conviene?" for one outcome: the same evaluation as YES/NO markets, on its YES share if
+ *  underpriced or its NO share if overpriced. */
 function economicsSection(ctx, pred) {
-  const candidates = pred.outcomes.filter((o) => o.id !== "other" && o.edge > 0).sort((a, b) => b.edge - a.edge);
+  const candidates = pred.outcomes.filter((o) => o.id !== "other" && o.edge !== 0).sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge));
   if (!candidates.length) return null;
   let selected = pred.best_outcome_id && candidates.some((o) => o.id === pred.best_outcome_id) ? pred.best_outcome_id : candidates[0].id;
   const holder = h("div", {});
   const paint = () => {
     const o = candidates.find((c) => c.id === selected);
-    holder.replaceChildren(economicsCard(ctx, { id: o.id, question: `${o.label} (SÌ)` }));
+    holder.replaceChildren(economicsCard(ctx, { id: o.id, question: `${o.label} (${o.edge > 0 ? "SÌ" : "NO"})` }));
   };
   const select = h("select", { id: "mx-outcome", class: "select", style: { minWidth: "260px", maxWidth: "100%" } },
-    candidates.map((o) => h("option", { value: o.id, selected: o.id === selected }, `${o.label} · edge ${fmt.pts(o.edge)}`)));
+    candidates.map((o) => h("option", { value: o.id, selected: o.id === selected }, `${o.label} · ${o.edge > 0 ? "SÌ" : "NO"} · edge ${fmt.pts(o.edge)}`)));
   select.addEventListener("change", () => { selected = select.value; paint(); });
   paint();
   return h("div", { style: { marginBottom: "16px" } },

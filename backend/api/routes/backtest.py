@@ -26,11 +26,14 @@ class RunIn(BaseModel):
     max_calls: int = Field(60, ge=1, le=1000)
     exclude_decided: bool = True
     kinds: list[Literal["binary", "multi"]] = Field(default_factory=lambda: ["binary"])
+    news_source: Literal["auto", "archive", "google"] = "auto"
 
 
 class ParametersIn(BaseModel):
     MODEL_WEIGHT_MAX: Optional[float] = None
     MIN_EDGE: Optional[float] = None
+    JEV_CALIB_A: Optional[float] = None
+    JEV_CALIB_B: Optional[float] = None
     note: Optional[str] = Field(None, max_length=200)
 
 
@@ -58,6 +61,7 @@ async def start_run(body: RunIn):
         resolved_before=datetime.combine(body.resolved_before, time.max, tzinfo=timezone.utc),
         max_markets=body.max_markets, min_volume=body.min_volume, horizons=body.horizons,
         max_calls=body.max_calls, exclude_decided=body.exclude_decided, kinds=list(body.kinds),
+        news_source=body.news_source,
     )
     try:
         run = await engine.start(params)

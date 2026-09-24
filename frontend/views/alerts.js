@@ -113,6 +113,9 @@ function resultsCard(s) {
       )),
     s.resolved ? h("p", { class: "muted small", style: { marginTop: "8px" } },
       `Mercati già risolti: ${fmt.int(s.won)} su ${fmt.int(s.resolved)} nella direzione dell'allerta.`) : null,
+    s.clv?.n ? h("p", { class: "muted small", style: { marginTop: "4px" } },
+      `Fino alla chiusura (${fmt.count(s.clv.n, "mercato chiuso", "mercati chiusi")}): in media ${fmt.pts(s.clv.avg)} nella direzione dell'allerta, a favore nel ${fmt.pct(s.clv.share_positive)} dei casi. `,
+      "È il segnale più affidabile che le allerte anticipano davvero il mercato.") : null,
   );
 }
 

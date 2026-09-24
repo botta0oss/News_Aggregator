@@ -1,5 +1,6 @@
 // "Conviene?" card: live economic evaluation of the latest forecast of a market.
 import { h, api, fmt, toast, icon, infoTip } from "./ui.js";
+import { strategySection } from "./strategy.js";
 
 export const VERDICTS = {
   GO: { cls: "badge-good", icon: "check", label: "Conviene" },
@@ -86,6 +87,8 @@ export function economicsCard(ctx, market) {
         : "Con il preset scelto questa scommessa non conviene.";
 
     return h("div", {},
+      data.strategy ? strategySection(data.strategy, data.market.yes_price) : null,
+      data.strategy ? h("h3", { class: "econ-sub" }, "I conti della scommessa") : null,
       h("div", { class: "econ-head" },
         holding ? h("span", { class: "badge badge-accent badge-lg" }, icon("check"), "In portafoglio") : verdictBadge(ev.verdict, true),
         h("p", { class: "econ-headline" }, headline),
@@ -97,7 +100,8 @@ export function economicsCard(ctx, market) {
       h("div", { class: "econ-grid" },
         figure("Puntata", isGo ? money(ev.outlay) : "–", ECON_HELP.stake),
         figure("Prezzo medio", ev.avg_price != null ? fmt.cents(ev.avg_price) : ev.best_price != null ? `${fmt.cents(ev.best_price)} (migliore)` : "–"),
-        figure("Prezzo massimo", fmt.cents(ev.limit_price), ECON_HELP.limit),
+        // Without a signal the plan's price levels apply, not this maximum
+        figure("Prezzo massimo", ev.reasons.some((r) => r.code === "no_signal") ? "–" : fmt.cents(ev.limit_price), ECON_HELP.limit),
         figure("Se vince", isGo ? fmt.signedMoney(ev.profit_if_win) : "–", null, "pos"),
         figure("Se perde", isGo ? fmt.signedMoney(-ev.outlay) : "–", null, "neg"),
         figure("Profitto atteso", isGo ? fmt.signedMoney(ev.expected_profit) : "–", null, ev.expected_profit > 0 ? "pos" : ""),
@@ -143,8 +147,8 @@ export function economicsCard(ctx, market) {
   const section = h("section", { class: "card econ", "aria-labelledby": "h-econ" },
     h("div", { class: "card-head" },
       h("div", {},
-        h("h2", { id: "h-econ" }, "Conviene?"),
-        h("p", { class: "muted small" }, "Valutazione economica con prezzi reali, costi, tempo e limiti di rischio."),
+        h("h2", { id: "h-econ" }, "Cosa fare"),
+        h("p", { class: "muted small" }, "Strategia di acquisto e vendita, con prezzi reali, costi, tempo e limiti di rischio."),
       ),
       presetSwitch,
     ),

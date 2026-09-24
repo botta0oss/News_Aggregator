@@ -6,8 +6,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.auth.deps import require_admin
-from backend.betting import portfolio
+from backend.betting import plans, portfolio
+from backend.betting.economics import model_sigma
 from backend.betting.profiles import PROFILES, get_profile
+from backend.markets.calibration import summary as calibration_summary
 from backend.config import settings
 from backend.db.database import get_db
 from backend.db.models import Market, MarketPrediction, PaperBet, PaperExclusion
@@ -19,6 +21,7 @@ admin = [Depends(require_admin)]
 class SettingsIn(BaseModel):
     preset: Optional[Literal["prudente", "bilanciato", "aggressivo"]] = None
     auto_paper: Optional[bool] = None
+    auto_sell: Optional[bool] = None
 
 
 class ResetIn(BaseModel):
@@ -51,6 +54,8 @@ def _bet_dict(bet: PaperBet, market: Market) -> dict:
         "current_price": (market.yes_price if bet.side == "YES" else 1 - market.yes_price) if market.yes_price is not None else None,
         "current_value": value,
         "unrealized_pnl": (value - bet.stake - bet.fee) if value is not None else None,
+        "clv": portfolio.bet_clv(bet, market),
+        "exit_price": bet.exit_price, "exit_reason": bet.exit_reason,
     }
 
 
@@ -66,8 +71,8 @@ async def get_portfolio(db: AsyncSession = Depends(get_db)):
 
 @router.put("/settings", dependencies=admin)
 async def update_settings(body: SettingsIn, db: AsyncSession = Depends(get_db)):
-    s = await portfolio.update_settings(db, preset=body.preset, auto_paper=body.auto_paper)
-    return {"bankroll": s.bankroll, "preset": s.preset, "auto_paper": s.auto_paper}
+    s = await portfolio.update_settings(db, preset=body.preset, auto_paper=body.auto_paper, auto_sell=body.auto_sell)
+    return {"bankroll": s.bankroll, "preset": s.preset, "auto_paper": s.auto_paper, "auto_sell": s.auto_sell}
 
 
 @router.post("/reset", dependencies=admin)
@@ -77,6 +82,20 @@ async def reset(body: ResetIn, db: AsyncSession = Depends(get_db)):
     return {"bankroll": s.bankroll, "preset": s.preset, "auto_paper": s.auto_paper}
 
 
+@router.post("/bets/{bet_id}/sell", dependencies=admin)
+async def sell_bet_now(bet_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Sells an open simulated bet now, at the best bids of the order book."""
+    bet = await _bet(db, bet_id)
+    if bet.status != "open":
+        raise HTTPException(status_code=409, detail="La scommessa non è aperta")
+    market = await db.get(Market, bet.market_id)
+    if market.closed:
+        raise HTTPException(status_code=409, detail="Il mercato è chiuso: si attende la risoluzione")
+    if not await portfolio.sell_bet(db, bet, market, "Venduta a mano"):
+        raise HTTPException(status_code=409, detail="Il book non ha abbastanza offerte di acquisto per vendere tutte le quote")
+    return _bet_dict(bet, market)
+
+
 @router.get("/bets")
 async def list_bets(status: Literal["open", "settled", "excluded", "all"] = Query("all"),
                     limit: int = Query(200, ge=1, le=1000), db: AsyncSession = Depends(get_db)):
@@ -84,11 +103,23 @@ async def list_bets(status: Literal["open", "settled", "excluded", "all"] = Quer
     if status == "open":
         stmt = stmt.where(PaperBet.status == "open")
     elif status == "settled":
-        stmt = stmt.where(PaperBet.status.in_(("won", "lost")))
+        stmt = stmt.where(PaperBet.status.in_(portfolio.SETTLED))
     elif status == "excluded":
         stmt = stmt.where(PaperBet.status == "excluded")
     rows = (await db.execute(stmt.order_by(PaperBet.created_at.desc()).limit(limit))).all()
-    return [_bet_dict(b, m) for b, m in rows]
+    out = [_bet_dict(b, m) for b, m in rows]
+    # Open bets: the exit plan (sale target, or sell now) with the latest forecast
+    profile = get_profile((await portfolio.get_settings(db)).preset)
+    for item, (bet, market) in zip(out, rows):
+        if bet.status != "open" or market.closed:
+            continue
+        prediction = await portfolio.latest_prediction(db, market)
+        if prediction is None:
+            continue
+        sigma = model_sigma(prediction.model_probability, prediction.evidence_strength,
+                            plans.forecast_of(prediction, 0).weight, settings.MODEL_PSEUDO_COUNT)
+        item["plan"] = plans.exit_plan(prediction, market, bet.side, profile, portfolio.days_to_end(market), sigma)
+    return out
 
 
 async def _bet(db: AsyncSession, bet_id: uuid.UUID) -> PaperBet:
@@ -178,14 +209,20 @@ async def market_economics(market_id: str, preset: Optional[Literal["prudente", 
     ev = await portfolio.evaluate_prediction(db, market, prediction, preset=preset)
     await db.commit()  # keeps the refreshed market category
     open_bet = (await db.execute(select(PaperBet).where(PaperBet.market_id == market_id, PaperBet.status == "open"))).scalar_one_or_none()
+    profile = get_profile(preset or (await portfolio.get_settings(db)).preset)
+    excluded_by = await portfolio.excluded_reason(db, market)
+    plan = await plans.plan_for(db, market, prediction, ev, profile, track=await calibration_summary(db),
+                                excluded_by=excluded_by, position=open_bet)
     return {
+        "strategy": plan.as_dict(),
         "evaluation": ev.as_dict(),
         "prediction_id": prediction.id,
         "prediction_created_at": prediction.created_at,
-        "preset": get_profile(preset or (await portfolio.get_settings(db)).preset).as_dict(),
-        "excluded_by": await portfolio.excluded_reason(db, market),
+        "preset": profile.as_dict(),
+        "excluded_by": excluded_by,
         "open_bet": _bet_dict(open_bet, market) if open_bet else None,
-        "market": {"id": market.id, "event_slug": market.event_slug, "category": market.category, "question": market.question},
+        "market": {"id": market.id, "event_slug": market.event_slug, "category": market.category, "question": market.question,
+                   "yes_price": market.yes_price},
         "evaluated_at": datetime.now().astimezone(),
     }
 

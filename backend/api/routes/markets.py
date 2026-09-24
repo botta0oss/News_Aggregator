@@ -2,6 +2,7 @@ from typing import Literal, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from backend.markets.calibration import summary as calibration_summary
 from backend.ai import jev
 from backend.ai.ratelimit import RateLimited
 from backend.ai.usage import BudgetExceeded, feature
@@ -63,6 +64,7 @@ def _market_dict(market: Market, links: int = 0, prediction: Optional[MarketPred
         "liquidity": market.liquidity,
         "closed": market.closed,
         "resolved_yes": market.resolved_yes,
+        "resolution": market.resolution,
         "linked_articles": links,
         "latest_prediction": PredictionResponse.model_validate(prediction) if prediction else None,
     }
@@ -288,20 +290,4 @@ async def list_opportunities(
 @predictions_router.get("/calibration", response_model=CalibrationResponse)
 async def calibration(db: AsyncSession = Depends(get_db)):
     """Brier score (lower is better) of the latest pre-resolution forecast vs the market price."""
-    latest = (
-        select(MarketPrediction)
-        .distinct(MarketPrediction.market_id)
-        .order_by(MarketPrediction.market_id, MarketPrediction.created_at.desc())
-        .subquery()
-    )
-    rows = (await db.execute(
-        select(Market.resolved_yes, latest.c.market_probability, latest.c.model_probability, latest.c.blended_probability)
-        .join(latest, latest.c.market_id == Market.id)
-        .where(Market.resolved_yes.is_not(None))
-    )).all()
-    return {
-        "resolved_markets": len(rows),
-        "brier_market": brier_score((r.market_probability, r.resolved_yes) for r in rows),
-        "brier_model": brier_score((r.model_probability, r.resolved_yes) for r in rows),
-        "brier_blended": brier_score((r.blended_probability, r.resolved_yes) for r in rows),
-    }
+    return await calibration_summary(db)

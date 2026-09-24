@@ -16,7 +16,7 @@ from backend.markets import polymarket
 from backend.markets.forecast import compute_signal
 from backend.markets.targeted import run_targeted_search
 from backend.alerts.service import run_alerts
-from backend.markets.matching import EvidenceItem, extract_terms, match_score, rank_evidence, term_overlap
+from backend.markets.matching import EvidenceItem, extract_terms, match_score, outlet_priors, rank_evidence, term_overlap
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +47,14 @@ def _apply_market(market: Market, data: polymarket.PolymarketMarket) -> None:
     market.end_date = data.end_date
     if data.yes_price is not None:
         market.yes_price = data.yes_price
+        if not data.closed:
+            market.last_trading_price = data.yes_price
     market.volume = data.volume
     market.liquidity = data.liquidity
     market.active = data.active
     market.closed = data.closed
     market.resolved_yes = data.resolved_yes
+    market.resolution = data.resolution
     for field in ("yes_token_id", "no_token_id", "best_bid", "best_ask", "taker_fee_bps", "order_min_size"):
         value = getattr(data, field)
         if value is not None:
@@ -83,7 +86,7 @@ async def sync_markets(session: AsyncSession, client=None) -> dict:
     await session.commit()
 
     # Tracked markets no longer in the active list: check whether they closed/resolved
-    stmt = select(Market).where(Market.resolved_yes.is_(None), Market.multi_event_id.is_(None))
+    stmt = select(Market).where(Market.resolution.is_(None), Market.multi_event_id.is_(None))
     if seen_ids:
         stmt = stmt.where(Market.id.not_in(seen_ids))
     stmt = stmt.order_by(Market.updated_at.asc()).limit(MAX_RESOLUTION_CHECKS)
@@ -100,7 +103,7 @@ async def sync_markets(session: AsyncSession, client=None) -> dict:
             market.updated_at = datetime.now(timezone.utc)
             continue
         _apply_market(market, data)
-        if data.resolved_yes is not None:
+        if data.resolution is not None:
             resolved += 1
     await session.commit()
     return {"synced": len(fetched), "created": created, "checked": len(stale), "resolved": resolved}
@@ -202,7 +205,8 @@ async def get_market_evidence(session: AsyncSession, market_id: str, limit: Opti
         cluster_sources = dict((await session.execute(
             select(Cluster.id, Cluster.source_count).where(Cluster.id.in_(cluster_ids))
         )).all())
-    return rank_evidence(rows, limit or settings.MARKET_MAX_ARTICLES, cluster_sources)
+    return rank_evidence(rows, limit or settings.MARKET_MAX_ARTICLES, cluster_sources,
+                         outlet_priors=await outlet_priors(session, rows))
 
 
 def build_jev_request(market: Market, evidence: list, now: Optional[datetime] = None):
@@ -283,6 +287,24 @@ def parse_forecast(response) -> tuple[float, float]:
     return model_p, evidence_strength
 
 
+async def ask_jev(state, questions, max_wait: Optional[float] = None, samples: Optional[int] = None):
+    """Jev forecast, averaged over `JEV_SAMPLES` calls in log-odds (an ensemble reduces the noise
+    of a single answer; every call is paid). Returns (first response, P(YES), evidence strength)."""
+    from backend.markets.forecast import logit, sigmoid
+    samples = max(1, samples or settings.JEV_SAMPLES)
+    responses = [await jev.system_one(state, questions, max_wait=max_wait)]
+    for _ in range(samples - 1):
+        try:
+            responses.append(await jev.system_one(state, questions, max_wait=max_wait))
+        except Exception as e:  # a failed extra sample is not worth losing the forecast
+            logger.info(f"Extra Jev sample skipped: {e}")
+            break
+    parsed = [parse_forecast(r) for r in responses]
+    model_p = sigmoid(sum(logit(p) for p, _ in parsed) / len(parsed))
+    strength = sum(s for _, s in parsed) / len(parsed)
+    return responses[0], model_p, strength, len(parsed)
+
+
 async def predict_market(session: AsyncSession, market: Market, max_wait: Optional[float] = None) -> MarketPrediction:
     """Runs a Jev forecast for one market and stores it together with the betting signal."""
     if not jev.is_enabled():
@@ -295,8 +317,7 @@ async def predict_market(session: AsyncSession, market: Market, max_wait: Option
         raise LookupError("No related news found for this market")
 
     state, questions = build_jev_request(market, evidence)
-    response = await jev.system_one(state, questions, max_wait=max_wait)
-    model_p, evidence_strength = parse_forecast(response)
+    response, model_p, evidence_strength, samples = await ask_jev(state, questions, max_wait=max_wait)
 
     for i, (link, *_rest) in enumerate(evidence):
         relevant = response.nouls.get(f"relevant_n{i}")
@@ -313,6 +334,9 @@ async def predict_market(session: AsyncSession, market: Market, max_wait: Option
         model_name=response.model,
         market_probability=market.yes_price,
         model_probability=round(model_p, 4),
+        calibrated_probability=signal.calibrated_probability,
+        blend_method=settings.BLEND_METHOD,
+        model_samples=samples,
         evidence_strength=round(evidence_strength, 4),
         blended_probability=signal.blended_probability,
         model_weight=signal.model_weight,
@@ -368,9 +392,10 @@ async def run_market_pipeline(session: AsyncSession) -> dict:
 
 
 async def _run_market_pipeline(session: AsyncSession) -> dict:
-    from backend.betting.portfolio import settle_bets
+    from backend.betting.portfolio import review_open_bets, settle_bets
     stats = await sync_markets(session)
     stats["settled_bets"] = await settle_bets(session)
+    stats["sold_bets"] = await review_open_bets(session)
     stats["targeted"] = await run_targeted_search(session)
     stats["links"] = await refresh_links(session)
     try:

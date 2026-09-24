@@ -24,6 +24,7 @@ from backend.db.models import (
 )
 from backend.ingestor.sources import CATEGORIES
 from backend.markets import polymarket
+from backend.betting.clv import summarize as clv_summary
 from backend.markets.matching import source_quality
 
 logger = logging.getLogger(__name__)
@@ -308,10 +309,11 @@ async def _run_event_alerts(db: AsyncSession, s: AlertSettings, stats: dict) -> 
         entry = next(o for o in prediction.outcomes if o["id"] == best_id)
         alert = Alert(
             market_id=best_id, multi_event_id=event.id, article_id=trig["article_id"], news_at=trig["published"],
-            trigger_score=trig["score"], price=entry.get("price", entry["market"]), side="YES", verdict=ev.get("verdict"),
+            trigger_score=trig["score"], price=entry.get("price", entry["market"]),
+            side="NO" if prediction.signal == "BUY_NO" else "YES", verdict=ev.get("verdict"),
             signal=prediction.signal, edge=entry["edge"], blended=entry["blended"], outlay=ev.get("outlay"),
             limit_price=ev.get("limit_price"),
-            opportunity=prediction.signal == "BUY_YES" and ev.get("verdict") in VERDICTS.get(s.min_verdict, ("GO",)),
+            opportunity=prediction.signal in ("BUY_YES", "BUY_NO") and ev.get("verdict") in VERDICTS.get(s.min_verdict, ("GO",)),
             followups={},
         )
         db.add(alert)
@@ -366,13 +368,14 @@ def _cents(p: Optional[float]) -> str:
     return "–" if p is None else f"{_short(p * 100)}¢"
 
 
-def format_message(alert: Alert, market: Market, prediction: MarketPrediction, trig: dict) -> str:
+def format_message(alert: Alert, market: Market, prediction: MarketPrediction, trig: dict,
+                   sell_above: Optional[float] = None) -> str:
     e = telegram.escape
     side = "SÌ" if alert.side == "YES" else "NO"
     verdict = "conviene" if alert.verdict == "GO" else "conviene, puntata piccola"
     age_min = max(0, int((_now() - trig["published"]).total_seconds() // 60)) if trig.get("published") else None
     age = "" if age_min is None else (f", {age_min} min fa" if age_min < 120 else f", {age_min // 60} ore fa")
-    head = f"Compra SÌ su {e(trig['outcome'])}" if trig.get("outcome") else f"Compra {side}"
+    head = f"Compra {side} su {e(trig['outcome'])}" if trig.get("outcome") else f"Compra {side}"
     lines = [
         f"🔔 <b>{head}</b> · {verdict}",
         f"<b>{e(trig.get('event_title') or market.question)}</b>",
@@ -383,11 +386,31 @@ def format_message(alert: Alert, market: Market, prediction: MarketPrediction, t
         f"Edge {'+' if (alert.edge or 0) >= 0 else '−'}{_num(abs(alert.edge or 0) * 100, 1)} pt",
     ]
     if alert.outlay:
-        lines.append(f"Puntata simulata {_num(alert.outlay, 2)} $, prezzo massimo {_cents(alert.limit_price)} per quota {side}")
+        lines += ["", f"<b>Ordine</b>: compra {side} con limite {_cents(alert.limit_price)} (puntata simulata {_num(alert.outlay, 2)} $)"]
+        if sell_above is not None:
+            lines.append(f"<b>Poi</b>: vendita limite a {_cents(sell_above)}, oppure tieni fino alla risoluzione")
     if settings.PUBLIC_URL:
         path = f"multi/{market.multi_event_id}" if market.multi_event_id else f"mercati/{market.id}"
         lines += ["", f"{settings.PUBLIC_URL.rstrip('/')}/#/{path}"]
     return "\n".join(lines)
+
+
+async def _sell_target(db: AsyncSession, alert: Alert, market: Market, prediction) -> Optional[float]:
+    """Price at which to sell the shares the alert suggests buying (see betting/strategy.py)."""
+    from backend.betting import portfolio
+    from backend.betting.economics import model_sigma
+    from backend.betting.plans import exit_plan, forecast_of
+    from backend.betting.profiles import get_profile
+    if alert.side not in ("YES", "NO"):
+        return None
+    try:
+        profile = get_profile((await portfolio.get_settings(db)).preset)
+        sigma = model_sigma(prediction.model_probability, prediction.evidence_strength,
+                            forecast_of(prediction, 0).weight, settings.MODEL_PSEUDO_COUNT)
+        return exit_plan(prediction, market, alert.side, profile, portfolio.days_to_end(market), sigma)["sell_above"]
+    except Exception as e:
+        logger.info(f"No sale target for alert {alert.id}: {e}")
+        return None
 
 
 async def notify(db: AsyncSession, alert: Alert, market: Market, prediction: MarketPrediction, trig: dict,
@@ -395,7 +418,8 @@ async def notify(db: AsyncSession, alert: Alert, market: Market, prediction: Mar
     if not s.telegram_enabled or not telegram.is_configured():
         return False
     try:
-        await telegram.send_message(format_message(alert, market, prediction, trig), silent=in_quiet_hours(s))
+        await telegram.send_message(format_message(alert, market, prediction, trig, await _sell_target(db, alert, market, prediction)),
+                                    silent=in_quiet_hours(s))
         alert.notified_at = _now()
         ok = True
     except telegram.TelegramError as e:
@@ -455,10 +479,11 @@ def followup_price(alert: Alert, key: str) -> Optional[float]:
 async def summary(db: AsyncSession, days: int = 30) -> dict:
     """How the opportunities did: price move after the alert and outcome of resolved markets."""
     since = _now() - timedelta(days=days)
-    rows = (await db.execute(
-        select(Alert, Market.resolved_yes).join(Market, Market.id == Alert.market_id)
+    rows3 = (await db.execute(
+        select(Alert, Market.resolved_yes, Market).join(Market, Market.id == Alert.market_id)
         .where(Alert.created_at >= since)
     )).all()
+    rows = [(a, r) for a, r, _ in rows3]
     opps = [(a, r) for a, r in rows if a.opportunity]
     moves = {}
     for key in CHECKPOINTS:
@@ -468,6 +493,8 @@ async def summary(db: AsyncSession, days: int = 30) -> dict:
             "avg_move": round(sum(values) / len(values), 4) if values else None,
             "share_favorable": round(sum(1 for v in values if v > 0) / len(values), 4) if values else None,
         }
+    closing = {a.id: favorable_move(a, m.last_trading_price) for a, _, m in rows3 if m.closed}
+    clv_values = [closing.get(a.id) for a, _ in opps]
     resolved = [(a, r) for a, r in opps if r is not None and a.side in ("YES", "NO")]
     won = sum(1 for a, r in resolved if (a.side == "YES") == r)
     s = await get_settings(db)
@@ -479,6 +506,8 @@ async def summary(db: AsyncSession, days: int = 30) -> dict:
         "moves": moves,
         "resolved": len(resolved),
         "won": won,
+        # Move from the alert price to the closing price, in the suggested direction
+        "clv": clv_summary(clv_values),
         "calls_last_24h": await calls_last_24h(db),
         "daily_budget": s.daily_budget,
     }

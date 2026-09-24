@@ -30,12 +30,13 @@ class PolymarketMarket:
     active: bool
     closed: bool
     resolved_yes: Optional[bool]
+    resolution: Optional[str] = None         # yes / no / split (50-50), once final
     # Trading data (CLOB): token ids of the YES/NO shares, top of book, fees, minimum order
     yes_token_id: Optional[str] = None
     no_token_id: Optional[str] = None
     best_bid: Optional[float] = None
     best_ask: Optional[float] = None
-    taker_fee_bps: Optional[float] = None
+    taker_fee_bps: Optional[float] = None    # set from the category and the CLOB fee switch (betting/fees.py)
     order_min_size: Optional[float] = None
     start_date: Optional[datetime] = None
     closed_time: Optional[datetime] = None   # when trading actually stopped (can be before end_date)
@@ -82,6 +83,27 @@ def _datetime(value: Any) -> Optional[datetime]:
         return None
 
 
+def resolution_of(closed: bool, yes_price: Optional[float], uma_status: Any) -> Optional[str]:
+    """Final outcome of a market: "yes", "no", "split" (paid 50-50) or None while not final.
+
+    Prices settle to 1/0 (or 0.5/0.5 for a split) once resolved; the UMA oracle status, when
+    Gamma reports it, must also be "resolved" (a proposed or disputed outcome can still change).
+    A market closed around 0.5 counts as split only when the oracle status confirms it.
+    """
+    if not closed or yes_price is None:
+        return None
+    status = str(uma_status).strip().lower() if uma_status else None
+    if status and status != "resolved":
+        return None
+    if yes_price >= 0.99:
+        return "yes"
+    if yes_price <= 0.01:
+        return "no"
+    if status == "resolved" and 0.45 <= yes_price <= 0.55:
+        return "split"
+    return None
+
+
 def parse_market(raw: dict) -> Optional[PolymarketMarket]:
     """Parses a Gamma market object. Returns None for non-binary or malformed markets."""
     outcomes = [str(o).strip().lower() for o in _json_list(raw.get("outcomes"))]
@@ -93,18 +115,12 @@ def parse_market(raw: dict) -> Optional[PolymarketMarket]:
     yes_price = yes_price if 0.0 <= yes_price <= 1.0 else None
     closed = bool(raw.get("closed"))
 
-    # Once a market resolves, outcome prices settle to 1/0
-    resolved_yes = None
-    if closed and yes_price is not None:
-        if yes_price >= 0.99:
-            resolved_yes = True
-        elif yes_price <= 0.01:
-            resolved_yes = False
+    resolution = resolution_of(closed, yes_price, raw.get("umaResolutionStatus"))
+    resolved_yes = {"yes": True, "no": False}.get(resolution)
 
     token_ids = [str(t) for t in _json_list(raw.get("clobTokenIds"))]
     best_bid = _float(raw.get("bestBid"), default=-1.0)
     best_ask = _float(raw.get("bestAsk"), default=-1.0)
-    fee = raw.get("takerBaseFee")
 
     events = raw.get("events") or []
     event_slug = events[0].get("slug") if events and isinstance(events[0], dict) else None
@@ -122,11 +138,11 @@ def parse_market(raw: dict) -> Optional[PolymarketMarket]:
         active=bool(raw.get("active", True)),
         closed=closed,
         resolved_yes=resolved_yes,
+        resolution=resolution,
         yes_token_id=token_ids[0] if len(token_ids) == 2 else None,
         no_token_id=token_ids[1] if len(token_ids) == 2 else None,
         best_bid=best_bid if 0.0 <= best_bid <= 1.0 else None,
         best_ask=best_ask if 0.0 < best_ask <= 1.0 else None,
-        taker_fee_bps=_float(fee) if fee is not None else None,
         order_min_size=_float(raw.get("orderMinSize")) or None,
         start_date=_datetime(raw.get("startDate") or raw.get("createdAt")),
         closed_time=_datetime(raw.get("closedTime")),
