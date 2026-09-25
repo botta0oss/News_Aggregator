@@ -55,24 +55,52 @@ export async function viewPortfolio(ctx) {
     });
     return btn;
   };
+  // Manual sale: asks first, and offers to keep the automatic buys off this market, otherwise
+  // the next forecast that still says "worth it" would buy it back at a higher price
+  const sellNow = (bet) => {
+    const btn = h("button", { class: "btn btn-ghost btn-sm", type: "button" }, t("Vendi ora"));
+    btn.addEventListener("click", () => {
+      const cell = btn.closest("td");
+      const previous = [...cell.childNodes];
+      const box = h("input", { type: "checkbox", id: `sell-excl-${bet.id}`, checked: true });
+      const go = h("button", { class: "btn btn-danger-solid btn-sm", type: "button" }, t("Vendi"));
+      const cancel = h("button", { class: "btn btn-ghost btn-sm", type: "button", on: { click: () => cell.replaceChildren(...previous) } }, t("Annulla"));
+      go.addEventListener("click", async () => {
+        go.disabled = cancel.disabled = true;
+        try {
+          await api(`/portfolio/bets/${bet.id}/sell`, { method: "POST" });
+          if (box.checked) await api("/portfolio/exclusions", { method: "POST", body: { kind: "market", value: bet.market_id, label: bet.question } });
+          toast(box.checked ? t("Scommessa venduta; il mercato è escluso dagli acquisti automatici") : t("Scommessa venduta al prezzo del book"));
+          refresh();
+        } catch (e) { toast(e.message, { error: true }); go.disabled = cancel.disabled = false; }
+      });
+      cell.replaceChildren(h("div", { class: "confirm", role: "group", "aria-label": t("Conferma la vendita") },
+        h("p", { class: "small" }, t("Vendere {0} quote al miglior prezzo del book, circa {1}?", fmt.shares(bet.shares), money(bet.current_value))),
+        h("label", { class: "small", for: `sell-excl-${bet.id}` }, box, " ", t("Escludi il mercato dagli acquisti automatici")),
+        h("div", { class: "confirm-actions" }, go, cancel)));
+      go.focus();
+    });
+    return btn;
+  };
   const marketLink = (b) => h("a", { href: b.multi_event_id ? `#/multi/${encodeURIComponent(b.multi_event_id)}` : `#/mercati/${encodeURIComponent(b.market_id)}` }, b.question);
 
   const openTable = open.length ? h("div", { class: "table-wrap" }, h("table", {},
     h("thead", {}, h("tr", {},
       h("th", {}, t("Mercato")), h("th", {}, t("Lato")), h("th", { class: "num" }, t("Quote")), h("th", { class: "num" }, t("Prezzo medio")),
-      h("th", { class: "num" }, t("Costo")), h("th", { class: "num" }, t("Prezzo attuale")), h("th", { class: "num" }, t("Valore")),
+      h("th", { class: "num" }, t("Costo")), h("th", { class: "num" }, t("Prezzo di vendita"), infoTip(t("Miglior prezzo di acquisto offerto nel book all'ultimo aggiornamento: quanto si incasserebbe vendendo ora. Valore e profitto latente sono calcolati a questo prezzo, al netto della commissione di vendita; al passaggio del mouse, il prezzo di mercato."))),
+      h("th", { class: "num" }, t("Valore")),
       h("th", { class: "num" }, t("Profitto latente")), h("th", {}, t("Piano")), h("th", {}, t("Scade")), admin ? h("th", {}, h("span", { class: "sr-only" }, t("Azioni"))) : null,
     )),
     h("tbody", {}, open.map((b) => h("tr", {},
       h("td", { class: "q-cell" }, marketLink(b)), h("td", {}, sideBadge(b.side)),
       h("td", { class: "num" }, fmt.shares(b.shares)), h("td", { class: "num" }, fmt.cents(b.avg_price)),
-      h("td", { class: "num" }, money(b.outlay)), h("td", { class: "num" }, fmt.cents(b.current_price)),
-      h("td", { class: "num" }, money(b.current_value)),
+      h("td", { class: "num" }, money(b.outlay)), h("td", { class: "num", title: b.current_price != null ? t("Prezzo di mercato {0}", fmt.cents(b.current_price)) : "" }, fmt.cents(b.bid_price)),
+      h("td", { class: "num", title: b.mid_value != null ? t("Al prezzo di mercato: {0}", money(b.mid_value)) : "" }, money(b.current_value)),
       h("td", { class: `num ${pnlCls(b.unrealized_pnl)}` }, fmt.signedMoney(b.unrealized_pnl)),
       h("td", { class: "nowrap" }, planCell(b)),
       h("td", { class: "nowrap" }, fmt.date(b.end_date)),
       admin ? h("td", { class: "row-actions" },
-        betAction(b, `/portfolio/bets/${b.id}/sell`, t("Vendi ora"), t("Scommessa venduta al prezzo del book")),
+        sellNow(b),
         betAction(b, `/portfolio/bets/${b.id}/exclude`, t("Escludi"), t("Scommessa esclusa dalla simulazione")), excludeMarket(b)) : null,
     ))),
   )) : h("p", { class: "secondary" }, t("Nessuna posizione aperta."));
@@ -119,7 +147,8 @@ export async function viewPortfolio(ctx) {
     h("div", { class: "kpis" },
       statTile(t("Valore attuale"), money(data.total_value), data.roi != null ? t("{0} da capitale {1}", fmt.pts(data.roi).replace(` ${t("pt")}`, "%"), money(s.bankroll)) : ""),
       statTile(t("Profitti realizzati"), fmt.signedMoney(data.realized_pnl), t("{0} vinte · {1} perse{2}{3}", data.counts.won, data.counts.lost, data.counts.sold ? t(" · {0} vendute", data.counts.sold) : "", data.counts.void ? t(" · {0} annullate", data.counts.void) : "")),
-      statTile(t("Profitti latenti"), fmt.signedMoney(data.unrealized_pnl), t("{0} aperte · {1} investiti", data.counts.open, money(data.invested))),
+      statTile(h("span", {}, t("Profitti latenti"), infoTip(t("Vendendo ora le posizioni aperte al miglior prezzo offerto, commissione compresa. Al prezzo di mercato sarebbero {0}.", fmt.signedMoney(data.unrealized_pnl_mid)))),
+        fmt.signedMoney(data.unrealized_pnl), t("{0} aperte · {1} investiti", data.counts.open, money(data.invested))),
       statTile(t("Scommesse vinte"), data.hit_rate != null ? fmt.pct(data.hit_rate) : "–", t("liquidità {0}", money(data.cash))),
       statTile(t("Prezzo di chiusura"), data.clv?.n ? fmt.pts(data.clv.avg) : "–",
         data.clv?.n ? t("{0} comprate sotto la chiusura · {1}", fmt.pct(data.clv.share_positive), fmt.count(data.clv.n, t("mercato chiuso"), t("mercati chiusi")))
@@ -173,7 +202,7 @@ function settingsCard(ctx, data, refresh) {
   const paintReset = () => resetArea.replaceChildren(
     h("div", { class: "reset-row" },
       h("span", {}, t("Capitale iniziale "), h("b", { class: "mono" }, money(s.bankroll))),
-      admin ? h("button", { class: "btn btn-ghost btn-sm", type: "button", on: { click: askReset } }, "Ricomincia…") : null,
+      admin ? h("button", { class: "btn btn-ghost btn-sm", type: "button", on: { click: askReset } }, t("Ricomincia…")) : null,
     ));
   function askReset() {
     const amount = h("input", { id: "reset-amount", class: "input", type: "number", min: "10", step: "10", value: String(s.bankroll), style: { maxWidth: "160px" } });

@@ -47,14 +47,19 @@ every forecast and, live, in the **Worth it?** card of the market detail page.
 - **Selling:** after every market update and every new forecast, open positions are reviewed
   with the [strategy](#buy-and-sell-strategy): if the plan says «Sell», the shares are sold on
   the book (status «sold», with price and reason). It can be turned off («Sell automatically»)
-  or done by hand. Sales at a profit count as won.
+  or done by hand: «Sell now» asks for confirmation and offers to exclude the market from
+  automatic buys (on by default), otherwise the next forecast that still says «worth it» would
+  buy it back at a higher price. Sales at a profit count as won.
 - **Closing:** happens when the market resolves for good (price at 1/0 and, if Gamma reports
   it, `umaResolutionStatus` = «resolved»: an outcome that is only proposed or disputed can still
   change). A winning share is worth $1; if the market closes 50-50 each share is worth $0.50
   and the bet counts as «voided» (outside the win rate).
 - **What it shows:** current value, realised and unrealised profits, win rate, capital curve and a comparison between expected and actual profit.
+  Open positions are valued at what selling them now would fetch: the best bid from the last
+  sync, minus the sale fee (the value at the market price is shown on hover).
 - **Exclusions:**
-  - single bets, even already closed ones (they do not count in the results and can be readmitted);
+  - single bets, even already closed ones (they do not count in the results and can be readmitted
+    as they were: same result and closing date; a sold bet comes back sold);
   - markets, events or categories, which automatic bets skip.
 - **Settings:** you can choose the preset, turn automatic bets and sales on or off, or start over with a new capital.
 

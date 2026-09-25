@@ -46,6 +46,11 @@ async def best_bid(market: Market, side: str) -> Optional[float]:
                 return book.bids[0][0]
         except Exception as e:
             logger.info(f"Order book unavailable for {market.id} ({side}): {e}")
+    return known_bid(market, side)
+
+
+def known_bid(market: Market, side: str) -> Optional[float]:
+    """Best bid of `side` from the last sync (no network): Gamma's top of book, else mid − half spread."""
     if side == "YES" and market.best_bid is not None:
         return market.best_bid
     if side == "NO" and market.best_ask is not None:

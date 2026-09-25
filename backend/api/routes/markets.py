@@ -14,6 +14,7 @@ from backend.api.schemas import (
 from backend.db.database import get_db, SessionLocal
 from backend.db.models import Market, MarketArticleLink, MarketPrediction
 from backend.config import settings
+from backend.betting import portfolio
 from backend.markets import bulk, polymarket, targeted
 from backend.markets.forecast import brier_score
 from backend.markets.service import get_market_evidence, predict_market, refresh_links, run_market_pipeline
@@ -283,10 +284,15 @@ async def list_opportunities(
         stmt = stmt.where(MarketPrediction.signal != "HOLD")
     rows = (await db.execute(stmt.order_by(func.abs(MarketPrediction.edge).desc()).limit(limit))).all()
     counts = await _link_counts(db, [m.id for m, _ in rows])
-    return [
-        {"market": _market_dict(m, counts.get(m.id, 0), p), "prediction": PredictionResponse.model_validate(p)}
-        for m, p in rows
-    ]
+    out = []
+    for m, p in rows:
+        prediction = PredictionResponse.model_validate(p)
+        # The evaluation is the one of the forecast; exposure and cash may have changed since (a sale)
+        stale = await portfolio.stale_portfolio_reasons(db, m, p.economics)
+        if stale:
+            prediction.economics = {**prediction.economics, "stale": stale}
+        out.append({"market": _market_dict(m, counts.get(m.id, 0), p), "prediction": prediction})
+    return out
 
 
 @predictions_router.get("/calibration", response_model=CalibrationResponse)
