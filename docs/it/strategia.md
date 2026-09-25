@@ -48,15 +48,21 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
 - **Vendita:** dopo ogni aggiornamento dei mercati e ogni nuova previsione le posizioni aperte
   vengono riviste con la [strategia](#strategia-di-acquisto-e-vendita): se il piano dice
   «Vendi», le quote vengono vendute sul book (stato «venduta», con prezzo e motivo). Si può
-  disattivare («Vendi automaticamente») o vendere a mano. Le vendite in guadagno contano come
-  vinte.
+  disattivare («Vendi automaticamente») o vendere a mano: «Vendi ora» chiede conferma e propone
+  di escludere il mercato dagli acquisti automatici (attivo di base), altrimenti la previsione
+  successiva che dice ancora «conviene» lo ricomprerebbe a un prezzo più alto. Le vendite in
+  guadagno contano come vinte.
 - **Chiusura:** avviene quando il mercato si risolve in modo definitivo (prezzo a 1/0 e, se
   Gamma lo riporta, `umaResolutionStatus` = «resolved»: un esito solo proposto o contestato
   può ancora cambiare). Una quota vincente vale 1 $; se il mercato si chiude 50-50 ogni quota
   vale 0,50 $ e la scommessa risulta «annullata» (fuori dalla percentuale di vittorie).
 - **Cosa mostra:** valore attuale, profitti realizzati e latenti, percentuale di vittorie, curva del capitale e confronto tra profitto atteso e reale.
+  Le posizioni aperte valgono quanto si incasserebbe vendendole ora: il miglior prezzo di
+  acquisto dell'ultimo aggiornamento, meno la commissione di vendita (il valore al prezzo di
+  mercato compare al passaggio del mouse).
 - **Esclusioni:**
-  - singole scommesse, anche già chiuse (non contano nei risultati e si possono riammettere);
+  - singole scommesse, anche già chiuse (non contano nei risultati e si possono riammettere
+    com'erano: stesso risultato e stessa data di chiusura; una scommessa venduta torna venduta);
   - mercati, eventi o categorie, che le scommesse automatiche saltano.
 - **Impostazioni:** si possono scegliere il preset, attivare o disattivare le scommesse e le vendite automatiche, oppure ricominciare con un nuovo capitale.
 

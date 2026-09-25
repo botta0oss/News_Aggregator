@@ -188,6 +188,29 @@ async def evaluate_prediction(db: AsyncSession, market: Market, prediction: Mark
     )
 
 
+PORTFOLIO_REASONS = ("exposure_cap", "no_cash")  # reasons that depend on the portfolio, not on the market
+
+
+async def stale_portfolio_reasons(db: AsyncSession, market: Market, economics: Optional[dict]) -> list[str]:
+    """Blocking reasons of a stored evaluation that depend on the portfolio (exposure caps full, no
+    cash) and no longer hold now, e.g. after a sale. Prices are not re-read: only the portfolio."""
+    codes = {r.get("code") for r in (economics or {}).get("reasons", []) if r.get("blocking")} & set(PORTFOLIO_REASONS)
+    if not codes:
+        return []
+    profile = get_profile((await get_settings(db)).preset)
+    led, exp = await ledger(db), await exposure_for(db, market)
+    equity = led["equity"]
+    full = any(frac * equity - used <= 0 for frac, used in (
+        (profile.max_market_frac, exp.market), (profile.max_event_frac, exp.event),
+        (profile.max_category_frac, exp.category), (profile.max_total_frac, exp.total)))
+    stale = []
+    if "exposure_cap" in codes and not full:
+        stale.append("exposure_cap")
+    if "no_cash" in codes and led["cash"] > 0:
+        stale.append("no_cash")
+    return stale
+
+
 # ---------- Exclusions ----------
 
 async def excluded_reason(db: AsyncSession, market: Market) -> Optional[str]:
@@ -269,7 +292,7 @@ async def settle_bets(db: AsyncSession) -> int:
             bet.payout = bet.shares if won else 0.0
             bet.status = "won" if won else "lost"
         bet.pnl = bet.payout - bet.stake - bet.fee
-        bet.settled_at = _now()
+        bet.settled_at = bet.settled_at or _now()  # a readmitted bet keeps its original closing time
     await db.commit()
     return len(rows)
 
@@ -291,7 +314,7 @@ async def sell_bet(db: AsyncSession, bet: PaperBet, market: Market, reason: str,
     if not bids:
         price = await best_bid(market, bet.side)
         bids = [(price, bet.shares)] if price else []
-    fee_bps = market.taker_fee_bps if market.taker_fee_bps is not None else fees.category_rate(market.category) * 10_000
+    fee_bps = fee_bps_of(market)
     left, proceeds, fee = bet.shares, 0.0, 0.0
     for price, size in bids:
         if price < min_price or left <= 1e-9:
@@ -345,13 +368,17 @@ async def review_open_bets(db: AsyncSession, market_ids: Optional[list] = None, 
 
 
 async def latest_prediction(db: AsyncSession, market: Market):
-    """Latest forecast for a market (for an outcome of a multi-outcome event, its share of the distribution)."""
+    """Latest forecast for a market (for an outcome of a multi-outcome event, its share of the distribution).
+    An outcome without a forecast of its event falls back to a forecast of the market itself:
+    bets placed before multi-outcome support were forecast as Yes/No markets."""
     if market.multi_event_id:
         from backend.db.models import MultiPrediction
         from backend.multi.service import outcome_prediction
         latest = (await db.execute(select(MultiPrediction).where(MultiPrediction.event_id == market.multi_event_id)
                                    .order_by(MultiPrediction.created_at.desc()).limit(1))).scalar_one_or_none()
-        return outcome_prediction(latest, market.id) if latest else None
+        outcome = outcome_prediction(latest, market.id) if latest else None
+        if outcome is not None:
+            return outcome
     return (await db.execute(select(MarketPrediction).where(MarketPrediction.market_id == market.id)
                              .order_by(MarketPrediction.created_at.desc()).limit(1))).scalar_one_or_none()
 
@@ -363,12 +390,27 @@ def bet_clv(bet: PaperBet, market: Market) -> Optional[float]:
     return clv.clv(bet.avg_price, market.last_trading_price, bet.side)
 
 
-def mark_value(bet: PaperBet, market: Market) -> Optional[float]:
-    """Current value of an open bet at the market price (what the shares would be worth now)."""
+def fee_bps_of(market: Market) -> float:
+    return market.taker_fee_bps if market.taker_fee_bps is not None else fees.category_rate(market.category) * 10_000
+
+
+def mid_value(bet: PaperBet, market: Market) -> Optional[float]:
+    """Value of an open bet at the market (mid) price."""
     if market.yes_price is None:
         return None
     price = market.yes_price if bet.side == "YES" else 1.0 - market.yes_price
     return bet.shares * price
+
+
+def mark_value(bet: PaperBet, market: Market) -> Optional[float]:
+    """What an open bet would fetch if sold now: the shares at the best bid known from the last
+    sync, minus the sale fee. Lower than the value at the mid price by half the spread."""
+    from backend.betting.fees import fee_per_share
+    from backend.betting.plans import known_bid
+    bid = known_bid(market, bet.side)
+    if bid is None:
+        return None
+    return bet.shares * (bid - fee_per_share(bid, fee_bps_of(market)))
 
 
 async def summary(db: AsyncSession) -> dict:
@@ -376,7 +418,7 @@ async def summary(db: AsyncSession) -> dict:
     led = await ledger(db)
     bets = (await db.execute(select(PaperBet, Market).join(Market, Market.id == PaperBet.market_id)
                              .order_by(PaperBet.created_at))).all()
-    open_value = unrealized = 0.0
+    open_value = unrealized = unrealized_mid = 0.0
     counts = Counter(bet.status for bet, _ in bets)
     expected_settled = 0.0
     settled_rows = sorted((r for r in bets if r[0].status in SETTLED), key=lambda r: r[0].settled_at)
@@ -393,6 +435,9 @@ async def summary(db: AsyncSession) -> dict:
             if value is not None:
                 open_value += value
                 unrealized += value - bet.stake - bet.fee
+            mid = mid_value(bet, market)
+            if mid is not None:
+                unrealized_mid += mid - bet.stake - bet.fee
     settled = counts["won"] + counts["lost"]
     sold_won = sum(1 for bet, _ in bets if bet.status == "sold" and (bet.pnl or 0) > 0)
     return {
@@ -403,7 +448,8 @@ async def summary(db: AsyncSession) -> dict:
         "invested": led["open_outlay"],
         "open_value": open_value,
         "realized_pnl": led["realized"],
-        "unrealized_pnl": unrealized,
+        "unrealized_pnl": unrealized,          # selling now at the best bid, sale fee included
+        "unrealized_pnl_mid": unrealized_mid,  # at the market (mid) price
         "total_value": led["cash"] + open_value,
         "roi": (led["cash"] + open_value - s.bankroll) / s.bankroll if s.bankroll else None,
         "counts": {"open": counts["open"], "won": counts["won"], "lost": counts["lost"], "void": counts["void"], "sold": counts["sold"], "excluded": counts["excluded"]},

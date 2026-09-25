@@ -6,7 +6,7 @@ markets with the current implied probability of YES.
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 import httpx
 from backend.config import settings
@@ -377,22 +377,43 @@ async def fetch_resolved_markets(
     return markets[:limit]
 
 
+# The CLOB answers 400 ("'startTs' and 'endTs' interval is too long") to windows longer than
+# about 15 days, and for resolved markets it often has no points finer than 12 hours.
+HISTORY_MAX_WINDOW = timedelta(days=14)
+HISTORY_FIDELITIES = (60, 720)   # minutes: hourly first, then every 12 hours
+
+
 async def fetch_price_history(token_id: str, start: datetime, end: datetime,
                               client: Optional[httpx.AsyncClient] = None) -> list[tuple[datetime, float]]:
-    """Price points (time, price) of a share between two dates, from the CLOB (hourly)."""
+    """Price points (time, price) of a share between two dates, from the CLOB.
+
+    Long periods are fetched in windows of at most 14 days. If there are no hourly points
+    (common for resolved markets) it asks again every 12 hours. A market the CLOB does not
+    know (4xx) has no history: an empty list, not an error."""
     own_client = client is None
     client = client or httpx.AsyncClient(base_url=settings.POLYMARKET_CLOB_URL, timeout=20.0)
     try:
-        res = await client.get("/prices-history", params={
-            "market": token_id, "startTs": int(start.timestamp()), "endTs": int(end.timestamp()), "fidelity": 60,
-        })
-        res.raise_for_status()
-        points = []
-        for point in (res.json() or {}).get("history") or []:
-            t, p = point.get("t"), _float(point.get("p"), -1.0)
-            if isinstance(t, (int, float)) and 0.0 <= p <= 1.0:
-                points.append((datetime.fromtimestamp(t, tz=timezone.utc), p))
-        return sorted(points)
+        for fidelity in HISTORY_FIDELITIES:
+            points: dict[int, float] = {}
+            lo = start
+            while lo < end:
+                hi = min(end, lo + HISTORY_MAX_WINDOW)
+                res = await client.get("/prices-history", params={
+                    "market": token_id, "startTs": int(lo.timestamp()), "endTs": int(hi.timestamp()),
+                    "fidelity": fidelity,
+                })
+                if 400 <= res.status_code < 500 and res.status_code != 429:
+                    logger.info(f"No price history for token {token_id[:12]}…: {res.status_code} {res.text[:200]}")
+                    return []
+                res.raise_for_status()
+                for point in (res.json() or {}).get("history") or []:
+                    t, p = point.get("t"), _float(point.get("p"), -1.0)
+                    if isinstance(t, (int, float)) and 0.0 <= p <= 1.0 and lo.timestamp() <= t <= hi.timestamp():
+                        points[int(t)] = p
+                lo = hi
+            if points:
+                return sorted((datetime.fromtimestamp(t, tz=timezone.utc), p) for t, p in points.items())
+        return []
     finally:
         if own_client:
             await client.aclose()

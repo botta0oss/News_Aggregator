@@ -118,7 +118,12 @@ async def test_settlement_pnl_curve_and_exclusion(db, book):
         await s.commit()
         summ = await portfolio.summary(s)
         bet = (await s.execute(select(PaperBet))).scalar_one()
-        assert summ["unrealized_pnl"] == pytest.approx(bet.shares * 0.5 - 40)
+        assert summ["unrealized_pnl_mid"] == pytest.approx(bet.shares * 0.5 - 40)
+        # Selling now: at the bid (no book synced: mid − half the default spread), minus the sale fee
+        from backend.betting.fees import fee_per_share
+        from backend.config import settings
+        bid = 0.5 - settings.DEFAULT_SPREAD / 2
+        assert summ["unrealized_pnl"] == pytest.approx(bet.shares * (bid - fee_per_share(bid, portfolio.fee_bps_of(m))) - 40)
         m.resolved_yes, m.closed = True, True
         await s.commit()
         assert await portfolio.settle_bets(s) == 1
@@ -315,3 +320,128 @@ async def test_auto_sell_off_and_manual_sell(db, book):
         assert r.status_code == 200 and r.json()["status"] == "sold" and r.json()["exit_reason"] == "Venduta a mano"
         assert (await api.post(f"/portfolio/bets/{bet.id}/sell")).status_code == 409
         assert (await api.put("/portfolio/settings", json={"auto_sell": True})).json()["auto_sell"] is True
+
+
+async def test_excluding_and_readmitting_a_closed_bet_keeps_its_history(db, book):
+    """A lost bet excluded and readmitted keeps its closing time and result (equity curve)."""
+    closed_at = NOW - timedelta(days=2)
+    async with SessionLocal() as s:
+        m = await make_market(s)
+        await portfolio.apply_economics(s, m, await make_prediction(s, m))
+        m.resolved_yes, m.closed = False, True
+        await s.commit()
+        await portfolio.settle_bets(s)
+        bet = (await s.execute(select(PaperBet))).scalar_one()
+        bet.settled_at = closed_at
+        await s.commit()
+        pnl = bet.pnl
+        assert bet.status == "lost" and pnl < 0
+    async with login_client("admin") as api:
+        assert (await api.post(f"/portfolio/bets/{bet.id}/exclude")).json()["status"] == "excluded"
+        summ = (await api.get("/portfolio")).json()
+        assert summ["equity"] == pytest.approx(1000) and summ["realized_pnl"] == pytest.approx(0)
+        assert summ["counts"]["lost"] == 0 and len(summ["equity_curve"]) == 1
+        assert (await api.post(f"/portfolio/bets/{bet.id}/include")).json()["status"] == "lost"
+        summ = (await api.get("/portfolio")).json()
+    async with SessionLocal() as s:
+        bet = await s.get(PaperBet, bet.id)
+        assert bet.settled_at == closed_at and bet.pnl == pytest.approx(pnl)
+    assert summ["equity"] == pytest.approx(1000 + pnl)
+    assert datetime.fromisoformat(summ["equity_curve"][-1]["t"]) == closed_at
+
+
+async def test_excluding_and_readmitting_a_sold_bet_keeps_it_sold(db, book):
+    """A bet sold before resolution is readmitted as sold, not as an open position."""
+    async with SessionLocal() as s:
+        m = await make_market(s)
+        await portfolio.apply_economics(s, m, await make_prediction(s, m))
+        bet = (await s.execute(select(PaperBet))).scalar_one()
+        assert await portfolio.sell_bet(s, bet, m, "Venduta a mano")
+        await s.refresh(bet)
+        sold = (bet.exit_price, bet.fee, bet.pnl, bet.settled_at)
+    async with login_client("admin") as api:
+        before = (await api.get("/portfolio")).json()
+        await api.post(f"/portfolio/bets/{bet.id}/exclude")
+        assert (await api.post(f"/portfolio/bets/{bet.id}/include")).json()["status"] == "sold"
+        after = (await api.get("/portfolio")).json()
+        assert (await api.get("/portfolio/bets", params={"status": "open"})).json() == []
+    async with SessionLocal() as s:
+        bet = await s.get(PaperBet, bet.id)
+        assert (bet.exit_price, bet.fee, bet.pnl, bet.settled_at) == sold
+    assert after["equity"] == pytest.approx(before["equity"]) and after["invested"] == pytest.approx(0)
+    assert after["counts"]["sold"] == 1 and after["counts"]["open"] == 0
+
+
+async def test_outcome_without_event_forecast_uses_its_own_forecast(db, book):
+    """A position on an outcome of a multi-outcome event with no event forecast (placed before
+    multi-outcome support) falls back to the market's own forecast: it gets an exit plan."""
+    async with SessionLocal() as s:
+        m = await make_market(s, mid="m-outcome")
+        m.multi_event_id = "ev-1"
+        await s.commit()
+        p = await make_prediction(s, m)
+        s.add(PaperBet(market_id=m.id, prediction_id=p.id, side="YES", shares=100, avg_price=0.36, stake=36.0, fee=0.5,
+                       p_side=0.5, p_conservative=0.45, expected_profit=5.0, preset="bilanciato", status="open", placed_by="auto"))
+        await s.commit()
+        assert (await portfolio.latest_prediction(s, m)).id == p.id
+    async with login_client("admin") as api:
+        bets = (await api.get("/portfolio/bets", params={"status": "open"})).json()
+    assert bets[0]["plan"]["action"] in ("HOLD", "SELL") and bets[0]["plan"]["sell_above"] is not None
+
+
+async def test_open_bet_is_valued_at_the_bid_it_would_sell_at(db, book):
+    async with SessionLocal() as s:
+        m = await make_market(s)
+        await portfolio.apply_economics(s, m, await make_prediction(s, m))
+        m.yes_price, m.best_bid, m.best_ask = 0.5, 0.47, 0.53
+        await s.commit()
+        bet = (await s.execute(select(PaperBet))).scalar_one()
+        from backend.betting.fees import fee_per_share
+        assert portfolio.mark_value(bet, m) == pytest.approx(bet.shares * (0.47 - fee_per_share(0.47, portfolio.fee_bps_of(m))))
+        assert portfolio.mid_value(bet, m) == pytest.approx(bet.shares * 0.5)
+    async with login_client("viewer") as api:
+        row = (await api.get("/portfolio/bets", params={"status": "open"})).json()[0]
+    assert row["bid_price"] == 0.47 and row["current_price"] == 0.5
+    assert row["unrealized_pnl"] < row["unrealized_pnl_mid"]
+
+
+async def test_opportunities_flag_exposure_reasons_that_no_longer_hold(db, book):
+    """An opportunity blocked because the market's exposure was full: after the position is sold
+    the stored reason no longer holds, and the API says so."""
+    async with SessionLocal() as s:
+        m = await make_market(s)
+        p = await make_prediction(s, m)
+        await portfolio.apply_economics(s, m, p)            # opens the position
+        p2 = await make_prediction(s, m)
+        await portfolio.apply_economics(s, m, p2)           # market cap now full: exposure_cap
+        await s.refresh(p2)
+        assert any(r["code"] == "exposure_cap" and r["blocking"] for r in p2.economics["reasons"])
+        bet = (await s.execute(select(PaperBet))).scalar_one()
+    async with login_client("viewer") as api:
+        opp = (await api.get("/predictions/opportunities")).json()[0]
+        assert "stale" not in (opp["prediction"]["economics"] or {})
+    async with SessionLocal() as s:
+        m = await s.get(Market, "m-fed")
+        bet = await s.get(PaperBet, bet.id)
+        assert await portfolio.sell_bet(s, bet, m, "Venduta a mano")
+    async with login_client("viewer") as api:
+        opp = (await api.get("/predictions/opportunities")).json()[0]
+    assert opp["prediction"]["economics"]["stale"] == ["exposure_cap"]
+
+
+async def test_readmitting_a_sold_bet_excluded_by_the_old_code(db, book):
+    """Bets excluded before the fix lost pnl and closing time: readmitted sold, the result is
+    rebuilt from the sale (fee already includes the sale fee) and the summary still works."""
+    async with SessionLocal() as s:
+        m = await make_market(s)
+        await portfolio.apply_economics(s, m, await make_prediction(s, m))
+        bet = (await s.execute(select(PaperBet))).scalar_one()
+        assert await portfolio.sell_bet(s, bet, m, "Venduta a mano")
+        await s.refresh(bet)
+        pnl = bet.pnl
+        bet.status, bet.payout, bet.pnl, bet.settled_at = "excluded", None, None, None   # the old exclusion
+        await s.commit()
+    async with login_client("admin") as api:
+        assert (await api.post(f"/portfolio/bets/{bet.id}/include")).json()["status"] == "sold"
+        summ = (await api.get("/portfolio")).json()
+    assert summ["realized_pnl"] == pytest.approx(pnl) and len(summ["equity_curve"]) == 2

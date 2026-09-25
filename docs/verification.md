@@ -15,7 +15,8 @@ markets already resolved?
    (Gamma API, `closed=true`).
 2. **Moments.** For each market and each horizon (1, 7 or 30 days before the close) it rebuilds
    the situation at that moment:
-   - the **price of the time**, from the CLOB history (`/prices-history`);
+   - the **price of the time**, from the CLOB history (`/prices-history`, asked in windows of at
+     most 14 days, hourly and, when a resolved market has no hourly points, every 12 hours);
    - the **news of the 7 previous days**, from one of two sources (chosen in the form):
      - **archive**: the articles this app had already saved at that date
        (`fetched_at ≤ moment`). No later news can get in: it is the honest measure, but it only

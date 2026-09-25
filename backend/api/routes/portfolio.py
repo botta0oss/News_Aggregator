@@ -44,6 +44,7 @@ def _market_url(m: Market) -> Optional[str]:
 
 def _bet_dict(bet: PaperBet, market: Market) -> dict:
     value = portfolio.mark_value(bet, market) if bet.status == "open" else None
+    mid = portfolio.mid_value(bet, market) if bet.status == "open" else None
     return {
         "id": bet.id, "market_id": market.id, "question": market.question, "url": _market_url(market),
         "event_slug": market.event_slug, "category": market.category, "end_date": market.end_date,
@@ -53,8 +54,11 @@ def _bet_dict(bet: PaperBet, market: Market) -> dict:
         "expected_profit": bet.expected_profit, "preset": bet.preset, "status": bet.status, "placed_by": bet.placed_by,
         "created_at": bet.created_at, "settled_at": bet.settled_at, "payout": bet.payout, "pnl": bet.pnl,
         "current_price": (market.yes_price if bet.side == "YES" else 1 - market.yes_price) if market.yes_price is not None else None,
-        "current_value": value,
+        "current_value": value,                # selling now at the best bid, sale fee included
         "unrealized_pnl": (value - bet.stake - bet.fee) if value is not None else None,
+        "mid_value": mid,
+        "unrealized_pnl_mid": (mid - bet.stake - bet.fee) if mid is not None else None,
+        "bid_price": plans.known_bid(market, bet.side) if bet.status == "open" else None,
         "clv": portfolio.bet_clv(bet, market),
         "exit_price": bet.exit_price, "exit_reason": bet.exit_reason,
     }
@@ -132,9 +136,11 @@ async def _bet(db: AsyncSession, bet_id: uuid.UUID) -> PaperBet:
 
 @router.post("/bets/{bet_id}/exclude", dependencies=admin)
 async def exclude_bet(bet_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    """Removes a bet from the simulation (kept in the list, not counted in capital and results)."""
+    """Removes a bet from the simulation (kept in the list, not counted in capital and results).
+    Only the status changes: payout, profit and closing time stay, so readmitting it restores
+    the bet as it was (ledger and summary count bets by status)."""
     bet = await _bet(db, bet_id)
-    bet.status, bet.payout, bet.pnl, bet.settled_at = "excluded", None, None, None
+    bet.status = "excluded"
     await db.commit()
     return {"status": bet.status}
 
@@ -146,11 +152,18 @@ async def include_bet(bet_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
         return {"status": bet.status}
     other_open = (await db.execute(select(PaperBet.id).where(
         PaperBet.market_id == bet.market_id, PaperBet.status == "open", PaperBet.id != bet.id))).first()
-    if other_open:
+    if other_open and bet.exit_price is None:
         raise HTTPException(status_code=409, detail=tr("C'è già una scommessa aperta su questo mercato", "There is already an open bet on this market"))
-    bet.status = "open"
-    await db.commit()
-    await portfolio.settle_bets(db)  # settles it right away if the market has resolved
+    if bet.exit_price is not None:
+        bet.status = "sold"          # sold before being excluded: the shares are no longer held
+        if bet.pnl is None:          # excluded before exclusions kept the result: rebuild it from the sale
+            bet.pnl = bet.exit_price * bet.shares - bet.stake - bet.fee
+            bet.settled_at = bet.settled_at or portfolio._now()
+        await db.commit()
+    else:
+        bet.status = "open"
+        await db.commit()
+        await portfolio.settle_bets(db)  # settles it right away if the market has resolved
     await db.refresh(bet)
     return {"status": bet.status}
 

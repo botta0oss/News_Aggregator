@@ -15,7 +15,8 @@ previsto Jev i mercati già risolti?
    (Gamma API, `closed=true`).
 2. **Momenti.** Per ogni mercato e ogni orizzonte (1, 7 o 30 giorni prima della chiusura)
    ricostruisce la situazione di quel momento:
-   - il **prezzo di allora**, dallo storico della CLOB (`/prices-history`);
+   - il **prezzo di allora**, dallo storico della CLOB (`/prices-history`, chiesto a finestre di
+     al massimo 14 giorni, orario e, se un mercato risolto non ha punti orari, ogni 12 ore);
    - le **notizie dei 7 giorni precedenti**, da una di due fonti (scelta nel modulo):
      - **archivio**: gli articoli che questa app aveva già salvato a quella data
        (`fetched_at ≤ momento`). Nessuna notizia successiva può entrare: è la misura onesta,

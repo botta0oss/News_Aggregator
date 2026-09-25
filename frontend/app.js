@@ -471,8 +471,9 @@ function opportunityCard({ market, prediction: p }) {
         p.economics
           ? h("div", {}, h("div", { class: "fig-label" }, t("Conviene?"), infoTip(t("Valutazione economica al momento della previsione: prezzo reale dal book, costi, incertezza, tempo e limiti del preset."))),
             verdictBadge(p.economics.verdict),
+            p.economics.stale?.length ? h("div", { class: "fig-label", style: { marginTop: "4px" } }, t("da ricalcolare")) : null,
             p.economics.verdict !== "NO" ? h("div", { class: "fig-label", style: { marginTop: "4px" } }, t("Puntata {0}", fmt.money(p.economics.outlay))) : null)
-          : h("div", {}, h("div", { class: "fig-label" }, t("Puntata suggerita"), infoTip(GLOSSARY.kelly)), h("div", { class: "fig-value" }, p.kelly_fraction > 0 ? `${fmt.pct(p.kelly_fraction)}` : "–"),
+          : h("div", {}, h("div", { class: "fig-label" }, t("Kelly semplice"), infoTip(GLOSSARY.kelly)), h("div", { class: "fig-value" }, p.kelly_fraction > 0 ? `${fmt.pct(p.kelly_fraction)}` : "–"),
             p.kelly_fraction > 0 ? h("div", { class: "fig-label" }, t("del bankroll")) : null),
       ),
       h("div", {}, h("div", { class: "fig-label" }, t("Forza delle evidenze"), infoTip(GLOSSARY.evidence)), meter(p.evidence_strength, t("Forza delle evidenze"))),
@@ -657,7 +658,7 @@ async function viewMarketDetail(id) {
         probLegend({ market: latest.market_probability, blended: latest.blended_probability, jev: latest.model_probability }),
         h("div", { class: "opp-figures", style: { marginTop: "16px", gridTemplateColumns: "repeat(3, minmax(0, 1fr))" } },
           h("div", {}, h("div", { class: "fig-label" }, t("Edge")), h("div", { class: `fig-value ${latest.edge > 0 ? "pos" : latest.edge < 0 ? "neg" : ""}` }, fmt.pts(latest.edge))),
-          h("div", {}, h("div", { class: "fig-label" }, t("Puntata")), h("div", { class: "fig-value" }, latest.kelly_fraction > 0 ? fmt.pct(latest.kelly_fraction) : "–")),
+          h("div", {}, h("div", { class: "fig-label" }, t("Kelly semplice"), infoTip(GLOSSARY.kelly)), h("div", { class: "fig-value" }, latest.kelly_fraction > 0 ? fmt.pct(latest.kelly_fraction) : "–")),
           h("div", {}, h("div", { class: "fig-label" }, t("Notizie")), h("div", { class: "fig-value" }, fmt.int(latest.article_count))),
         ),
         h("div", { style: { marginTop: "12px" } }, h("div", { class: "fig-label" }, t("Forza delle evidenze")), meter(latest.evidence_strength, t("Forza delle evidenze"))),

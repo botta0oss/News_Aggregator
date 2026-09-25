@@ -115,7 +115,7 @@ export function explainCard(p, market, evidence, status) {
         h("p", {}, t("Risultato: "), h("b", {}, p.signal === "BUY_YES" ? t("Compra SÌ") : p.signal === "BUY_NO" ? t("Compra NO") : t("Attendi")),
           p.signal === "HOLD" ? t(" (almeno un controllo non è superato).") : "."),
       ),
-      p.signal !== "HOLD" ? step(6, t("Puntata suggerita"), GLOSSARY.kelly,
+      p.signal !== "HOLD" ? step(6, t("Kelly semplice (indicativo)"), GLOSSARY.kelly,
         buyYes
           ? formula(t("Kelly = ({0} − {1}) / (100% − {2}) = {3}", pct(b), pct(q), pct(q), pct(fullKelly)))
           : formula(t("Kelly = ({0} − {1}) / {2} = {3}", pct(q), pct(b), pct(q), pct(fullKelly))),
@@ -123,6 +123,10 @@ export function explainCard(p, market, evidence, status) {
         h("p", { class: "muted small" }, buyYes
           ? t("Compri quote SÌ a {0}: se il mercato si risolve SÌ ogni quota vale 1 $.", fmt.cents(q))
           : t("Compri quote NO a {0}: se il mercato si risolve NO ogni quota vale 1 $.", fmt.cents(1 - q))),
+        h("p", { class: "muted small" },
+          p.economics && p.economics.verdict !== "NO" && p.economics.outlay
+            ? t("È un'indicazione sul prezzo di mercato. Con prezzo reale del book, commissioni, incertezza e limiti del preset la puntata era {0} al momento della previsione: è quella che conta (scheda «Conviene?»).", fmt.money(p.economics.outlay))
+            : t("È un'indicazione sul prezzo di mercato: la puntata effettiva, con prezzo reale del book, commissioni, incertezza e limiti del preset, è nella scheda «Conviene?».")),
       ) : null,
     ),
     h("p", { class: "note", style: { marginTop: "14px" } }, icon("alert"),

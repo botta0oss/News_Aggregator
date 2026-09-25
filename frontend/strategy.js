@@ -102,8 +102,14 @@ const STRUCTURAL = new Set(["illiquid", "too_far", "exposure_cap", "no_cash", "n
 export function planLine(ev) {
   if (!ev) return null;
   const side = SIDE[ev.side];
-  const blocking = (ev.reasons || []).filter((r) => r.blocking);
+  // Reasons about the portfolio (exposure, cash) that no longer hold, e.g. after a sale
+  const stale = new Set(ev.stale || []);
+  const blocking = (ev.reasons || []).filter((r) => r.blocking && !stale.has(r.code));
   let badge, text;
+  if (stale.size && !blocking.length) {
+    return h("p", { class: "opp-plan" }, icon("refresh"), h("span", { class: "small" },
+      t("Dopo la previsione si è liberato spazio nel portafoglio: la valutazione di allora non vale più. Apri il mercato per i conti aggiornati.")));
+  }
   if (ev.verdict === "GO" || ev.verdict === "SMALL") {
     badge = actionBadge({ action: "BUY", side: ev.side });
     text = t("{0} a non più di {1} · circa {2}", side, fmt.cents(ev.limit_price), fmt.money(ev.outlay));

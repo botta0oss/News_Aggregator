@@ -331,7 +331,7 @@ export const GLOSSARY = {
   weight: t("Peso della stima di Jev nella probabilità finale: peso massimo × forza delle evidenze. Il resto del peso va al prezzo di mercato."),
   blended: t("Probabilità finale usata per il segnale: una media pesata tra la stima di Jev e il prezzo di mercato."),
   edge: t("Differenza tra la probabilità blended e il prezzo, in punti percentuali. Positivo: il SÌ sembra sottovalutato. Negativo: il NO sembra sottovalutato."),
-  kelly: t("Quota del capitale da puntare secondo il criterio di Kelly, ridotta per prudenza (Kelly frazionario). È un'indicazione, non un obbligo."),
+  kelly: t("Quota del capitale secondo il criterio di Kelly sulla probabilità blended e sul prezzo, ridotta per prudenza (Kelly frazionario). È indicativa: non tiene conto di book, commissioni, incertezza e limiti del preset. La puntata effettiva è quella della scheda «Conviene?»."),
   brier: t("Errore quadratico medio tra probabilità prevista ed esito reale (1 se SÌ, 0 se NO). Più basso è meglio; dire sempre 50% vale 0,25."),
   relevance: t("Quanto la notizia può cambiare la probabilità di un evento futuro verificabile su cui si scommette (elezioni, tassi, conflitti, sentenze, prezzi, partite)."),
 };
