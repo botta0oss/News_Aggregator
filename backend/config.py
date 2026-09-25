@@ -113,6 +113,9 @@ class Settings(BaseSettings):
     SESSION_TTL_HOURS: int = 168              # absolute session lifetime (7 days)
     SESSION_IDLE_MINUTES: int = 720           # session ends after 12 h without activity
     SESSION_COOKIE_SECURE: str = "auto"       # "auto" (Secure except on localhost), "true", "false"
+    # Header carrying the real client IP, set by a trusted proxy in front of the app (e.g.
+    # "CF-Connecting-IP" behind Cloudflare Tunnel). Only safe if the app is reachable through it alone.
+    CLIENT_IP_HEADER: str = ""
     LOGIN_MAX_ATTEMPTS: int = 5               # failed logins per IP + username before a lockout
     LOGIN_MAX_ATTEMPTS_PER_IP: int = 20       # failed logins per IP (any username)
     LOGIN_WINDOW_MINUTES: int = 15

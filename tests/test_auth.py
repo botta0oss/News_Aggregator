@@ -163,3 +163,20 @@ async def test_security_headers(db):
         assert r.headers["x-content-type-options"] == "nosniff"
         assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
         assert "script-src 'self'" in r.headers["content-security-policy"]
+
+
+def test_client_ip_from_the_proxy_header(monkeypatch):
+    """Behind Cloudflare Tunnel every request comes from the tunnel: the real client is in
+    CF-Connecting-IP, used only when configured."""
+    from starlette.requests import Request
+    from backend.auth.deps import client_ip
+    from backend.config import settings
+
+    def request(headers):
+        return Request({"type": "http", "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+                        "client": ("172.18.0.5", 5000)})
+    monkeypatch.setattr(settings, "CLIENT_IP_HEADER", "")
+    assert client_ip(request({"CF-Connecting-IP": "203.0.113.7"})) == "172.18.0.5"   # not trusted by default
+    monkeypatch.setattr(settings, "CLIENT_IP_HEADER", "CF-Connecting-IP")
+    assert client_ip(request({"CF-Connecting-IP": "203.0.113.7"})) == "203.0.113.7"
+    assert client_ip(request({})) == "172.18.0.5"

@@ -16,6 +16,7 @@ opportunità.
 - [Cosa fa](#cosa-fa)
 - [Architettura](#architettura)
 - [Avvio rapido](#avvio-rapido)
+- [Deploy su un VPS con Cloudflare Tunnel](#deploy-su-un-vps-con-cloudflare-tunnel)
 - [Dashboard](#dashboard)
 - [Accesso e sicurezza](#accesso-e-sicurezza)
 - [Configurazione](#configurazione)
@@ -86,7 +87,8 @@ docker compose up --build
 docker compose exec api python -m backend.auth.cli create-user tuonome --role admin
 ```
 
-Il compose avvia anche Postgres con pgvector. Dashboard su http://localhost:8000 (accedi
+Il compose avvia anche Postgres con pgvector; per un server vedi
+[Deploy su un VPS con Cloudflare Tunnel](#deploy-su-un-vps-con-cloudflare-tunnel). Dashboard su http://localhost:8000 (accedi
 con l'utente appena creato), documentazione interattiva delle API su http://localhost:8000/docs.
 
 **CPU o GPU.** Ci sono due immagini:
@@ -123,6 +125,98 @@ uvicorn backend.main:app --reload
 
 Le tabelle vengono create all'avvio. Quelle già esistenti **non** vengono modificate: se
 cambi lo schema di una tabella esistente, aggiornala a mano.
+
+## Deploy su un VPS con Cloudflare Tunnel
+
+Il modo più economico per tenerla online: un piccolo VPS (per esempio OVH VPS-1 o Hetzner:
+2 vCore, 4 GB di RAM bastano) con Docker, e **Cloudflare Tunnel** per l'HTTPS. Il tunnel
+esce dal server verso Cloudflare: nessuna porta da aprire, nessun certificato da gestire,
+l'indirizzo IP del server resta nascosto. Serve un dominio gestito da Cloudflare (piano
+gratuito); il tunnel è gratuito.
+
+```mermaid
+flowchart LR
+    U[Browser] -- HTTPS --> CF[Cloudflare]
+    CF -- tunnel in uscita --> T[cloudflared]
+    subgraph VPS
+      T --> A[api :8000]
+      A --> D[(Postgres)]
+      B[backup giornaliero] --> D
+    end
+```
+
+**1. Il server.** Ubuntu 24.04, accesso SSH con chiave. Firewall con la sola porta SSH aperta:
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo ufw allow OpenSSH && sudo ufw enable
+```
+
+La porta 8000 dell'app ascolta solo su `127.0.0.1` (`API_BIND`): Docker aggira `ufw` per le
+porte pubblicate, per questo non viene pubblicata sulla rete.
+
+**2. Docker e il codice.**
+
+```bash
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER      # poi esci e rientra
+git clone https://github.com/botta0oss/News_Aggregator.git && cd News_Aggregator
+cp .env.example .env
+```
+
+**3. Il tunnel.** Nella dashboard di Cloudflare: *Zero Trust → Networks → Tunnels → Create a
+tunnel → Cloudflared*, dagli un nome e copia il **token** (la lunga stringa dopo `--token` nel
+comando di installazione proposto: non serve eseguirlo, `cloudflared` gira già nel compose).
+Poi aggiungi un *Public hostname*: sottodominio a scelta (es. `news.tuodominio.it`), tipo
+**HTTP**, URL **`api:8000`**.
+
+**4. Il file `.env`.** Oltre alle chiavi delle API:
+
+| Variabile | Valore |
+|---|---|
+| `POSTGRES_PASSWORD` | Una password casuale, prima del primo avvio: `openssl rand -hex 24` |
+| `COMPOSE_PROFILES` | `tunnel,backup` |
+| `CLOUDFLARE_TUNNEL_TOKEN` | Il token del passo 3 |
+| `CLIENT_IP_HEADER` | `CF-Connecting-IP` (IP reale dei visitatori per i limiti di accesso) |
+| `PUBLIC_URL` | `https://news.tuodominio.it` (link nelle notifiche Telegram) |
+| `API_DOCS_ENABLED` | `false` |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Il primo amministratore; dopo il primo avvio togli la password dal file |
+| `DAILY_JEV_CALL_LIMIT`, `DAILY_AI_BUDGET_USD` | Un tetto alla spesa per le chiamate a pagamento |
+
+**5. Avvio.**
+
+```bash
+docker compose up -d --build        # la prima build scarica il modello: qualche minuto
+docker compose logs -f api tunnel   # attendi "Application startup complete" e "Registered tunnel connection"
+```
+
+La dashboard è su `https://news.tuodominio.it`. Per un livello di protezione in più, *Zero Trust
+→ Access* può chiedere un codice via email prima ancora della pagina di login (gratuito fino a
+50 utenti).
+
+**Aggiornare** all'ultima versione (dati e backup restano):
+
+```bash
+./scripts/update.sh
+```
+
+**Backup.** Con il profilo `backup` ogni giorno viene salvato un dump in `./backups`, tenuto per
+`BACKUP_KEEP_DAYS` giorni. È sullo stesso disco del database: copialo anche fuori dal server
+(per esempio con `rclone` su Cloudflare R2, o scaricandolo con `scp`), oppure attiva i backup
+del VPS offerti dal provider. Per ripristinarne uno:
+
+```bash
+docker compose stop api
+docker compose exec -T db pg_restore -U postgres -d postgres --clean --if-exists < backups/newsagg-AAAAMMGG-HHMM.dump
+docker compose start api
+```
+
+**Se qualcosa non va.**
+- *Errore 502 o 1033 da Cloudflare*: l'app non risponde ancora (al primo avvio carica il
+  modello) o il tunnel non è connesso: `docker compose logs api tunnel`.
+- *Il tunnel non si connette*: token sbagliato, o nel *Public hostname* l'URL non è `api:8000`.
+- *Password del database cambiata dopo il primo avvio*: il database tiene quella vecchia.
+  Aggiornala anche lì: `docker compose exec db psql -U postgres -c "ALTER USER postgres PASSWORD 'nuova'"`.
 
 ## Dashboard
 
@@ -231,8 +325,10 @@ In alternativa, al primo avvio senza utenti viene creato un admin da `ADMIN_USER
 
 **Messa online**
 
-1. Metti l'app dietro un reverse proxy con HTTPS (Caddy, nginx, Traefik).
-2. Avvia uvicorn con `--proxy-headers` (già nel Dockerfile), così il limite dei tentativi
+1. Metti l'app dietro HTTPS: il modo più semplice è Cloudflare Tunnel, già pronto nel compose
+   (vedi [Deploy su un VPS](#deploy-su-un-vps-con-cloudflare-tunnel), con
+   `CLIENT_IP_HEADER=CF-Connecting-IP`); in alternativa un reverse proxy (Caddy, nginx, Traefik).
+2. Con un reverse proxy avvia uvicorn con `--proxy-headers` (già nel Dockerfile), così il limite dei tentativi
    vede il vero IP del client. Se il proxy non gira sulla stessa macchina, aggiungi
    `--forwarded-allow-ips` con il suo indirizzo.
 3. Imposta `API_DOCS_ENABLED=false` per non pubblicare lo schema dell'API.
@@ -368,6 +464,7 @@ Google AI Studio e TypeSafe).
 | `SESSION_TTL_HOURS` | `168` | Durata massima di una sessione (7 giorni) |
 | `SESSION_IDLE_MINUTES` | `720` | Chiusura dopo inattività (12 ore) |
 | `SESSION_COOKIE_SECURE` | `auto` | `auto` = `Secure` tranne su localhost in HTTP; oppure `true` / `false` |
+| `CLIENT_IP_HEADER` | – | Header con l'IP reale del visitatore messo da un proxy fidato davanti all'app (`CF-Connecting-IP` dietro Cloudflare Tunnel). Usalo solo se l'app è raggiungibile unicamente attraverso quel proxy |
 | `LOGIN_MAX_ATTEMPTS` | `5` | Tentativi falliti per IP e username prima del blocco |
 | `LOGIN_MAX_ATTEMPTS_PER_IP` | `20` | Tentativi falliti per IP, qualunque username |
 | `LOGIN_WINDOW_MINUTES` | `15` | Finestra e durata del blocco |
