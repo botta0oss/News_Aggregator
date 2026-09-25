@@ -115,14 +115,24 @@ async def calibration_factor(db: AsyncSession) -> float:
         .subquery()
     )
     rows = (await db.execute(
-        select(Market.resolved_yes, latest.c.blended_probability)
+        select(Market.resolved_yes, latest.c.blended_probability, latest.c.market_probability)
         .join(latest, latest.c.market_id == Market.id).where(Market.resolved_yes.is_not(None))
     )).all()
     if len(rows) < MIN_RESOLVED_FOR_CALIBRATION:
         return 1.0
-    observed = sum((r.blended_probability - (1.0 if r.resolved_yes else 0.0)) ** 2 for r in rows) / len(rows)
+    outcome = [1.0 if r.resolved_yes else 0.0 for r in rows]
+    observed = sum((r.blended_probability - y) ** 2 for r, y in zip(rows, outcome)) / len(rows)
     expected = sum(r.blended_probability * (1 - r.blended_probability) for r in rows) / len(rows)
-    return max(0.75, min(2.0, math.sqrt(observed / max(expected, 1e-4))))
+    factor = max(0.75, min(2.0, math.sqrt(observed / max(expected, 1e-4))))
+    # Narrowing the uncertainty makes the bets bigger: only when the blend has shown it beats
+    # the market price on the same markets (paired Brier gain, two standard errors above zero).
+    # Being consistent with itself is not enough.
+    gains = [(r.market_probability - y) ** 2 - (r.blended_probability - y) ** 2 for r, y in zip(rows, outcome)]
+    mean = sum(gains) / len(gains)
+    se = math.sqrt(sum((g - mean) ** 2 for g in gains) / (len(gains) - 1) / len(gains)) if len(gains) > 1 else float("inf")
+    if mean - 2 * se <= 0:
+        factor = max(1.0, factor)
+    return factor
 
 
 async def update_market_category(db: AsyncSession, market: Market) -> Optional[str]:
@@ -164,18 +174,33 @@ def days_to_end(market: Market) -> float:
 
 async def evaluate_prediction(db: AsyncSession, market: Market, prediction: MarketPrediction,
                               quote: Optional[Quote] = None, preset: Optional[str] = None) -> Evaluation:
+    """Economic evaluation of a forecast at the market's current price.
+
+    The blend is recomputed at the current price (Jev pooled with the price of now, with today's
+    calibration and weights): the stored blend was pooled with the price of the forecast, and
+    using it against a price that has moved since makes up an edge that is not there. Past
+    FORECAST_MAX_AGE_HOURS or FORECAST_MAX_PRICE_MOVE the forecast needs a new one before buying."""
+    from backend.betting import plans
+    from backend.markets.forecast import disagreement_factor
     s = await get_settings(db)
     profile = get_profile(preset or s.preset)
-    side = "NO" if prediction.signal == "BUY_NO" else "YES"
-    weight = prediction.model_weight if prediction.model_weight is not None else \
-        min(1.0, settings.MODEL_WEIGHT_MAX * prediction.evidence_strength)
+    price = market.yes_price
+    fc = plans.forecast_of(prediction, 0)
+    if price is None or plans.is_outcome(prediction):
+        # Outcomes keep the probability of their distribution (pooled over all the outcomes)
+        p_yes, signal = prediction.blended_probability, prediction.signal
+        weight = prediction.model_weight if prediction.model_weight is not None else fc.weight
+    else:
+        p_yes, signal = fc.p_yes(price), plans.signal_at(prediction, price)
+        weight = fc.weight * disagreement_factor(fc.model, price)
+    side = "NO" if signal == "BUY_NO" else "YES"
     sigma = model_sigma(prediction.model_probability, prediction.evidence_strength, weight,
                         settings.MODEL_PSEUDO_COUNT, await calibration_factor(db))
     await update_market_category(db, market)
     ledger_now = await ledger(db)
     return evaluate(
-        signal=prediction.signal,
-        p_yes=prediction.blended_probability,
+        signal=signal,
+        p_yes=p_yes,
         sigma=sigma,
         quote=quote or await build_quote(market, side),
         days=days_to_end(market),
@@ -185,7 +210,41 @@ async def evaluate_prediction(db: AsyncSession, market: Market, prediction: Mark
         exposure=await exposure_for(db, market),
         liquidity=market.liquidity or 0.0,
         risk_free_rate=settings.RISK_FREE_RATE,
+        hours_to_end=hours_to_end(market),
+        extra_reasons=forecast_reasons(market, prediction),
     )
+
+
+def hours_to_end(market: Market) -> Optional[float]:
+    """Hours left before the market resolves (None without an end date)."""
+    if market.end_date is None:
+        return None
+    return (market.end_date - _now()).total_seconds() / 3600
+
+
+def forecast_reasons(market: Market, prediction) -> list:
+    """Blocking reasons about the forecast itself: too old, the price moved too much since,
+    or a market decided by an asset's price (see markets/kinds.py)."""
+    from backend.betting.economics import Reason
+    from backend.markets.kinds import is_price_market
+    reasons = []
+    if settings.EXCLUDE_PRICE_MARKETS and is_price_market(market.question):
+        reasons.append(Reason("price_market", tr(
+            "Mercato sul prezzo di un asset: si decide sul prezzo del momento, che Jev non vede e il mercato sì.",
+            "Market on an asset's price: it is decided by the price of the moment, which Jev does not see and the market does.")))
+    created = getattr(prediction, "created_at", None)
+    age = (_now() - created).total_seconds() / 3600 if created else 0.0
+    from backend.markets.forecast import logit
+    has_prices = market.yes_price is not None and prediction.market_probability is not None
+    move = abs(market.yes_price - prediction.market_probability) if has_prices else 0.0
+    moved = has_prices and abs(logit(market.yes_price) - logit(prediction.market_probability)) > settings.FORECAST_MAX_PRICE_MOVE
+    if age > settings.FORECAST_MAX_AGE_HOURS or moved:
+        why = tr(f"ha {age:.0f} ore", f"is {age:.0f} hours old") if age > settings.FORECAST_MAX_AGE_HOURS else \
+            tr(f"il prezzo del SÌ si è mosso di {move * 100:.0f} punti da allora", f"the YES price has moved {move * 100:.0f} points since")
+        reasons.append(Reason("stale_forecast", tr(
+            f"La previsione {why}: prima di comprare serve una previsione nuova.",
+            f"The forecast {why}: a new forecast is needed before buying.")))
+    return reasons
 
 
 PORTFOLIO_REASONS = ("exposure_cap", "no_cash")  # reasons that depend on the portfolio, not on the market

@@ -10,6 +10,14 @@ An edge on paper is not enough: the economic assessment (`backend/betting/`) dec
 forecast is really worth it, how much to stake and at what maximum price. It is computed after
 every forecast and, live, in the **Worth it?** card of the market detail page.
 
+0. **The forecast, at today's price.** The blend is recomputed at the current price (calibrated
+   Jev pooled with the price of now), not taken from the forecast, which was pooled with the
+   price of its time. A forecast older than `FORECAST_MAX_AGE_HOURS` (6), or whose price has
+   moved more than `FORECAST_MAX_PRICE_MOVE` (0.5 in log-odds: about 12 points around 50 %,
+   4 points around 90 %), needs a new one before buying. No bets on markets decided by an
+   asset's price (see [the method](method.md#which-markets-are-left-out)), nor on markets
+   ending in less than the preset's minimum hours: at that point the price already knows the
+   outcome.
 1. **Real price.** It reads the book of the side to buy from Polymarket's CLOB (public API,
    read only) and computes the average price you would pay for that amount.
    Fee (only for those who take from the book, as here): `rate × price × (1 − price)` per
@@ -23,11 +31,14 @@ every forecast and, live, in the **Worth it?** card of the market detail page.
    `σ = w × √(p_jev (1 − p_jev) / (MODEL_PSEUDO_COUNT × evidence + 1))`. After 30 resolved
    markets σ is multiplied by `√(observed Brier / expected Brier)`, where the expected Brier is
    the one perfectly calibrated forecasts would have (the average of `p (1 − p)`): widened if
-   the blended forecasts were overconfident, narrowed if they were cautious (a factor between
-   0.75 and 2).
+   the blended forecasts were overconfident (up to 2). It is narrowed (down to 0.75) only when
+   the blend has also beaten the market price on the same markets, by two standard errors: a
+   blend that is merely consistent with itself does not earn bigger stakes.
 3. **Net margin.** `p_prudent − (price + fee)` must exceed the preset's threshold.
-4. **Time.** The prudent expected return is annualised over the days left before the end date
-   and must exceed `RISK_FREE_RATE` + the preset's premium.
+4. **Time and return.** The prudent expected return is annualised over the days left before the
+   end date and must exceed `RISK_FREE_RATE` + the preset's premium. Short bets always pass that
+   test (a few points in two days are a huge annual rate), so the prudent return of the bet
+   itself must also reach the preset's minimum.
 5. **How much to stake.** Kelly capital is computed on the book, because buying more worsens
    the price. A fraction of it is taken (depending on the preset) and then the limits per
    market, event, category, total invested, available cash and share of the book apply. The
@@ -36,11 +47,11 @@ every forecast and, live, in the **Worth it?** card of the market detail page.
 6. **Verdict.** *Worth it*, *Barely worth it* (the stake was cut to less than half by the
    limits) or *Not worth it*, always with the reasons.
 
-| Preset | Kelly | z | Net margin | Annual premium | Max per market | Max per event | Max per category | Max invested | Min liquidity | Max end date |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Prudent | ×0.15 | 1.64 | 4 pts | 15% | 2% | 5% | 15% | 40% | $25,000 | 120 d |
-| Balanced | ×0.25 | 1.0 | 3 pts | 8% | 4% | 8% | 25% | 60% | $10,000 | 365 d |
-| Aggressive | ×0.5 | 0.5 | 2 pts | 3% | 8% | 15% | 40% | 85% | $5,000 | 730 d |
+| Preset | Kelly | z | Net margin | Min return | Annual premium | Max per market | Max per event | Max per category | Max invested | Min liquidity | End date |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Prudent | ×0.15 | 1.64 | 4 pts | 10% | 15% | 2% | 5% | 15% | 40% | $25,000 | 72 h – 120 d |
+| Balanced | ×0.25 | 1.0 | 3 pts | 6% | 8% | 4% | 8% | 25% | 60% | $10,000 | 24 h – 365 d |
+| Aggressive | ×0.5 | 0.5 | 2 pts | 3% | 3% | 8% | 15% | 40% | 85% | $5,000 | 12 h – 730 d |
 
 **Simulated portfolio** (*Portfolio* page):
 - **Automatic bets:** every forecast with a *Worth it* or *Barely worth it* verdict becomes a virtual bet at the real price of the moment, at most one open per market.
@@ -74,6 +85,24 @@ every forecast and, live, in the **Worth it?** card of the market detail page.
   Column names are stable keys (the same as the API); prices and probabilities are fractions
   0–1, amounts in dollars, times in UTC. «CSV» downloads only the bets (comma separator,
   decimal point).
+
+## What went wrong in the first portfolio
+
+The first real simulated portfolio lost 24 % of its $50 in a day and a half (13 bets); the
+crypto price markets alone lost $11 of the $11.86. The causes, and what changed:
+
+| Cause | What changed |
+|---|---|
+| Jev estimated markets decided by the price of Bitcoin or Ethereum (66 % against a 5.5 % market) without seeing that price | Price markets are left out: no bets, no paid forecasts |
+| Two bets were bought 24 minutes before the end, against a price that already knew the outcome | Minimum hours to the end per preset (72 / 24 / 12) |
+| A manual bet used a 19-hour-old forecast, whose blend had been pooled with the price of then: +$22 expected on $1.89 | The blend is recomputed at the current price; old forecasts or big price moves need a new one |
+| Every bet came from a disagreement of about 50 points between Jev and the price: the biggest disagreements are the likeliest Jev errors | Jev's maximum weight 0.5 → 0.25, and less weight the further Jev is from the price |
+| The uncertainty was narrowed (factor 0.75) because the blend was consistent with itself, not because it beat the price | Narrowing only when the blend beats the price on resolved markets |
+| Annualised returns were capped at 1000 %, so the return check never excluded anything | Minimum prudent return per bet (10 / 6 / 3 %) |
+
+With 13 bets the result itself proves little; the causes above are structural. Run a
+[backtest](verification.md#backtest) and apply the calibration it suggests before trusting the
+signals again.
 
 ## Buy and sell strategy
 

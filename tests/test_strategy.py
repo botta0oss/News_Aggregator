@@ -38,7 +38,8 @@ def test_buy_level_is_where_buying_stops_being_worth_it():
     for price, ok in ((q, True), (q + 0.01, False)):
         p = f.p_yes(price)
         cost = price + fee_per_share(price, 400)
-        passes = p - price >= 0.05 and (p - PROFILE.z * f.sigma) - cost >= PROFILE.min_net_edge
+        p_cons = p - PROFILE.z * f.sigma
+        passes = p - price >= 0.05 and p_cons - cost >= PROFILE.min_net_edge and p_cons / cost - 1 >= PROFILE.min_roi
         assert passes == ok
 
 

@@ -84,13 +84,21 @@ Liquid markets are usually already well calibrated, so Jev's estimate is not use
    with `logit p = ln(p / (1 − p))`. The two numbers are estimated by the backtest on
    resolved markets: `B < 1` softens an overconfident Jev, `B > 1` sharpens one that is too
    cautious. By default (0 and 1) the estimate stays as it is.
-2. **Pooling with the price in log-odds**, with a weight that grows with the evidence strength:
+2. **Pooling with the price in log-odds**, with a weight that grows with the evidence strength
+   and shrinks when Jev is very far from the price:
 
 ```
-w              = MODEL_WEIGHT_MAX × evidence_strength
+d              = |logit(P_cal) − logit(price)|
+w              = MODEL_WEIGHT_MAX × evidence_strength × min(1, MODEL_DISAGREEMENT_LOGIT / d)
 logit(blended) = w × logit(P_cal) + (1 − w) × logit(price)
 edge           = blended − price
 ```
+
+`MODEL_WEIGHT_MAX` is 0.25 and `MODEL_DISAGREEMENT_LOGIT` 2. A liquid market that disagrees
+with Jev by more than 2 log-odds (for example 80 % against 35 %, or 66 % against 5.5 %) is more
+often right than Jev: without the reduction the biggest disagreements, the likeliest Jev errors,
+would become the biggest edges and the first bets. The first real portfolio lost money exactly
+there (see [strategy](strategy.md#what-went-wrong-in-the-first-portfolio)).
 
 Averaging in log-odds is the standard way to combine calibrated forecasts: a simple average
 (`BLEND_METHOD=linear`, the earlier method) makes them systematically too timid. With
@@ -113,12 +121,24 @@ for NO the symmetric formula on the NO price.
 | Market price (YES) | 0.35 |
 | Jev estimate | 0.80 |
 | Evidence strength | 3/4 → 0.75 |
-| Weight `w` | 0.5 × 0.75 = 0.375 |
-| Blended probability | logit⁻¹(0.375 × logit 0.80 + 0.625 × logit 0.35) ≈ **0.533** |
-| Edge | **+0.183** → `BUY_YES` |
-| Stake (simple Kelly) | (0.533 − 0.35) / 0.65 × 0.25 ≈ **7.0 % of bankroll** |
+| Distance `d` | \|logit 0.80 − logit 0.35\| = 2.005 → reduction 2 / 2.005 = 0.997 |
+| Weight `w` | 0.25 × 0.75 × 0.997 ≈ 0.187 |
+| Blended probability | logit⁻¹(0.187 × logit 0.80 + 0.813 × logit 0.35) ≈ **0.439** |
+| Edge | **+0.089** → `BUY_YES` |
+| Stake (simple Kelly) | (0.439 − 0.35) / 0.65 × 0.25 ≈ **3.4 % of bankroll** |
 
 The actual stake is then decided by the [economic assessment](strategy.md#economic-assessment-and-simulated-portfolio), which accounts for the real price, costs, uncertainty, time and limits.
+
+## Which markets are left out
+
+- **Markets decided by an asset's price** («Will Bitcoin be above $84,000 on September 24?»,
+  «Will ETH reach $2,800 this week?», «Will gold hit $3,000?», «Bitcoin Up or Down»): Jev reads
+  news, not the live price and its volatility, while the market price already reflects both.
+  They are recognised by the question (an asset, a price level and a threshold such as above,
+  below, between, reach, dip, hit: `backend/markets/kinds.py`). With `EXCLUDE_PRICE_MARKETS=true`
+  (the default) they get no bets, and automatic forecasts, «Assess all» and alerts skip them, so
+  no Jev call is spent there. A forecast asked by hand still runs.
+- **Markets close to the end**: below the preset's minimum hours (72 / 24 / 12) no bet.
 
 ## Multi-outcome markets
 

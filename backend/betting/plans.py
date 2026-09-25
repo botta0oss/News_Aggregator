@@ -25,15 +25,35 @@ def half_spread(market: Market) -> float:
     return settings.DEFAULT_SPREAD / 2
 
 
+def is_outcome(prediction) -> bool:
+    """A view of one outcome of a multi-outcome forecast (its blend comes from the whole distribution)."""
+    return getattr(prediction, "multi_prediction_id", None) is not None
+
+
 def forecast_of(prediction, sigma: float) -> Forecast:
-    """The forecast as it was computed: calibrated Jev, its weight, the pooling method.
-    Forecasts made before calibration and log-odds pooling were linear and uncalibrated."""
+    """The forecast with today's parameters, ready to be pooled with any price: Jev calibrated
+    with the current calibration, the base weight (MODEL_WEIGHT_MAX × evidence; the reduction
+    when Jev is far from the price is applied by the pooling, at each price).
+    Forecasts made before log-odds pooling were linear and uncalibrated; outcomes of
+    multi-outcome events keep the probability given by the distribution."""
     method = getattr(prediction, "blend_method", None) or "linear"
-    cal = getattr(prediction, "calibrated_probability", None)
-    if cal is None:
-        cal = prediction.model_probability if method == "linear" else calibrate(prediction.model_probability)
-    w = prediction.model_weight if prediction.model_weight is not None else model_weight(prediction.evidence_strength)
+    if method == "linear" or is_outcome(prediction):
+        cal = getattr(prediction, "calibrated_probability", None) or prediction.model_probability
+    else:
+        cal = calibrate(prediction.model_probability)
+    w = model_weight(prediction.evidence_strength)
     return Forecast(model=cal, weight=w, evidence=prediction.evidence_strength, sigma=sigma, method=method)
+
+
+def signal_at(prediction, price: Optional[float]) -> str:
+    """The forecast's signal at `price`: the blend is recomputed there, as when the forecast was made.
+    Outcomes of multi-outcome events and markets without a price keep the stored signal."""
+    if price is None or is_outcome(prediction):
+        return prediction.signal
+    edge = forecast_of(prediction, 0).p_yes(price) - price
+    if prediction.evidence_strength < settings.MIN_EVIDENCE or abs(edge) < settings.MIN_EDGE:
+        return "HOLD"
+    return "BUY_YES" if edge > 0 else "BUY_NO"
 
 
 async def best_bid(market: Market, side: str) -> Optional[float]:
@@ -104,7 +124,7 @@ async def plan_for(db: AsyncSession, market: Market, prediction, ev: Evaluation,
     fee_bps = market.taker_fee_bps if market.taker_fee_bps is not None else fees.category_rate(market.category) * 10_000
     sell_bid = await best_bid(market, position.side) if position else None
     return build_plan(
-        ev=ev.as_dict(), fc=forecast_of(prediction, ev.sigma), signal=prediction.signal,
+        ev=ev.as_dict(), fc=forecast_of(prediction, ev.sigma), signal=signal_at(prediction, market.yes_price),
         market_price=market.yes_price, profile=profile, fee_bps=fee_bps, days=ev.days,
         min_edge=settings.MIN_EDGE, risk_free=settings.RISK_FREE_RATE,
         position={"side": position.side, "shares": position.shares, "avg_price": position.avg_price} if position else None,
@@ -124,6 +144,7 @@ def exit_plan(prediction, market: Market, side: str, profile: RiskProfile, days:
         bid = market.best_bid if market.best_bid is not None else market.yes_price
     else:
         bid = 1 - market.best_ask if market.best_ask is not None else (1 - market.yes_price if market.yes_price is not None else None)
-    flipped = (prediction.signal == "BUY_NO" and side == "YES") or (prediction.signal == "BUY_YES" and side == "NO")
+    signal = signal_at(prediction, market.yes_price)
+    flipped = (signal == "BUY_NO" and side == "YES") or (signal == "BUY_YES" and side == "NO")
     action = "SELL" if flipped or (bid is not None and target is not None and bid >= target) else "HOLD"
     return {"action": action, "sell_above": target, "bid": bid, "flipped": flipped}

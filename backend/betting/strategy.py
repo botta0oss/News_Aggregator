@@ -22,7 +22,7 @@ from backend.markets.forecast import pool
 
 GRID = [round(0.01 + i * 0.005, 3) for i in range(197)]   # YES prices from 1¢ to 99¢
 # Reasons that no price can fix: the market itself does not suit the preset or the portfolio
-STRUCTURAL = {"illiquid", "too_far", "exposure_cap", "no_cash", "no_book"}
+STRUCTURAL = {"illiquid", "too_far", "too_close", "price_market", "exposure_cap", "no_cash", "no_book"}
 
 
 def _cents(p: Optional[float]) -> str:
@@ -87,6 +87,8 @@ def _buy_ok(fc: Forecast, q: float, side: str, profile: RiskProfile, fee_bps: fl
     cost = price + fee_per_share(price, fee_bps)
     p_cons = max(0.0, p_side - profile.z * fc.sigma)
     if p_cons - cost < profile.min_net_edge:           # margin after costs and uncertainty
+        return False
+    if p_cons / cost - 1 < profile.min_roi:            # prudent return of the bet itself
         return False
     return annualize(p_cons / cost - 1, days) >= hurdle  # worth the time the money is locked
 
@@ -270,6 +272,19 @@ def build_plan(*, ev: dict, fc: Forecast, signal: str, market_price: float, prof
 
     # ----- No position -----
     side = "NO" if signal == "BUY_NO" else "YES" if signal == "BUY_YES" else None
+    # Reasons that no price can fix (a market on an asset's price, too close to the end): no
+    # buy levels, they would suggest a trade the assessment will never allow
+    unfixable = [r for r in blocking if r["code"] in ("price_market", "too_close")]
+    if unfixable:
+        return Plan("AVOID" if side else "NONE", side, tr("Evita questo mercato", "Avoid this market"),
+                    " ".join(r["text"] for r in unfixable), levels={}, pros=[], cons=[r["text"] for r in unfixable],
+                    confidence=confidence, confidence_why=why)
+    stale = next((r for r in blocking if r["code"] == "stale_forecast"), None)
+    if stale:
+        return Plan("WAIT", side, tr("Serve una nuova previsione", "A new forecast is needed"),
+                    stale["text"] + tr(" I conti di sotto sono al prezzo attuale, ma la stima di Jev è di allora.",
+                                        " The numbers below are at the current price, but Jev's estimate is from then."),
+                    levels=levels, pros=[], cons=[stale["text"]] + track_cons, confidence=confidence, confidence_why=why)
     if side is None:
         # No signal: say at which prices there would be one
         side_hint = "YES" if p_now >= market_price else "NO"

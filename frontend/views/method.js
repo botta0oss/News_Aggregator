@@ -86,6 +86,7 @@ export async function viewMethod(ctx) {
           (st.jev_calib_a ?? 0) === 0 && (st.jev_calib_b ?? 1) === 1 ? t("Per ora nessuna correzione è attiva.") : t("Correzione attiva: a {0}, b {1}.", fmt.num3(st.jev_calib_a), fmt.num3(st.jev_calib_b))),
         h("p", { class: "formula" }, t("logit(Jev corretto) = a + b × logit(stima Jev)")),
         h("p", { class: "formula" }, t("w = {0} × forza delle evidenze", fmt.pct(maxW))),
+        st.model_disagreement_logit ? p(t("Se Jev è molto lontano dal prezzo (più di {0} in log-odds) il suo peso si riduce in proporzione: su un mercato liquido le distanze più grandi sono più spesso errori di Jev che informazioni, e altrimenti diventerebbero gli edge più grandi.", fmt.dec(st.model_disagreement_logit))) : null,
         st.blend_method === "linear"
           ? h("p", { class: "formula" }, t("blended = w × Jev corretto + (1 − w) × prezzo"))
           : h("p", { class: "formula" }, t("logit(blended) = w × logit(Jev corretto) + (1 − w) × logit(prezzo)")),

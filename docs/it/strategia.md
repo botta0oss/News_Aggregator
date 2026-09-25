@@ -10,6 +10,14 @@ Un edge sulla carta non basta: la valutazione economica (`backend/betting/`) dec
 previsione conviene davvero, quanto puntare e a che prezzo massimo. Si calcola dopo ogni
 previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
 
+0. **La previsione, al prezzo di oggi.** La probabilità finale viene ricalcolata al prezzo
+   attuale (Jev calibrato unito al prezzo di adesso), non presa dalla previsione, che era unita
+   al prezzo di allora. Una previsione più vecchia di `FORECAST_MAX_AGE_HOURS` (6) ore, o il cui
+   prezzo si è mosso più di `FORECAST_MAX_PRICE_MOVE` (0,5 in log-odds: circa 12 punti intorno
+   al 50 %, 4 punti intorno al 90 %), richiede una previsione nuova prima di comprare. Niente
+   scommesse sui mercati decisi dal prezzo di un asset (vedi [il metodo](metodo.md#quali-mercati-restano-fuori))
+   né su quelli che si chiudono prima delle ore minime del preset: a quel punto il prezzo
+   conosce già l'esito.
 1. **Prezzo reale.** Legge il book del lato da comprare dal CLOB di Polymarket (API
    pubblica, sola lettura) e calcola il prezzo medio che pagheresti per quella cifra.
    Commissione (solo per chi compra dal book, come qui): `tasso × prezzo × (1 − prezzo)` per
@@ -24,11 +32,14 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
    `σ = w × √(p_jev (1 − p_jev) / (MODEL_PSEUDO_COUNT × evidenze + 1))`. Dopo 30 mercati
    risolti σ viene moltiplicata per `√(Brier osservato / Brier atteso)`, dove il Brier atteso
    è quello che avrebbero previsioni perfettamente calibrate (media di `p (1 − p)`): allargata
-   se le previsioni blended sono state troppo sicure, ristretta se sono state prudenti (fattore
-   tra 0,75 e 2).
+   se le previsioni blended sono state troppo sicure (fino a 2). Viene ristretta (fino a 0,75)
+   solo se la probabilità finale ha anche battuto il prezzo di mercato sugli stessi mercati, di
+   due errori standard: essere coerente con sé stessa non basta per puntare di più.
 3. **Margine netto.** `p_prudente − (prezzo + commissione)` deve superare la soglia del preset.
-4. **Tempo.** Il rendimento atteso prudente viene annualizzato sui giorni che mancano alla
-   scadenza e deve superare `RISK_FREE_RATE` + il premio del preset.
+4. **Tempo e rendimento.** Il rendimento atteso prudente viene annualizzato sui giorni che
+   mancano alla scadenza e deve superare `RISK_FREE_RATE` + il premio del preset. Le scommesse
+   brevi superano sempre questo controllo (pochi punti in due giorni sono un tasso annuo enorme),
+   quindi anche il rendimento prudente della scommessa in sé deve raggiungere il minimo del preset.
 5. **Quanto puntare.** Il capitale di Kelly è calcolato sul book, perché comprare di più
    peggiora il prezzo. Se ne prende una frazione (in base al preset) e poi si applicano i
    limiti per mercato, evento, categoria, totale investito, liquidità disponibile e quota del
@@ -37,11 +48,11 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
 6. **Verdetto.** *Conviene*, *Conviene poco* (la puntata è stata ridotta a meno della metà
    dai limiti) oppure *Non conviene*, sempre con i motivi.
 
-| Preset | Kelly | z | Margine netto | Premio annuo | Max per mercato | Max per evento | Max per categoria | Max investito | Liquidità min. | Scadenza max |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Prudente | ×0,15 | 1,64 | 4 pt | 15% | 2% | 5% | 15% | 40% | 25.000 $ | 120 gg |
-| Bilanciato | ×0,25 | 1,0 | 3 pt | 8% | 4% | 8% | 25% | 60% | 10.000 $ | 365 gg |
-| Aggressivo | ×0,5 | 0,5 | 2 pt | 3% | 8% | 15% | 40% | 85% | 5.000 $ | 730 gg |
+| Preset | Kelly | z | Margine netto | Rendimento min. | Premio annuo | Max per mercato | Max per evento | Max per categoria | Max investito | Liquidità min. | Scadenza |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Prudente | ×0,15 | 1,64 | 4 pt | 10% | 15% | 2% | 5% | 15% | 40% | 25.000 $ | da 72 h a 120 gg |
+| Bilanciato | ×0,25 | 1,0 | 3 pt | 6% | 8% | 4% | 8% | 25% | 60% | 10.000 $ | da 24 h a 365 gg |
+| Aggressivo | ×0,5 | 0,5 | 2 pt | 3% | 3% | 8% | 15% | 40% | 85% | 5.000 $ | da 12 h a 730 gg |
 
 **Portafoglio simulato** (pagina *Portafoglio*):
 - **Scommesse automatiche:** ogni previsione con verdetto *Conviene* o *Conviene poco* diventa una scommessa virtuale al prezzo reale del momento, al massimo una aperta per mercato.
@@ -77,6 +88,25 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
   I nomi delle colonne sono chiavi fisse (le stesse dell'API); prezzi e probabilità sono
   frazioni tra 0 e 1, gli importi in dollari, le ore in UTC. «CSV» scarica solo le scommesse
   (separatore virgola, decimali con il punto).
+
+## Cosa è andato storto nel primo portafoglio
+
+Il primo portafoglio simulato reale ha perso il 24 % dei suoi 50 $ in un giorno e mezzo (13
+scommesse); i soli mercati sul prezzo delle crypto hanno perso 11 $ degli 11,86. Le cause, e
+cosa è cambiato:
+
+| Causa | Cosa è cambiato |
+|---|---|
+| Jev stimava mercati decisi dal prezzo di Bitcoin o Ethereum (66 % contro un mercato al 5,5 %) senza vedere quel prezzo | I mercati sul prezzo restano fuori: niente scommesse, niente previsioni a pagamento |
+| Due scommesse comprate 24 minuti prima della scadenza, contro un prezzo che conosceva già l'esito | Ore minime alla scadenza per preset (72 / 24 / 12) |
+| Una scommessa manuale ha usato una previsione di 19 ore prima, con la probabilità finale unita al prezzo di allora: +22 $ attesi su 1,89 $ | La probabilità finale si ricalcola al prezzo attuale; previsioni vecchie o prezzi molto mossi richiedono una previsione nuova |
+| Ogni scommessa nasceva da una distanza di circa 50 punti tra Jev e il prezzo: le distanze più grandi sono i probabili errori di Jev | Peso massimo di Jev da 0,5 a 0,25, e peso minore quanto più Jev è lontano dal prezzo |
+| L'incertezza veniva ristretta (fattore 0,75) perché la probabilità finale era coerente con sé stessa, non perché battesse il prezzo | Si restringe solo se la probabilità finale batte il prezzo sui mercati risolti |
+| Il rendimento annualizzato aveva un tetto del 1000 %, quindi il controllo sul rendimento non escludeva mai nulla | Rendimento prudente minimo per scommessa (10 / 6 / 3 %) |
+
+Con 13 scommesse il risultato in sé dimostra poco; le cause qui sopra sono strutturali. Lancia un
+[backtest](verifica.md#backtest) e applica la calibrazione suggerita prima di fidarti di nuovo
+dei segnali.
 
 ## Strategia di acquisto e vendita
 

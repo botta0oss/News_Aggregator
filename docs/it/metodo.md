@@ -90,10 +90,18 @@ così com'è:
 2. **Unione col prezzo in log-odds**, con un peso che cresce con la forza delle evidenze:
 
 ```
-w              = MODEL_WEIGHT_MAX × evidence_strength
+d              = |logit(P_cal) − logit(prezzo)|
+w              = MODEL_WEIGHT_MAX × evidence_strength × min(1, MODEL_DISAGREEMENT_LOGIT / d)
 logit(blended) = w × logit(P_cal) + (1 − w) × logit(prezzo)
 edge           = blended − prezzo
 ```
+
+`MODEL_WEIGHT_MAX` vale 0,25 e `MODEL_DISAGREEMENT_LOGIT` 2. Il peso si riduce quando Jev è molto
+lontano dal prezzo: un mercato liquido che dissente da Jev di più di 2 in log-odds (per esempio
+80 % contro 35 %, o 66 % contro 5,5 %) ha ragione più spesso di Jev. Senza la riduzione le
+distanze più grandi, cioè i probabili errori di Jev, diventerebbero gli edge più grandi e le
+prime scommesse. Il primo portafoglio reale ha perso proprio lì (vedi
+[strategia](strategia.md#cosa-è-andato-storto-nel-primo-portafoglio)).
 
 La media in log-odds è il modo standard di unire previsioni calibrate: la media semplice
 (`BLEND_METHOD=linear`, il metodo di prima) le rende sistematicamente troppo timide. Con
@@ -116,12 +124,25 @@ per il NO la formula simmetrica sul prezzo del NO.
 | Prezzo di mercato (SÌ) | 0.35 |
 | Stima Jev | 0.80 |
 | Forza evidenze | 3/4 → 0.75 |
-| Peso `w` | 0.5 × 0.75 = 0.375 |
-| Probabilità blended | logit⁻¹(0.375 × logit 0.80 + 0.625 × logit 0.35) ≈ **0.533** |
-| Edge | **+0.183** → `BUY_YES` |
-| Puntata (Kelly semplice) | (0.533 − 0.35) / 0.65 × 0.25 ≈ **7.0 % del bankroll** |
+| Distanza `d` | \|logit 0,80 − logit 0,35\| = 2,005 → riduzione 2 / 2,005 = 0,997 |
+| Peso `w` | 0,25 × 0,75 × 0,997 ≈ 0,187 |
+| Probabilità blended | logit⁻¹(0,187 × logit 0,80 + 0,813 × logit 0,35) ≈ **0,439** |
+| Edge | **+0,089** → `BUY_YES` |
+| Puntata (Kelly semplice) | (0,439 − 0,35) / 0,65 × 0,25 ≈ **3,4 % del bankroll** |
 
 La puntata effettiva la decide poi la [valutazione economica](strategia.md#valutazione-economica-e-portafoglio-simulato), che tiene conto di prezzo reale, costi, incertezza, tempo e limiti.
+
+## Quali mercati restano fuori
+
+- **Mercati decisi dal prezzo di un asset** («Bitcoin sopra 84.000 $ il 24 settembre?», «ETH
+  arriva a 2.800 $ questa settimana?», «L'oro tocca 3.000 $?», «Bitcoin Up or Down»): Jev legge
+  notizie, non il prezzo del momento e la sua volatilità, mentre il prezzo del mercato li
+  contiene già. Si riconoscono dalla domanda (un asset, un livello di prezzo e una soglia come
+  sopra, sotto, tra, raggiunge, scende a: `backend/markets/kinds.py`). Con
+  `EXCLUDE_PRICE_MARKETS=true` (predefinito) non ricevono scommesse, e previsioni automatiche,
+  «Valuta tutti» e allerte li saltano, così non si spendono chiamate a Jev. Una previsione
+  chiesta a mano parte comunque.
+- **Mercati vicini alla scadenza**: sotto le ore minime del preset (72 / 24 / 12) nessuna scommessa.
 
 ## Mercati a più esiti
 

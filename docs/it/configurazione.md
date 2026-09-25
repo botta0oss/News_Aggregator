@@ -64,7 +64,11 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | `TARGETED_NEWS_LOCALE` | `hl=en-US&gl=US&ceid=US:en` | Lingua e paese dei risultati |
 | `PREDICTION_AUTO` | `false` | Previsioni automatiche dopo ogni raccolta (ogni previsione è una chiamata a pagamento) |
 | `PREDICTION_MAX_PER_RUN` | `10` | Tetto di previsioni automatiche per esecuzione |
-| `MODEL_WEIGHT_MAX` | `0.5` | Peso massimo di Jev rispetto al prezzo di mercato |
+| `MODEL_WEIGHT_MAX` | `0.25` | Peso massimo di Jev rispetto al prezzo di mercato |
+| `MODEL_DISAGREEMENT_LOGIT` | `2.0` | Il peso di Jev si riduce quando è più lontano di così dal prezzo, in log-odds (`0` = mai) |
+| `FORECAST_MAX_AGE_HOURS` | `6` | Una previsione più vecchia richiede una previsione nuova prima di comprare |
+| `FORECAST_MAX_PRICE_MOVE` | `0.5` | Lo stesso se il prezzo del SÌ si è mosso più di così dalla previsione, in log-odds (≈ 12 punti al 50 %, 4 al 90 %) |
+| `EXCLUDE_PRICE_MARKETS` | `true` | I mercati decisi dal prezzo di un asset non ricevono scommesse né previsioni automatiche, di massa o per le allerte |
 | `BLEND_METHOD` | `logodds` | Come si uniscono Jev e prezzo: `logodds` o `linear` |
 | `JEV_CALIB_A` / `JEV_CALIB_B` | `0` / `1` | Calibrazione di Platt della stima di Jev (si stimano col backtest) |
 | `JEV_SAMPLES` | `1` | Chiamate a Jev per previsione, mediate (ognuna si paga) |

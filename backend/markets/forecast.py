@@ -54,9 +54,23 @@ def calibrate(p: float, a: Optional[float] = None, b: Optional[float] = None) ->
     return sigmoid(a + b * logit(p))
 
 
+def disagreement_factor(model_p: float, market_p: float, scale: Optional[float] = None) -> float:
+    """How much of Jev's weight to keep when it is far from the price: 1 up to `scale` log-odds
+    apart, then scale / distance. A liquid market that disagrees by that much is more often
+    right than Jev (the biggest disagreements are the likeliest Jev errors), so a huge gap
+    must not turn into a huge edge. MODEL_DISAGREEMENT_LOGIT = 0 turns it off."""
+    scale = settings.MODEL_DISAGREEMENT_LOGIT if scale is None else scale
+    if scale <= 0:
+        return 1.0
+    distance = abs(logit(model_p) - logit(market_p))
+    return 1.0 if distance <= scale else scale / distance
+
+
 def pool(model_p: float, market_p: float, w: float, method: Optional[str] = None) -> float:
-    """Combines two probabilities: log-odds (default) or linear average, weight w on the model."""
+    """Combines two probabilities: log-odds (default) or linear average, weight w on the model,
+    reduced when the model is far from the market (see disagreement_factor)."""
     method = method or settings.BLEND_METHOD
+    w = w * disagreement_factor(model_p, market_p)
     if w <= 0:
         return market_p
     if method == "linear":
@@ -103,6 +117,7 @@ def compute_signal(
 
     blended = blend_probability(model_p, market_p, evidence_strength)
     edge = blended - market_p
+    weight = model_weight(evidence_strength) * disagreement_factor(calibrate(model_p), market_p)
 
     signal, stake = "HOLD", 0.0
     if evidence_strength >= min_evidence and abs(edge) >= min_edge:
@@ -114,7 +129,7 @@ def compute_signal(
 
     return Signal(
         blended_probability=round(blended, 4),
-        model_weight=round(model_weight(evidence_strength), 4),
+        model_weight=round(weight, 4),   # effective weight, after the disagreement reduction
         edge=round(edge, 4),
         signal=signal,
         kelly_fraction=round(stake * kelly_scale, 4),

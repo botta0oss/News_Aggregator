@@ -27,6 +27,7 @@ from backend.markets import polymarket
 from backend.betting.clv import summarize as clv_summary
 from backend.markets.matching import source_quality
 from backend.i18n import side as side_label, tr
+from backend.markets.kinds import skip_paid_forecast
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +227,8 @@ async def _run_alerts(db: AsyncSession) -> dict:
             continue
         market = await db.get(Market, trig["market_id"], populate_existing=True)
         if market is None or market.closed:
+            continue
+        if skip_paid_forecast(market.question):   # decided by an asset's price: no bet can come of it
             continue
         await _refresh_price(market)
         price = market.yes_price

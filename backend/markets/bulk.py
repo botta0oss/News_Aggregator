@@ -70,7 +70,8 @@ async def eligible_ids(session: AsyncSession, only_new: bool = False) -> list[st
     if only_new:
         # Never predicted, or with news linked after the last forecast
         return [m.id for m in await service.markets_needing_prediction(session, limit=10_000)]
-    return [m.id for m in (await session.execute(eligible_query())).scalars().all()]
+    from backend.markets.kinds import skip_paid_forecast
+    return [m.id for m in (await session.execute(eligible_query())).scalars().all() if not skip_paid_forecast(m.question)]
 
 
 async def count_eligible(session: AsyncSession) -> dict:
