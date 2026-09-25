@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.auth.deps import require_admin
-from backend.betting import export, plans, portfolio
+from backend.betting import export, guard, plans, portfolio
 from backend.betting.profiles import PROFILES, get_profile
 from backend.markets.calibration import summary as calibration_summary
 from backend.config import settings
@@ -70,7 +70,15 @@ async def get_portfolio(db: AsyncSession = Depends(get_db)):
     data["presets"] = [p.as_dict() for p in PROFILES.values()]
     data["risk_free_rate"] = settings.RISK_FREE_RATE
     data["calibration_factor"] = await portfolio.calibration_factor(db)
+    data["guard"] = await guard.status(db)
     return data
+
+
+@router.post("/guard/resume", dependencies=admin)
+async def resume_guard(db: AsyncSession = Depends(get_db)):
+    """Resumes automatic bets after the closing-line guard paused them."""
+    await guard.resume(db)
+    return await guard.status(db)
 
 
 @router.get("/export")

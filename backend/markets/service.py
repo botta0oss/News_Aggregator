@@ -16,7 +16,9 @@ from backend.markets import polymarket
 from backend.markets.forecast import compute_signal
 from backend.markets.targeted import run_targeted_search
 from backend.alerts.service import run_alerts
-from backend.markets.matching import EvidenceItem, extract_terms, match_score, outlet_priors, rank_evidence, term_overlap
+from backend.markets.matching import (
+    EvidenceItem, extract_terms, match_score, objective_evidence, outlet_priors, rank_evidence, term_overlap,
+)
 from backend.i18n import tr
 
 logger = logging.getLogger(__name__)
@@ -254,11 +256,26 @@ def build_jev_request(market: Market, evidence: list, now: Optional[datetime] = 
     }
 
     questions = {
+        # Outside view first: forecasters who start from how often similar events happen, and
+        # move away from it only on strong, specific evidence, are far less overconfident
+        "base_rate": Noul(
+            instructions=(
+                "Outside view, ignoring the news items: think of the reference class of similar "
+                "questions (same kind of event, same time left before the end date). How often does an "
+                "event of this kind happen within such a period? Answer with that base rate."
+            ),
+            criteria={
+                "true": "Events of this kind usually happen within such a period",
+                "false": "Events of this kind usually do not happen within such a period",
+            },
+        ),
         "resolves_yes": Noul(
             instructions=(
-                "Considering the market's resolution rules, its end date and the days left, today's date, "
-                "the news items (weighted as described in how_to_weigh_news), the base rate of similar "
-                "events and general world knowledge, will this market resolve YES?"
+                "Start from the base rate of similar events (the outside view, as in base_rate). Then "
+                "adjust for this specific case: the market's resolution rules, its end date and the days "
+                "left, today's date and the news items (weighted as described in how_to_weigh_news). Move "
+                "far from the base rate only with strong, specific and reliable evidence that meets the "
+                "resolution rules before the end date. Will this market resolve YES?"
             ),
             criteria={
                 "true": "The market resolves YES according to its resolution rules",
@@ -286,6 +303,11 @@ def parse_forecast(response) -> tuple[float, float]:
     model_p = float(response.nouls["resolves_yes"].noul)
     evidence_strength = float(response.scores["evidence_strength"].score) / (len(EVIDENCE_CRITERIA) - 1)
     return model_p, evidence_strength
+
+
+def parse_base_rate(response) -> Optional[float]:
+    base = response.nouls.get("base_rate") if getattr(response, "nouls", None) else None
+    return float(base.noul) if base is not None else None
 
 
 async def ask_jev(state, questions, max_wait: Optional[float] = None, samples: Optional[int] = None):
@@ -329,6 +351,12 @@ async def predict_market(session: AsyncSession, market: Market, max_wait: Option
             link.impact = impact.choice
             link.impact_confidence = round(float(impact.confidence), 4)
 
+    # Jev rates the evidence itself and tends to rate it high: the forecast uses the lower of its
+    # rating and one computed from verifiable facts (sources, age, confirmations, Jev's relevance)
+    jev_strength = evidence_strength
+    objective = objective_evidence(evidence)
+    if objective is not None:
+        evidence_strength = min(evidence_strength, objective)
     signal = compute_signal(model_p, market.yes_price, evidence_strength)
     prediction = MarketPrediction(
         market_id=market.id,
@@ -339,6 +367,9 @@ async def predict_market(session: AsyncSession, market: Market, max_wait: Option
         blend_method=settings.BLEND_METHOD,
         model_samples=samples,
         evidence_strength=round(evidence_strength, 4),
+        jev_evidence_strength=round(jev_strength, 4),
+        objective_evidence=round(objective, 4) if objective is not None else None,
+        base_rate=parse_base_rate(response),
         blended_probability=signal.blended_probability,
         model_weight=signal.model_weight,
         edge=signal.edge,

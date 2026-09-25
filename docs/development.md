@@ -49,6 +49,7 @@ In CI an unreachable database fails the tests instead of skipping them.
 | `tests/test_backtest.py` | Planning, news without hindsight (archive too), metrics, bootstrap, parameters verified on recent markets |
 | `tests/test_bulk_predict.py` | «Assess all with Jev»: full flow, waiting on rate limits, stop after repeated errors |
 | `tests/test_usage.py` | Call log, estimated costs, daily limits and warnings |
+| `tests/test_evidence.py` | No long shots, base rate asked to Jev, evidence from the facts (lower of the two), closing-line guard (category, pause, resume) |
 | `tests/test_i18n.py` | English and Italian texts: request language (`X-Lang`), `APP_LANGUAGE`, plans in English, every dashboard text translated |
 
 The tests run with `APP_LANGUAGE=it` (set in `tests/conftest.py`), so most of them check the

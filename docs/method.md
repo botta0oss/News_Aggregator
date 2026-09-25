@@ -71,10 +71,25 @@ passed**, so Jev's estimate stays independent and comparable with the price.
 
 | Question | Primitive | Use |
 |---|---|---|
-| `resolves_yes` | `Noul` | Probability that the market resolves YES |
+| `base_rate` | `Noul` | Outside view: how often events of this kind happen in a similar time frame, before reading the news |
+| `resolves_yes` | `Noul` | Probability that the market resolves YES, starting from the base rate and moving away from it only as far as the news justifies |
 | `evidence_strength` | `Score` (0–4) | How much the news really informs the outcome |
 | `relevant_nX` | `Noul` | Is news item X relevant to the outcome? |
 | `impact_nX` | `Choice` | News item X raises, lowers or does not change the probability of YES |
+
+**Outside view first.** Forecasters who start from how often similar events happen (the base
+rate) and then adjust for the specific case are better calibrated than those who start from
+the story. Jev is asked for the base rate first; the base rate is saved with the forecast and
+shown in the explanation.
+
+**Evidence strength: the lower of two ratings.** Jev's rating (0–4 → 0–1) is compared with
+one computed from the facts: every linked news item weighs its outlet's reliability × its
+freshness × the relevance Jev gave it, more if other outlets confirm the same story (up to 3)
+and 1.5× if it comes from a primary source (Fed, ECB, BLS, SEC, courts, official
+announcements…). The total `T` becomes `T / (T + EVIDENCE_OBJECTIVE_HALF)`: with the default
+1.5 about three fresh items from reliable outlets, or one confirmed primary source, are
+needed to reach 0.5. The forecast uses the **lower** of the two ratings, so a single article
+cannot count as strong evidence because Jev says so. Both ratings are saved.
 
 ### 2. From estimate to signal
 
@@ -120,7 +135,7 @@ for NO the symmetric formula on the NO price.
 |---|---|
 | Market price (YES) | 0.35 |
 | Jev estimate | 0.80 |
-| Evidence strength | 3/4 → 0.75 |
+| Evidence strength | 3/4 → 0.75 (the facts rate it at least as high) |
 | Distance `d` | \|logit 0.80 − logit 0.35\| = 2.005 → reduction 2 / 2.005 = 0.997 |
 | Weight `w` | 0.25 × 0.75 × 0.997 ≈ 0.187 |
 | Blended probability | logit⁻¹(0.187 × logit 0.80 + 0.813 × logit 0.35) ≈ **0.439** |

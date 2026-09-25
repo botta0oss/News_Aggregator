@@ -17,7 +17,9 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
    al 50 %, 4 punti intorno al 90 %), richiede una previsione nuova prima di comprare. Niente
    scommesse sui mercati decisi dal prezzo di un asset (vedi [il metodo](metodo.md#quali-mercati-restano-fuori))
    né su quelli che si chiudono prima delle ore minime del preset: a quel punto il prezzo
-   conosce già l'esito.
+   conosce già l'esito. Niente quote sotto `LONGSHOT_MIN_PRICE` (10¢), su nessuno dei due
+   lati: gli esiti improbabili vincono meno spesso di quanto dica il prezzo (il *favourite–longshot
+   bias*), e un errore di pochi punti su una quota da 5¢ è una grossa parte della puntata.
 1. **Prezzo reale.** Legge il book del lato da comprare dal CLOB di Polymarket (API
    pubblica, sola lettura) e calcola il prezzo medio che pagheresti per quella cifra.
    Commissione (solo per chi compra dal book, come qui): `tasso × prezzo × (1 − prezzo)` per
@@ -56,6 +58,18 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
 
 **Portafoglio simulato** (pagina *Portafoglio*):
 - **Scommesse automatiche:** ogni previsione con verdetto *Conviene* o *Conviene poco* diventa una scommessa virtuale al prezzo reale del momento, al massimo una aperta per mercato.
+- **Guardia sul prezzo di chiusura:** il risultato di una scommessa arriva dopo settimane, il
+  prezzo si muove in poche ore. Sulle ultime `CLV_GUARD_WINDOW` (15) scommesse più vecchie di
+  un'ora la guardia misura quanto si è mosso il prezzo del lato comprato dall'acquisto (fino al
+  prezzo di chiusura, se il mercato è chiuso). Se la media è sotto `CLV_GUARD_MIN_AVG` (−2 punti):
+  - su almeno `CLV_GUARD_CATEGORY_MIN_BETS` (5) scommesse di una categoria → la categoria viene
+    esclusa dalle scommesse automatiche (compare tra le esclusioni, e lì si può togliere);
+  - su almeno `CLV_GUARD_MIN_BETS` (8) scommesse → le scommesse automatiche vanno in pausa, con
+    un messaggio Telegram. La pagina del portafoglio mostra il motivo; un admin le riprende con
+    «Riprendi le scommesse automatiche», e le scommesse precedenti non vengono ricontate.
+
+  Le scommesse manuali non vengono mai bloccate. Un mercato che si muove continuamente contro i
+  segnali vuol dire che non lo anticipano: continuare a scommettere pagherebbe solo lo spread.
 - **Vendita:** dopo ogni aggiornamento dei mercati e ogni nuova previsione le posizioni aperte
   vengono riviste con la [strategia](#strategia-di-acquisto-e-vendita): se il piano dice
   «Vendi», le quote vengono vendute sul book (stato «venduta», con prezzo e motivo). Si può

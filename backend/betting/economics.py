@@ -9,6 +9,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 from backend.betting.fees import fee_per_share
 from backend.betting.profiles import RiskProfile
+from backend.config import settings
 from backend.i18n import lang, tr
 
 MIN_ORDER_USD = 1.0
@@ -273,6 +274,13 @@ def evaluate(
     if days > profile.max_days:
         reasons.append(Reason("too_far", tr(f"Si risolve tra {days:.0f} giorni: il preset accetta al massimo {profile.max_days} giorni.",
                                               f"It resolves in {days:.0f} days: the preset accepts at most {profile.max_days} days.")))
+    if best is not None and best < settings.LONGSHOT_MIN_PRICE:
+        # Favourite-longshot bias: cheap shares win less often than their price says
+        reasons.append(Reason("longshot", tr(
+            f"Quota a {_num(best * 100, 1)}¢: sotto i {_num(settings.LONGSHOT_MIN_PRICE * 100)}¢ le quote improbabili sono in media "
+            "sopravvalutate su Polymarket (chi compra paga troppo le vincite grandi).",
+            f"Share at {_num(best * 100, 1)}¢: below {_num(settings.LONGSHOT_MIN_PRICE * 100)}¢ long shots are overpriced on average "
+            "on Polymarket (buyers overpay for big wins).")))
     if best is None:
         reasons.append(Reason("no_book", tr("Nessuna offerta di vendita disponibile per questo lato.", "No sell offer available for this side.")))
     elif net_edge < profile.min_net_edge:

@@ -98,6 +98,19 @@ class Settings(BaseSettings):
     # Markets decided by an asset price at a date ("Bitcoin above $84,000 on September 24"): Jev reads
     # news, not the live price, and the market price already knows it. No bets, no paid forecasts.
     EXCLUDE_PRICE_MARKETS: bool = True
+    # Long shots: shares under this price are overpriced on average on prediction markets
+    # (favourite-longshot bias). No buys below it, on either side; 0 turns it off.
+    LONGSHOT_MIN_PRICE: float = 0.10
+    # Objective evidence strength (sources, age, confirmations): the value that gives 50%;
+    # the forecast uses the lower of this and Jev's own rating. 0 = Jev's rating only.
+    EVIDENCE_OBJECTIVE_HALF: float = 1.5
+    # Closing-line guard: automatic bets pause when the price has moved against the recent bets
+    CLV_GUARD_ENABLED: bool = True
+    CLV_GUARD_WINDOW: int = 15                # latest bets looked at
+    CLV_GUARD_MIN_BETS: int = 8               # fewer than this: too early to judge
+    CLV_GUARD_MIN_AVG: float = -0.02          # pause when the average move is below this (points of the side bought)
+    CLV_GUARD_CATEGORY_MIN_BETS: int = 5      # same rule per category, which gets excluded
+    CLV_GUARD_MIN_AGE_HOURS: float = 1.0      # bets younger than this have not had time to move
 
     # Betting economics (simulated portfolio)
     RISK_FREE_RATE: float = 0.04              # annual return of the risk-free alternative (e.g. T-bills)

@@ -44,7 +44,7 @@ from backend.ingestor.deduplicator import get_title_embedding
 from backend.ingestor.fetcher import fetch_feed
 from backend.markets import polymarket
 from backend.markets.forecast import compute_signal
-from backend.markets.matching import extract_terms, match_score, rank_evidence, term_overlap
+from backend.markets.matching import extract_terms, match_score, objective_evidence, rank_evidence, term_overlap
 from backend.markets.service import EVIDENCE_CRITERIA, build_jev_request, parse_forecast
 from backend.markets.targeted import build_query
 
@@ -405,6 +405,9 @@ async def _eval_binary(case, market, as_of, params, histories, preset) -> bool:
     state, questions = build_jev_request(ns_market, evidence, now=as_of)
     response = await _jev_with_retries(state, questions)
     model_p, strength = parse_forecast(response)
+    objective = objective_evidence(evidence, now=as_of)   # as live: the lower of Jev's rating and the facts
+    if objective is not None:
+        strength = min(strength, objective)
     signal = compute_signal(model_p, price, strength)
     bet = _simulate_bet(signal, price, signal.blended_probability, model_p, strength, signal.model_weight,
                         (market.end_date - as_of).total_seconds() / 86400, market.liquidity or market.volume * 0.02, preset,

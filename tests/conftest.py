@@ -24,6 +24,9 @@ os.environ["APP_LANGUAGE"] = "it"
 os.environ["MODEL_WEIGHT_MAX"] = "0.5"
 os.environ["MODEL_DISAGREEMENT_LOGIT"] = "0"
 os.environ["EXCLUDE_PRICE_MARKETS"] = "false"
+# ... and without the objective evidence strength and the long-shot rule (tests/test_evidence.py)
+os.environ["EVIDENCE_OBJECTIVE_HALF"] = "0"
+os.environ["LONGSHOT_MIN_PRICE"] = "0"
 # Fast client-side rate limits in tests (test_ratelimit.py sets its own)
 os.environ["JEV_RPM"] = "6000"
 os.environ["GROQ_RPM"] = "6000"

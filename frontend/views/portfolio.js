@@ -155,6 +155,14 @@ export async function viewPortfolio(ctx) {
         data.clv?.n ? t("{0} comprate sotto la chiusura · {1}", fmt.pct(data.clv.share_positive), fmt.count(data.clv.n, t("mercato chiuso"), t("mercati chiusi")))
           : data.clv_open?.n ? t("finora {0} sulle aperte", fmt.pts(data.clv_open.avg)) : t("nessun mercato chiuso ancora")),
     ),
+    data.guard?.paused ? h("div", { class: "notice", role: "alert", style: { marginBottom: "16px" } }, icon("alert"),
+      h("div", {}, h("p", {}, h("b", {}, t("Scommesse automatiche in pausa. ")), data.guard.reason || ""),
+        h("p", { class: "small" }, t("Il prezzo si muove contro le scommesse recenti: i segnali non stanno anticipando il mercato. Riprendi quando hai cambiato qualcosa (calibrazione, preset, categorie): le scommesse fatte finora non verranno ricontate.")),
+        ctx.isAdmin() ? h("button", { class: "btn btn-ghost btn-sm", type: "button", on: { click: async (e) => {
+          e.currentTarget.disabled = true;
+          try { await api("/portfolio/guard/resume", { method: "POST" }); toast(t("Scommesse automatiche riprese")); ctx.rerender(); }
+          catch (err) { toast(err.message, { error: true }); e.currentTarget.disabled = false; }
+        } } }, t("Riprendi le scommesse automatiche")) : null)) : null,
     !bets.length ? h("p", { class: "note", style: { marginBottom: "16px" } }, icon("alert"),
       s.auto_paper ? t("Ancora nessuna scommessa: la prima arriva con la prossima previsione che supera i controlli economici del preset.")
         : t("Le scommesse automatiche sono disattivate: attivale qui sotto o aggiungile dal dettaglio di un mercato.")) : null,
@@ -233,6 +241,8 @@ function settingsCard(ctx, data, refresh) {
     resetArea,
     h("p", { class: "muted small", style: { marginTop: "10px" } },
       t("Tasso senza rischio {0}. ", fmt.pct(data.risk_free_rate)),
+      data.guard?.enabled ? t("Controllo del prezzo di chiusura: sulle ultime {0} scommesse il prezzo si è mosso in media di {1}; sotto {2} le scommesse automatiche si fermano (servono almeno {3} scommesse). ",
+        data.guard.n, data.guard.avg_move != null ? fmt.pts(data.guard.avg_move) : "–", fmt.pts(data.guard.threshold), data.guard.min_bets) : "",
       data.calibration_factor !== 1 ? t("Incertezza corretta ×{0} in base ai risultati passati.", fmt.dec(data.calibration_factor, 2))
         : t("L'incertezza verrà corretta con i risultati reali dopo 30 mercati risolti."),
       infoTip(t("Se le previsioni passate sono state peggiori del prezzo di mercato, l'incertezza della stima viene allargata e le puntate si riducono (e viceversa).")),

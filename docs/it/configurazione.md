@@ -74,6 +74,7 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | `JEV_SAMPLES` | `1` | Chiamate a Jev per previsione, mediate (ognuna si paga) |
 | `MIN_EDGE` | `0.05` | Edge minimo per emettere un segnale |
 | `MIN_EVIDENCE` | `0.5` | Forza minima delle evidenze per emettere un segnale |
+| `EVIDENCE_OBJECTIVE_HALF` | `1.5` | Evidenze calcolate dai fatti: totale pesato delle notizie a cui valgono 0,5. La previsione usa la più bassa tra questa e la valutazione di Jev (`0` = solo Jev) |
 | `KELLY_FRACTION` | `0.25` | Frazione del criterio di Kelly usata per la puntata |
 
 </details>
@@ -111,6 +112,13 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | `MODEL_PSEUDO_COUNT` | `20` | Quante "osservazioni" vale una stima Jev con evidenze piene (regola l'incertezza) |
 | `PAPER_BANKROLL` | `1000` | Capitale iniziale simulato (modificabile dalla dashboard) |
 | `PAPER_PRESET` | `bilanciato` | Preset iniziale: `prudente`, `bilanciato`, `aggressivo` |
+| `LONGSHOT_MIN_PRICE` | `0.10` | Nessun acquisto di quote che costano meno di così, su nessuno dei due lati (`0` = disattivato) |
+| `CLV_GUARD_ENABLED` | `true` | Guardia sul prezzo di chiusura per le scommesse automatiche |
+| `CLV_GUARD_WINDOW` | `15` | Ultime scommesse che considera |
+| `CLV_GUARD_MIN_BETS` | `8` | Scommesse necessarie prima di poter mettere in pausa tutte le automatiche |
+| `CLV_GUARD_CATEGORY_MIN_BETS` | `5` | Scommesse di una categoria necessarie prima di poterla escludere |
+| `CLV_GUARD_MIN_AVG` | `-0.02` | Movimento medio del prezzo (frazione, lato comprato) sotto il quale scatta |
+| `CLV_GUARD_MIN_AGE_HOURS` | `1` | Le scommesse più giovani di così non contano ancora |
 
 </details>
 

@@ -72,6 +72,7 @@ All variables are set in `.env`. Placeholder values `your_...` count as "not con
 | `JEV_SAMPLES` | `1` | Jev calls per forecast, averaged (each one is paid) |
 | `MIN_EDGE` | `0.05` | Minimum edge to issue a signal |
 | `MIN_EVIDENCE` | `0.5` | Minimum evidence strength to issue a signal |
+| `EVIDENCE_OBJECTIVE_HALF` | `1.5` | Evidence computed from the facts: weighted news total at which it is 0.5. The forecast uses the lower of this and Jev's rating (`0` = Jev's rating only) |
 | `KELLY_FRACTION` | `0.25` | Fraction of the Kelly criterion used for the stake |
 
 </details>
@@ -109,6 +110,13 @@ All variables are set in `.env`. Placeholder values `your_...` count as "not con
 | `MODEL_PSEUDO_COUNT` | `20` | How many "observations" a Jev estimate with full evidence is worth (sets the uncertainty) |
 | `PAPER_BANKROLL` | `1000` | Starting simulated capital (editable from the dashboard) |
 | `PAPER_PRESET` | `bilanciato` | Starting preset: `prudente` (prudent), `bilanciato` (balanced), `aggressivo` (aggressive) |
+| `LONGSHOT_MIN_PRICE` | `0.10` | No buys of shares cheaper than this, on either side (`0` = off) |
+| `CLV_GUARD_ENABLED` | `true` | Closing-line guard on automatic bets |
+| `CLV_GUARD_WINDOW` | `15` | Latest bets it looks at |
+| `CLV_GUARD_MIN_BETS` | `8` | Bets needed before it can pause all automatic bets |
+| `CLV_GUARD_CATEGORY_MIN_BETS` | `5` | Bets of one category needed before it can exclude that category |
+| `CLV_GUARD_MIN_AVG` | `-0.02` | Average price move (fraction, side bought) below which it trips |
+| `CLV_GUARD_MIN_AGE_HOURS` | `1` | Bets younger than this are not counted yet |
 
 </details>
 

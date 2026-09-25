@@ -79,9 +79,10 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/portfolio` | Summary, capital curve, available presets |
+| GET | `/portfolio` | Summary, capital curve, available presets, closing-line guard state (`guard`) |
 | GET | `/portfolio/export` | The whole portfolio now: `format=xlsx` (summary, bets, equity, exclusions, columns) or `format=csv` (bets); `lang=it/en` for the descriptions |
 | PUT | `/portfolio/settings` | `{preset, auto_paper, auto_sell}` (admin) |
+| POST | `/portfolio/guard/resume` | Resumes automatic bets paused by the closing-line guard; earlier bets are not counted again (admin) |
 | POST | `/portfolio/reset` | `{bankroll, preset}`: deletes the simulated bets and starts over (admin) |
 | GET | `/portfolio/bets` | Bets: `status` = `open`, `settled`, `excluded`, `all`; open ones have their exit plan (`plan`) |
 | POST | `/portfolio/bets/{id}/exclude` · `/include` | Excludes or readmits a bet (admin) |

@@ -17,6 +17,7 @@ from typing import Optional
 from backend.betting.economics import annualize
 from backend.betting.fees import fee_per_share
 from backend.betting.profiles import RiskProfile
+from backend.config import settings
 from backend.i18n import dec, dollars, side as side_label, tr
 from backend.markets.forecast import pool
 
@@ -84,6 +85,8 @@ def _buy_ok(fc: Forecast, q: float, side: str, profile: RiskProfile, fee_bps: fl
     if p_side - mid < min_edge:                        # the signal itself (measured on the mid, like the forecast)
         return False
     price = min(0.99, mid + half_spread)
+    if price < settings.LONGSHOT_MIN_PRICE:            # long shots are overpriced on average
+        return False
     cost = price + fee_per_share(price, fee_bps)
     p_cons = max(0.0, p_side - profile.z * fc.sigma)
     if p_cons - cost < profile.min_net_edge:           # margin after costs and uncertainty
