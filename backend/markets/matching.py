@@ -331,3 +331,45 @@ async def outlet_priors(session, rows) -> dict:
         .group_by(key).having(func.count(ProcessedArticle.id) >= OUTLET_MIN_ARTICLES)
     )
     return {k: float(v) for k, v in result.all()}
+
+
+# ---------- Objective evidence strength ----------
+
+# Official sources: a statement from the body that decides or measures the outcome
+PRIMARY_DOMAINS = (
+    "federalreserve.gov", "bls.gov", "bea.gov", "sec.gov", "treasury.gov", "whitehouse.gov", "congress.gov",
+    "supremecourt.gov", "fec.gov", "cdc.gov", "ecb.europa.eu", "europa.eu", "bankofengland.co.uk", "un.org",
+    "who.int", "nasa.gov", "noaa.gov", "openai.com", "blog.google",
+)
+
+
+def is_primary_source(article, source) -> bool:
+    from urllib.parse import urlparse
+    for url in (getattr(article, "url", None), getattr(source, "url", None)):
+        host = (urlparse(url).hostname or "").lower() if url else ""
+        if any(host == d or host.endswith("." + d) for d in PRIMARY_DOMAINS):
+            return True
+    return False
+
+
+def evidence_weight(item: EvidenceItem, now: Optional[datetime] = None) -> float:
+    """What one news item is worth as evidence: source reliability × freshness × Jev's relevance,
+    more if several outlets confirm it (up to 3) and if it comes from a primary source."""
+    link, article, _processed, source = item
+    w = item.quality * recency_factor(article.published_at or article.fetched_at, now) * jev_relevance_factor(link.relevance)
+    w *= 1 + 0.5 * (min(item.corroboration, 3) - 1)
+    if is_primary_source(article, source):
+        w *= 1.5
+    return w
+
+
+def objective_evidence(items: list, now: Optional[datetime] = None, half: Optional[float] = None) -> Optional[float]:
+    """Evidence strength from verifiable facts, 0-1: total weight / (total weight + half).
+    With half = 1.5: one fresh, relevant item from a reliable outlet gives about 0.25, three
+    about 0.5, a confirmed statement from a primary source about 0.6; many strong items approach
+    1. None when turned off (half = 0)."""
+    half = settings.EVIDENCE_OBJECTIVE_HALF if half is None else half
+    if half <= 0:
+        return None
+    total = sum(evidence_weight(i, now) for i in items)
+    return total / (total + half)

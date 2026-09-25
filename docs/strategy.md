@@ -17,7 +17,9 @@ every forecast and, live, in the **Worth it?** card of the market detail page.
    4 points around 90 %), needs a new one before buying. No bets on markets decided by an
    asset's price (see [the method](method.md#which-markets-are-left-out)), nor on markets
    ending in less than the preset's minimum hours: at that point the price already knows the
-   outcome.
+   outcome. No shares under `LONGSHOT_MIN_PRICE` (10¢), on either side: long shots win less
+   often than their price says (the *favourite–longshot bias*), and an error of a few points
+   on a 5¢ share is a large share of the stake.
 1. **Real price.** It reads the book of the side to buy from Polymarket's CLOB (public API,
    read only) and computes the average price you would pay for that amount.
    Fee (only for those who take from the book, as here): `rate × price × (1 − price)` per
@@ -55,6 +57,18 @@ every forecast and, live, in the **Worth it?** card of the market detail page.
 
 **Simulated portfolio** (*Portfolio* page):
 - **Automatic bets:** every forecast with a *Worth it* or *Barely worth it* verdict becomes a virtual bet at the real price of the moment, at most one open per market.
+- **Closing-line guard:** the result of a bet takes weeks, the price moves within hours. For
+  the latest `CLV_GUARD_WINDOW` (15) bets older than an hour, the guard measures how much the
+  price of the side bought has moved since the purchase (to the closing price once the market
+  has closed). If the average is below `CLV_GUARD_MIN_AVG` (−2 points):
+  - over at least `CLV_GUARD_CATEGORY_MIN_BETS` (5) bets of one category → the category is
+    excluded from automatic bets (it shows up in the exclusions, and can be removed there);
+  - over at least `CLV_GUARD_MIN_BETS` (8) bets → automatic bets pause, with a Telegram
+    message. The portfolio page shows why; an admin resumes them with «Resume automatic
+    bets», and the bets before the resume are not counted again.
+
+  Manual bets are never blocked. A market that keeps moving against the signals means they are
+  not ahead of it: betting on would only pay the spread.
 - **Selling:** after every market update and every new forecast, open positions are reviewed
   with the [strategy](#buy-and-sell-strategy): if the plan says «Sell», the shares are sold on
   the book (status «sold», with price and reason). It can be turned off («Sell automatically»)

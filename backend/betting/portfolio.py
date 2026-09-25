@@ -65,6 +65,7 @@ async def reset_portfolio(db: AsyncSession, bankroll: float, preset: Optional[st
     if preset is not None:
         row.preset = get_profile(preset).key
     row.started_at = row.updated_at = _now()
+    row.paused_at = row.paused_reason = row.guard_since = None
     await db.commit()
     return row
 
@@ -306,6 +307,12 @@ async def maybe_place_bet(db: AsyncSession, market: Market, prediction: MarketPr
         return None
     if placed_by == "auto" and await excluded_reason(db, market):
         return None
+    already_open = (await db.execute(select(PaperBet.id).where(PaperBet.market_id == market.id, PaperBet.status == "open"))).first()
+    if already_open:
+        return None
+    from backend.betting import guard
+    if placed_by == "auto" and not await guard.allows_auto_bet(db, market):
+        return None   # paused: the price has been moving against the recent bets (betting/guard.py)
     already = (await db.execute(select(PaperBet.id).where(PaperBet.market_id == market.id, PaperBet.status == "open"))).first()
     if already:
         return None

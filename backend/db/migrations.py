@@ -66,6 +66,13 @@ STATEMENTS = [
     "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS calibrated_probability DOUBLE PRECISION",
     "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS blend_method TEXT",
     "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS model_samples INTEGER",
+    # Outside view, objective evidence strength, closing-line guard
+    "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS jev_evidence_strength DOUBLE PRECISION",
+    "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS objective_evidence DOUBLE PRECISION",
+    "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS base_rate DOUBLE PRECISION",
+    "ALTER TABLE betting_settings ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ",
+    "ALTER TABLE betting_settings ADD COLUMN IF NOT EXISTS paused_reason TEXT",
+    "ALTER TABLE betting_settings ADD COLUMN IF NOT EXISTS guard_since TIMESTAMPTZ",
     """UPDATE markets SET resolution = CASE WHEN resolved_yes THEN 'yes' ELSE 'no' END
        WHERE resolution IS NULL AND resolved_yes IS NOT NULL""",
 ]

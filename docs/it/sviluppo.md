@@ -50,6 +50,7 @@ In CI un database non raggiungibile fa fallire i test invece di saltarli.
 | `tests/test_backtest.py` | Pianificazione, notizie senza senno di poi (anche d'archivio), metriche, bootstrap, parametri verificati sui mercati recenti |
 | `tests/test_bulk_predict.py` | «Valuta tutti con Jev»: flusso completo, attesa sui limiti di frequenza, stop dopo errori ripetuti |
 | `tests/test_usage.py` | Registro delle chiamate, costi stimati, limiti giornalieri e avvisi |
+| `tests/test_evidence.py` | Niente quote improbabili, tasso di base chiesto a Jev, evidenze dai fatti (la più bassa delle due), guardia sul prezzo di chiusura (categoria, pausa, ripresa) |
 | `tests/test_i18n.py` | Testi in inglese e italiano: lingua della richiesta (`X-Lang`), `APP_LANGUAGE`, piani in inglese, ogni testo della dashboard tradotto |
 
 ## Struttura del progetto

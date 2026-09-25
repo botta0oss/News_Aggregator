@@ -149,7 +149,10 @@ class MarketPrediction(Base):
     calibrated_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # after Platt scaling
     blend_method: Mapped[Optional[str]] = mapped_column(Text, nullable=True)   # logodds / linear
     model_samples: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Jev calls averaged
-    evidence_strength: Mapped[float] = mapped_column(Float, nullable=False)    # 0-1
+    evidence_strength: Mapped[float] = mapped_column(Float, nullable=False)    # 0-1, used: min(Jev's, objective)
+    jev_evidence_strength: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # as Jev rated it
+    objective_evidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)     # from sources, age, confirmations
+    base_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Jev's outside view: how often events like this happen
     blended_probability: Mapped[float] = mapped_column(Float, nullable=False)  # shrunk toward market
     model_weight: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # weight w of Jev in the blend
     edge: Mapped[float] = mapped_column(Float, nullable=False)                 # blended - market
@@ -196,6 +199,10 @@ class BettingSettings(Base):
     preset: Mapped[str] = mapped_column(Text, nullable=False)
     auto_paper: Mapped[bool] = mapped_column(Boolean, default=True)       # bet automatically on every GO/SMALL
     auto_sell: Mapped[bool] = mapped_column(Boolean, default=True)        # sell open bets when the plan says so
+    # Automatic bets paused by the closing-line guard (betting/guard.py); bets before guard_since are not counted
+    paused_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    paused_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    guard_since: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 

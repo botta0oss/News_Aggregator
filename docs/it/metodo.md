@@ -73,10 +73,25 @@ indipendente e confrontabile con il prezzo.
 
 | Domanda | Primitiva | Uso |
 |---|---|---|
-| `resolves_yes` | `Noul` | Probabilità che il mercato si risolva SÌ |
+| `base_rate` | `Noul` | Visione esterna: quanto spesso eventi di questo tipo accadono in un periodo simile, prima di leggere le notizie |
+| `resolves_yes` | `Noul` | Probabilità che il mercato si risolva SÌ, partendo dal tasso di base e spostandosi solo quanto le notizie giustificano |
 | `evidence_strength` | `Score` (0–4) | Quanto le notizie informano davvero l'esito |
 | `relevant_nX` | `Noul` | La notizia X è rilevante per l'esito? |
 | `impact_nX` | `Choice` | La notizia X alza, abbassa o non cambia la probabilità del SÌ |
+
+**Prima la visione esterna.** Chi prevede partendo da quanto spesso accadono eventi simili
+(il tasso di base) e poi corregge per il caso specifico è meglio calibrato di chi parte dalla
+storia. A Jev si chiede prima il tasso di base; il tasso di base viene salvato con la
+previsione e mostrato nella spiegazione.
+
+**Forza delle evidenze: la più bassa di due valutazioni.** La valutazione di Jev (0–4 → 0–1)
+si confronta con una calcolata dai fatti: ogni notizia collegata pesa l'affidabilità della
+testata × la freschezza × la pertinenza data da Jev, di più se altre testate confermano la
+stessa storia (fino a 3) e 1,5× se viene da una fonte primaria (Fed, BCE, BLS, SEC,
+tribunali, annunci ufficiali…). Il totale `T` diventa `T / (T + EVIDENCE_OBJECTIVE_HALF)`: col
+valore di base 1,5 servono circa tre notizie fresche da testate affidabili, o una fonte
+primaria confermata, per arrivare a 0,5. La previsione usa la **più bassa** delle due, così un
+solo articolo non può valere come evidenza forte perché lo dice Jev. Si salvano entrambe.
 
 ### 2. Dalla stima al segnale
 
@@ -123,7 +138,7 @@ per il NO la formula simmetrica sul prezzo del NO.
 |---|---|
 | Prezzo di mercato (SÌ) | 0.35 |
 | Stima Jev | 0.80 |
-| Forza evidenze | 3/4 → 0.75 |
+| Forza evidenze | 3/4 → 0.75 (i fatti la valutano almeno altrettanto) |
 | Distanza `d` | \|logit 0,80 − logit 0,35\| = 2,005 → riduzione 2 / 2,005 = 0,997 |
 | Peso `w` | 0,25 × 0,75 × 0,997 ≈ 0,187 |
 | Probabilità blended | logit⁻¹(0,187 × logit 0,80 + 0,813 × logit 0,35) ≈ **0,439** |

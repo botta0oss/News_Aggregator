@@ -63,6 +63,9 @@ class PredictionResponse(BaseModel):
     blend_method: Optional[str] = None
     model_samples: Optional[int] = None
     evidence_strength: float
+    jev_evidence_strength: Optional[float] = None
+    objective_evidence: Optional[float] = None
+    base_rate: Optional[float] = None
     blended_probability: float
     model_weight: Optional[float] = None
     edge: float
