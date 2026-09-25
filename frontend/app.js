@@ -93,6 +93,13 @@ function loginView(message) {
     error.hidden = true;
     try {
       const info = await api("/auth/login", { method: "POST", body: { username: username.value, password: password.value }, handle401: false });
+      // The password was right: if the session is not there, the browser refused the cookie
+      try {
+        await api("/auth/me", { handle401: false });
+      } catch (err) {
+        if (err.status === 401) throw new Error(cookieRefusedMessage());
+        throw err;
+      }
       setSignedIn(info);
       password.value = "";
       const target = afterLogin && afterLogin !== window.location.hash ? afterLogin : null;
@@ -119,6 +126,16 @@ function loginView(message) {
         h("code", {}, "python -m backend.auth.cli create-user"), "."),
     ),
   );
+}
+
+function cookieRefusedMessage() {
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+  if (window.location.protocol === "http:" && !local) {
+    return "Password corretta, ma il browser non ha salvato la sessione: il cookie è riservato alle connessioni HTTPS "
+      + "e stai usando HTTP da un indirizzo di rete. Su una rete di casa fidata imposta SESSION_COOKIE_SECURE=false "
+      + "nel file .env e riavvia; altrimenti usa HTTPS (per esempio con Cloudflare Tunnel).";
+  }
+  return "Password corretta, ma il browser non ha salvato la sessione. Controlla che i cookie non siano bloccati per questo sito.";
 }
 
 async function logout() {

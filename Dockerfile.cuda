@@ -1,0 +1,22 @@
+# Image with CUDA, to compute the embeddings on a local NVIDIA GPU (x86_64 only).
+# The host needs the NVIDIA driver and the NVIDIA Container Toolkit; start it with
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+# Without a GPU the model still runs, on the CPU: Dockerfile is the smaller choice there.
+FROM python:3.11-slim
+WORKDIR /app
+
+# Install system dependencies required for pgvector/building packages if needed
+RUN apt-get update && apt-get install -y build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+# The default PyTorch build from PyPI bundles the CUDA runtime libraries
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python -c "import torch; assert torch.version.cuda, 'torch without CUDA in the CUDA image'"
+
+# Pre-download the embedding model
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
+
+COPY . .
+
+# --proxy-headers: behind a reverse proxy, use the real client IP (login rate limit) and scheme (HSTS)
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

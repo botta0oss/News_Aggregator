@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from functools import lru_cache
 from urllib.parse import urlparse, urlunparse
 from backend.config import settings
@@ -7,7 +8,9 @@ from backend.config import settings
 def _get_model():
     # Loaded lazily: importing the app (or the tests) must not download/load the model
     from sentence_transformers import SentenceTransformer
-    return SentenceTransformer(settings.EMBEDDING_MODEL)
+    model = SentenceTransformer(settings.EMBEDDING_MODEL)  # uses the GPU when torch sees one
+    logging.getLogger(__name__).info(f"Embedding model {settings.EMBEDDING_MODEL} on {model.device}")
+    return model
 
 def normalize_url(url: str) -> str:
     parsed = urlparse(url)

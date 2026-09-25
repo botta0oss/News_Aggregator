@@ -1,9 +1,13 @@
+# Everything reads its settings from .env (copy .env.example). On a server, see the README
+# section "Deploy su un VPS con Cloudflare Tunnel".
 services:
   db:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      # Set before the first start: the password is fixed when the database is created
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
       POSTGRES_DB: postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -14,20 +18,67 @@ services:
       retries: 10
 
   api:
-    build: .
+    # CPU-only image; for a local NVIDIA GPU add docker-compose.gpu.yml (see README)
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: news-aggregator-api:cpu
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      # Only this machine can reach the port: from outside the app is served by Cloudflare Tunnel.
+      # API_BIND=0.0.0.0 exposes it on the network (e.g. to open it from another PC at home).
+      - "${API_BIND:-127.0.0.1}:8000:8000"
     env_file:
       - .env
     environment:
       # Inside compose the database is reachable as "db", not localhost
-      DATABASE_URL: postgresql+asyncpg://postgres:password@db:5432/postgres
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-password}@db:5432/postgres
+      # Trust X-Forwarded-Proto from the tunnel container (HTTPS detection); the port is not public
+      FORWARDED_ALLOW_IPS: "*"
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - ./feeds.yaml:/app/feeds.yaml
       - ./frontend:/app/frontend
+
+  # Cloudflare Tunnel: HTTPS on your domain with no open ports. Enabled with the "tunnel"
+  # profile (COMPOSE_PROFILES=tunnel in .env) and the token of a tunnel created on Cloudflare.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - api
+    profiles: ["tunnel"]
+
+  # Daily database dump in ./backups, the last BACKUP_KEEP_DAYS days kept. Enabled with the
+  # "backup" profile (COMPOSE_PROFILES=tunnel,backup). Copy the folder off the server too.
+  backup:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-password}
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          file=/backups/newsagg-$$(date +%Y%m%d-%H%M).dump
+          if pg_dump -Fc postgres > "$$file.tmp"; then mv "$$file.tmp" "$$file"; echo "backup $$file"; else rm -f "$$file.tmp"; echo "backup failed"; fi
+          find /backups -name 'newsagg-*.dump' -mtime +$$KEEP_DAYS -delete
+          sleep 86400
+        done
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["backup"]
 
 volumes:
   pgdata:

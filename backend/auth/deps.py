@@ -21,7 +21,12 @@ login_limiter = LoginRateLimiter(
 
 
 def client_ip(request: Request) -> str:
-    # Behind a reverse proxy run uvicorn with --proxy-headers so this is the real client
+    # Behind Cloudflare the proxy's own header is the reliable one (CLIENT_IP_HEADER); behind
+    # another reverse proxy run uvicorn with --proxy-headers so request.client is the real client
+    if settings.CLIENT_IP_HEADER:
+        value = request.headers.get(settings.CLIENT_IP_HEADER, "").split(",")[0].strip()
+        if value:
+            return value
     return request.client.host if request.client else "unknown"
 
 

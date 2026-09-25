@@ -1,1111 +1,278 @@
-# News Aggregator × Polymarket
+<div align="center">
 
-Aggregatore di notizie RSS che **classifica le notizie** con [TypeSafe Jev](https://typesafe.ai)
-e le usa per **stimare la probabilità degli eventi** quotati sui mercati binari (Sì/No) di
-[Polymarket], confrontando la stima con il prezzo di mercato per individuare possibili
-opportunità.
+# News × Markets
 
-> ⚠️ **Non è consulenza finanziaria.** L'app non piazza ordini: produce segnali indicativi.
-> Prima di usare soldi veri verifica la calibrazione del modello su un numero adeguato di
-> mercati risolti (vedi [Calibrazione](#calibrazione)).
+**Dalle notizie alle probabilità: un aggregatore di notizie che stima gli eventi quotati su [Polymarket], li confronta con il prezzo e dice cosa conviene fare.**
 
----
+[![Test](https://github.com/botta0oss/News_Aggregator/actions/workflows/tests.yml/badge.svg)](https://github.com/botta0oss/News_Aggregator/actions/workflows/tests.yml)
+![Python](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL_16-pgvector-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-CPU_%7C_CUDA-2496ED?logo=docker&logoColor=white)
 
-## Indice
+[Funzionalità](#funzionalità) · [Come funziona](#come-funziona) · [Avvio rapido](#avvio-rapido) · [Messa online](#messa-online) · [Documentazione](#documentazione)
 
-- [Cosa fa](#cosa-fa)
-- [Architettura](#architettura)
-- [Avvio rapido](#avvio-rapido)
-- [Dashboard](#dashboard)
-- [Accesso e sicurezza](#accesso-e-sicurezza)
-- [Configurazione](#configurazione)
-- [Come le notizie vengono collegate ai mercati](#come-le-notizie-vengono-collegate-ai-mercati)
-- [Come nasce una previsione](#come-nasce-una-previsione)
-- [API](#api)
-- [Flusso di lavoro consigliato](#flusso-di-lavoro-consigliato)
-- [Valutazione economica e portafoglio simulato](#valutazione-economica-e-portafoglio-simulato)
-- [Strategia di acquisto e vendita](#strategia-di-acquisto-e-vendita)
-- [Allerte notizie–prezzo](#allerte-notizieprezzo)
-- [Backtest](#backtest)
-- [Mercati a più esiti](#mercati-a-più-esiti)
-- [Uso e costi delle API](#uso-e-costi-delle-api)
-- [Calibrazione](#calibrazione)
-- [Sviluppo e test](#sviluppo-e-test)
-- [Struttura del progetto](#struttura-del-progetto)
-- [Limiti noti](#limiti-noti)
+<br>
 
----
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.png">
+  <img alt="La pagina Opportunità: per ogni mercato il prezzo, la stima di Jev e la probabilità finale sulla stessa scala, con segnale ed edge" src="docs/images/overview-light.png" width="100%">
+</picture>
 
-## Cosa fa
+</div>
 
-| Fase | Descrizione |
-|---|---|
-| **Raccolta** | Legge le fonti attive ogni `INGEST_INTERVAL_MINUTES` (e subito all'avvio). Le fonti si gestiscono dalla dashboard; `feeds.yaml` è il catalogo delle fonti consigliate. |
-| **Deduplicazione** | L1: hash dell'URL normalizzato. L2: similarità degli embedding dei titoli; le notizie quasi identiche finiscono nello stesso cluster. |
-| **Riassunto** | Gemini → Groq → Ollama, con fallback a un estratto del testo. |
-| **Classificazione** | Jev assegna categoria (8, allineate ai temi di Polymarket), regione, opinione o notizia, rilevanza per i mercati, clickbait, autorevolezza, profondità e urgenza. Senza chiave usa parole chiave pesate. |
-| **Ricerca** | Ricerca full-text su titolo, testo e riassunto, con evidenziazione e filtri. |
-| **Mercati** | Sincronizza in sola lettura i mercati Sì/No più scambiati di Polymarket. |
-| **Ricerca mirata** | Per i mercati più scambiati cerca su Google News le notizie con i termini chiave della domanda, anche su temi che le fonti abituali non coprono. |
-| **Collegamento** | Associa ogni mercato alle notizie recenti sullo stesso soggetto: somiglianza semantica (pgvector) più termini chiave (nomi, sigle, numeri, sinonimi). |
-| **Selezione delle evidenze** | Jev legge le notizie più utili: pertinenti, di fonti affidabili, recenti, una per storia con il numero di fonti che la confermano. |
-| **Previsione** | Jev stima la probabilità del SÌ a partire da regole del mercato e notizie. |
-| **Segnale** | Confronta la stima con il prezzo: `BUY_YES`, `BUY_NO` o `HOLD`. |
-| **Valutazione economica** | Decide se conviene davvero e quanto puntare: prezzo reale dal book, commissioni, incertezza della stima, rendimento annualizzato, Kelly sul book e limiti di rischio. |
-| **Strategia** | Per ogni mercato dice cosa fare (compra SÌ/NO, aspetta, evita, tieni, vendi), con quali ordini limite, a che prezzi la decisione cambierebbe e perché sì o perché no. |
-| **Portafoglio simulato** | Ogni scommessa che conviene diventa una scommessa virtuale, venduta quando il piano lo dice o chiusa alla risoluzione, per misurare i risultati prima di usare soldi veri. |
-| **Allerte** | Quando esce una notizia fresca e pertinente per un mercato, Jev lo valuta subito. Se conviene arriva una notifica su Telegram; poi si registra il prezzo dopo 15 minuti, 1, 6 e 24 ore per misurare se l'allerta ha anticipato il mercato. |
+> [!WARNING]
+> **Non è consulenza finanziaria.** L'app non piazza ordini: produce indicazioni da verificare.
+> Prima di usare soldi veri controlla i risultati su molti mercati risolti
+> ([backtest e calibrazione](docs/verifica.md)).
 
-## Architettura
+## In breve
+
+News × Markets raccoglie notizie da feed RSS e ricerche mirate, le classifica con
+[TypeSafe Jev](https://typesafe.ai) e le collega ai mercati di Polymarket. Per ogni mercato
+Jev stima la probabilità dell'esito senza vedere il prezzo; la stima, corretta con i risultati
+passati e pesata per la forza delle notizie, viene confrontata con il prezzo.
+
+Quando c'è un vantaggio, l'app lo traduce in un **piano concreto**: comprare o no, con quale
+ordine limite, quanto puntare, quando vendere e **perché sì o perché no**. Un portafoglio
+simulato, il backtest e la calibrazione misurano se i segnali funzionano davvero.
+
+## Funzionalità
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 📰 Notizie
+- Fonti RSS gestite dalla dashboard, con catalogo di fonti consigliate
+- Ricerca mirata su Google News per i mercati più scambiati
+- Deduplicazione per storia: conferme contate per testata, non per articolo
+- Riassunti (Gemini, Groq, Ollama) e classificazione con Jev
+- Ricerca full-text con evidenziazione e filtri
+
+</td>
+<td width="50%" valign="top">
+
+### 🎯 Previsioni
+- Collegamento notizie–mercati: significato (embedding multilingue) + termini chiave
+- Stima indipendente di Jev, senza vedere il prezzo
+- Calibrazione di Platt e unione col prezzo in log-odds
+- Mercati Sì/No e **a più esiti** (elezioni, campionati), con arbitraggio segnalato
+- Allerte Telegram quando una notizia anticipa il prezzo
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 💶 Decisioni
+- Prezzo reale dal book, commissioni, incertezza, rendimento annuo
+- Kelly calcolato sul book, con tre preset di rischio
+- **Cosa fare**: compra, aspetta, evita, tieni o vendi, con ordini limite
+- Prezzi a cui la decisione cambierebbe e regola di vendita esplicita
+- Motivi a favore e contro, con un livello di fiducia
+
+</td>
+<td valign="top">
+
+### 📊 Misura
+- Portafoglio simulato con acquisti e vendite automatiche
+- Backtest su mercati risolti, con notizie d'archivio senza senno di poi
+- Intervalli di confidenza e validazione sui mercati più recenti
+- Prezzo di chiusura (CLV) di segnali, scommesse e allerte
+- Uso e costi delle API a pagamento, con limiti giornalieri
+
+</td>
+</tr>
+</table>
+
+## Uno sguardo alla dashboard
+
+<table>
+<tr>
+<td width="50%" align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/strategy-dark.png">
+  <img alt="Scheda Cosa fare: azione, ordini limite, scala dei prezzi, motivi a favore e contro" src="docs/images/strategy-light.png" width="100%">
+</picture>
+<br><b>Cosa fare</b>: ordini, prezzi e motivi
+</td>
+<td width="50%" align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/multi-dark.png">
+  <img alt="Evento a più esiti: distribuzione di prezzo, stima di Jev e probabilità finale per ogni candidato" src="docs/images/multi-light.png" width="100%">
+</picture>
+<br><b>Più esiti</b>: la distribuzione, esito per esito
+</td>
+</tr>
+<tr>
+<td align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/portfolio-dark.png">
+  <img alt="Portafoglio simulato: valore, profitti, prezzo di chiusura, preset di rischio" src="docs/images/portfolio-light.png" width="100%">
+</picture>
+<br><b>Portafoglio simulato</b>: risultati prima dei soldi veri
+</td>
+<td align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/backtest-dark.png">
+  <img alt="Backtest: Brier score di Jev e del prezzo, segnali giusti, scommesse simulate, risultati per orizzonte" src="docs/images/backtest-light.png" width="100%">
+</picture>
+<br><b>Backtest</b>: come sarebbe andata sul passato
+</td>
+</tr>
+</table>
+
+<sub>Screenshot con dati dimostrativi. Tema chiaro e scuro seguono le impostazioni del tuo GitHub.</sub>
+
+## Come funziona
 
 ```mermaid
 flowchart LR
-    RSS[Feed RSS] --> ING[Raccolta + dedup]
-    ING --> DB[(PostgreSQL + pgvector)]
-    DB --> AIQ[Riassunto + classificazione Jev]
-    AIQ --> DB
-    PM[Polymarket Gamma API] --> SYNC[Sync mercati]
-    SYNC --> DB
-    DB --> LINK[Collegamento notizie ↔ mercati]
-    LINK --> PRED[Previsione Jev]
-    PRED --> SIG[Edge + Kelly]
-    SIG --> DB
-    DB --> API[FastAPI]
+    subgraph Fonti
+      RSS[Feed RSS]
+      GN[Google News<br/>ricerca mirata]
+      PM[Polymarket<br/>Gamma + CLOB]
+    end
+    RSS --> ING[Raccolta<br/>dedup per storia]
+    GN --> ING
+    ING --> CLS[Riassunto<br/>classificazione Jev]
+    CLS --> DB[(PostgreSQL<br/>+ pgvector)]
+    PM --> DB
+    DB --> LINK[Collegamento<br/>notizie ↔ mercati]
+    LINK --> JEV[Stima Jev<br/>calibrata]
+    JEV --> BLEND[Unione col prezzo<br/>edge]
+    BLEND --> ECO[Valutazione<br/>economica]
+    ECO --> PLAN[Cosa fare<br/>ordini e motivi]
+    PLAN --> OUT[Dashboard · Telegram<br/>portafoglio simulato]
 ```
 
-Stack: **FastAPI**, **SQLAlchemy async + asyncpg**, **PostgreSQL + pgvector**,
-**sentence-transformers** (`paraphrase-multilingual-MiniLM-L12-v2`), **APScheduler**, **typesafe-sdk**.
+1. **Raccolta.** Le notizie arrivano da feed RSS e da ricerche mirate; la stessa storia
+   riscritta da più testate diventa un'unica voce, con il numero di testate che la confermano.
+2. **Collegamento.** Ogni mercato riceve le notizie sullo stesso soggetto, scelte per
+   pertinenza, affidabilità della fonte e freschezza.
+3. **Previsione.** Jev legge regole del mercato e notizie e stima la probabilità senza vedere
+   il prezzo. La stima viene calibrata sui mercati già risolti e unita al prezzo con un peso
+   che cresce con la forza delle notizie.
+4. **Decisione.** Prezzo reale dal book, commissioni, incertezza, tempo e limiti di rischio
+   dicono se conviene, quanto puntare e a che prezzo vendere.
+5. **Verifica.** Portafoglio simulato, backtest, calibrazione e prezzo di chiusura dicono se
+   il vantaggio è reale.
+
+Dettagli e formule: [Il metodo](docs/metodo.md) · [Strategia e portafoglio](docs/strategia.md).
 
 ## Avvio rapido
 
-### Con Docker (consigliato)
+**Con Docker** (consigliato). Serve almeno la chiave di [TypeSafe](https://typesafe.ai) per le previsioni.
 
 ```bash
-cp .env.example .env        # inserisci almeno TYPESAFE_API_KEY
+git clone https://github.com/botta0oss/News_Aggregator.git && cd News_Aggregator
+cp .env.example .env          # inserisci almeno TYPESAFE_API_KEY e POSTGRES_PASSWORD
 docker compose up --build
 docker compose exec api python -m backend.auth.cli create-user tuonome --role admin
 ```
 
-Il compose avvia anche Postgres con pgvector. Dashboard su http://localhost:8000 (accedi
-con l'utente appena creato), documentazione interattiva delle API su http://localhost:8000/docs.
+Apri **http://localhost:8000** e accedi con l'utente appena creato. Il compose avvia anche
+Postgres con pgvector; alla prima partenza la raccolta delle notizie e il sync dei mercati
+iniziano subito. Per aprirla dal telefono o da un altro PC di casa vedi
+[Uso nella rete di casa](docs/deploy.md#uso-in-locale-e-nella-rete-di-casa).
 
-### In locale
+> [!TIP]
+> Con una GPU NVIDIA in locale:
+> `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build`.
+> Senza GPU l'immagine predefinita usa PyTorch solo CPU, molto più leggera.
+> Vedi [Immagini Docker](docs/deploy.md#immagini-docker-cpu-o-gpu).
+
+<details>
+<summary><b>Senza Docker</b></summary>
+
+<br>
 
 Serve un PostgreSQL con l'estensione [pgvector](https://github.com/pgvector/pgvector).
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # solo senza GPU
 pip install -r requirements.txt
 cp .env.example .env        # imposta DATABASE_URL e le chiavi
 python -m backend.auth.cli create-user tuonome --role admin
 uvicorn backend.main:app --reload
 ```
 
-`python scripts/check_env.py` controlla quali chiavi sono configurate e se il database risponde.
+`python scripts/check_env.py` controlla quali chiavi sono configurate e se il database
+risponde. Le tabelle vengono create all'avvio e aggiornate da migrazioni idempotenti.
 
-Le tabelle vengono create all'avvio. Quelle già esistenti **non** vengono modificate: se
-cambi lo schema di una tabella esistente, aggiornala a mano.
+</details>
 
-## Dashboard
+## Messa online
 
-L'interfaccia web è servita dalla stessa app su `/`: HTML, CSS e JavaScript senza
-dipendenze né build, nella cartella `frontend/`.
+Il modo più economico: un piccolo VPS con Docker e **Cloudflare Tunnel** per l'HTTPS, senza
+porte aperte né certificati da gestire. Il compose include il tunnel e un backup giornaliero
+del database.
 
-**Navigazione.** Le sezioni sono raggruppate per quello che si sta facendo: *Segnali*
-(Opportunità, Allerte), *Mercati* (Sì / No, Più esiti), *Notizie*, *Risultati* (Portafoglio, Backtest, Calibrazione).
-Impostazioni, Uso e costi, «Come funziona» e account stanno in fondo.
-- **Da 1024 px in su:** menu laterale, che si può ridurre alle sole icone; la scelta viene
-  ricordata. In alto una riga di stato (ultima notizia, mercati aperti, Jev attivo) e il menu
-  «Aggiorna» con gli aggiornamenti di notizie e mercati (solo admin).
-- **Su tablet e telefono:** barra in basso con le quattro sezioni più usate e «Altro» per
-  tutte le altre.
-- Il numero su «Allerte» indica le opportunità delle ultime 24 ore.
-
-| Sezione | Cosa mostra |
+| | Costo indicativo |
 |---|---|
-| **Opportunità** | Mercati con segnale attivo ordinati per edge: prezzo, stima Jev e probabilità blended sulla stessa scala 0–100 %, puntata suggerita e forza delle evidenze. Filtri per edge ed evidenze minime. |
-| **Mercati** | Tabella dei mercati con ricerca e ordinamento (clic sulle colonne o menu «Ordina per»): prezzo in centesimi, volume, liquidità, scadenza con giorni mancanti, notizie collegate, ultimo segnale ed edge. |
-| **Più esiti** | Eventi con più risposte possibili (elezioni, campionati, premi) come distribuzione: barra del prezzo per ogni esito, stima di Jev e blended, edge per esito, segnale sull'esito più sottovalutato. |
-| **Dettaglio mercato** | Ultima previsione, pulsante per chiederne una nuova, storico (prezzo contro blended), notizie collegate con rilevanza e impatto, regole di risoluzione. |
-| **Notizie** | Ricerca nelle notizie (titolo, testo, riassunto) con parole evidenziate; filtri per fonte, periodo, regione, categoria, rilevanza per i mercati, opinioni; ordinamento per pertinenza, punteggio o data. |
-| **Allerte** | Ultime allerte con notizia, prezzo all'allerta e movimento a favore dopo 15 minuti, 1, 6 e 24 ore; risultati complessivi; impostazioni (categorie, soglie, limite giornaliero, ore silenziose, prova di Telegram). |
-| **Backtest** | Jev sui mercati già risolti, con notizie e prezzo di allora: Brier contro il prezzo, per orizzonte e categoria, calibrazione, scommesse simulate, parametri suggeriti da applicare. |
-| **Calibrazione** | Brier score di prezzo, Jev e blended sui mercati risolti, con avviso se il campione è piccolo. |
-| **Come funziona** | Il metodo passo per passo con i parametri reali del server, un esempio numerico e un glossario. |
-| **Impostazioni** | Fonti: aggiungi (con prova del feed prima di salvare), modifica, attiva/disattiva, aggiorna subito, elimina; fonti consigliate dal catalogo; riclassificazione; parametri di previsione in sola lettura. |
+| VPS 2 vCore, 4 GB RAM (OVH VPS-1, Hetzner…) | circa 4–6 € al mese |
+| Cloudflare Tunnel, HTTPS, dominio gestito da Cloudflare | gratuito (il dominio si paga a parte) |
+| Riassunti con Gemini o Groq, Telegram, Polymarket, Google News | piani gratuiti |
+| Previsioni con Jev (TypeSafe) | a consumo, con [limiti giornalieri](docs/costi.md) |
 
-Nel dettaglio di un mercato la scheda **Perché questo segnale** mostra il calcolo completo
-sui numeri di quella previsione: stima Jev, peso, probabilità blended, edge, controlli
-superati e puntata. I termini tecnici hanno una definizione al passaggio del mouse (ⓘ).
+Guida passo passo: **[Deploy su un VPS con Cloudflare Tunnel](docs/deploy.md#deploy-su-un-vps-con-cloudflare-tunnel)**.
 
-La ricerca accetta frasi tra virgolette, `-parola` per escludere e `or` per alternative;
-l'ultima parola vale anche come prefisso. Il link `#/notizie?q=...` riapre la stessa ricerca.
+## Configurazione essenziale
 
-Il menu «Aggiorna» avvia l'aggiornamento di notizie e mercati. La pagina si aggiorna da sola
-mentre il lavoro procede in background.
+Tutto si imposta in `.env` (copia di [`.env.example`](.env.example)). Le più importanti:
 
-**Valuta tutti con Jev** (in Opportunità e Mercati, solo admin) chiede una previsione per
-ogni mercato aperto con notizie recenti collegate. Prima di partire mostra quante chiamate a
-pagamento servono e quanto tempo richiedono con il limite `JEV_RPM`. Puoi valutare tutti
-i mercati o solo quelli mai valutati o con notizie nuove dall'ultima previsione.
-
-Il lavoro gira in background: puoi chiudere la pagina e ritrovare l'avanzamento quando
-torni. Aggiorna prima prezzi e collegamenti, così l'edge è calcolato sul prezzo attuale.
-Se Jev risponde con un limite di frequenza, aspetta e riprende dallo stesso mercato.
-Si ferma da solo dopo 3 errori consecutivi, ad esempio per connessione assente o chiave
-non valida, e si può interrompere quando vuoi. Le scommesse simulate seguono le regole
-del portafoglio.
-
-Scelte di design:
-- **Tema scuro predefinito**, con tema chiaro dal pulsante in alto. La scelta viene ricordata.
-- **Colori fissi per ogni serie in tutti i grafici:** prezzo arancio, Jev acqua, blended blu. Verde e rosso sono riservati ai segnali e sono sempre accompagnati da icona e testo.
-- **Palette verificata** per il daltonismo su entrambi i temi.
-- **Forme distinte:** cerchio e rombo, linea continua e tratteggiata. Ogni grafico ha legenda con valori e tabella alternativa.
-- **Numeri in carattere monospazio** (Fira Code) e prezzi in centesimi, come su Polymarket.
-- **Accessibilità:** navigabile da tastiera, target touch di 44 px, rispetta la riduzione del movimento, nessuno scroll orizzontale da 375 px in su.
-
-## Accesso e sicurezza
-
-Tutta l'API, tranne il login, richiede un utente autenticato. I file statici della
-dashboard sono pubblici ma non contengono dati.
-
-**Ruoli**
-
-| Ruolo | Può fare |
+| Variabile | A cosa serve |
 |---|---|
-| `admin` | Tutto: consultare i dati, aggiornare notizie e mercati, chiedere previsioni a Jev (a pagamento) |
-| `viewer` | Consultare notizie, mercati, previsioni e calibrazione |
+| `TYPESAFE_API_KEY` | Previsioni e classificazione con Jev. Senza, classificazione euristica e niente previsioni |
+| `GEMINI_API_KEY` / `GROQ_API_KEY` | Riassunti delle notizie (piani gratuiti) |
+| `POSTGRES_PASSWORD` | Password del database nel compose, da scegliere prima del primo avvio |
+| `DAILY_JEV_CALL_LIMIT`, `DAILY_AI_BUDGET_USD` | Tetto giornaliero alle chiamate e alla spesa |
+| `PREDICTION_AUTO` | Previsioni automatiche dopo ogni raccolta (di base spente) |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Notifiche delle allerte |
+| `PUBLIC_URL` | Indirizzo della dashboard, per i link nelle notifiche |
 
-**Gestione utenti** (non c'è registrazione pubblica):
+Tutte le altre: **[Configurazione](docs/configurazione.md)**.
 
-```bash
-python -m backend.auth.cli create-user alice --role admin   # chiede la password
-python -m backend.auth.cli create-user bob                   # viewer
-python -m backend.auth.cli list-users
-python -m backend.auth.cli set-password alice                # chiude anche tutte le sue sessioni
-python -m backend.auth.cli disable bob                       # disattiva e disconnette
-python -m backend.auth.cli enable bob
-python -m backend.auth.cli revoke-sessions alice
-```
+## Documentazione
 
-In alternativa, al primo avvio senza utenti viene creato un admin da `ADMIN_USERNAME` e
-`ADMIN_PASSWORD`. Dopo il primo avvio togli `ADMIN_PASSWORD` dal file `.env`.
-
-**Come funziona**
-
-- **Password:** hash Argon2id, minimo 12 caratteri, non possono contenere lo username.
-  Gli hash con parametri vecchi vengono aggiornati al login successivo.
-- **Sessioni lato server:** il cookie `nm_session` contiene un token casuale di 256 bit;
-  nel database c'è solo il suo hash SHA-256. Il cookie è `HttpOnly`, `SameSite=Lax` e
-  `Secure` (tranne su `localhost` in HTTP).
-- **Scadenza:** ogni sessione dura al massimo `SESSION_TTL_HOURS` e termina dopo
-  `SESSION_IDLE_MINUTES` di inattività. Logout, cambio password e disattivazione dell'utente
-  la revocano subito.
-- **CSRF:** ogni richiesta che modifica dati deve inviare nell'header `X-CSRF-Token` il
-  token della sessione. La dashboard lo fa da sola.
-- **Tentativi di login:** dopo `LOGIN_MAX_ATTEMPTS` errori per IP e username, o
-  `LOGIN_MAX_ATTEMPTS_PER_IP` per IP, il login viene bloccato per `LOGIN_WINDOW_MINUTES`.
-  La risposta è la stessa sia che l'utente esista sia che no, e dura lo stesso tempo.
-- **Header di sicurezza:** Content-Security-Policy senza script inline, `X-Frame-Options:
-  DENY`, `nosniff`, HSTS quando la richiesta arriva in HTTPS.
-- **CORS:** disattivato. La dashboard è sulla stessa origine; eventuali origini esterne
-  vanno elencate in `CORS_ORIGINS` (il carattere jolly `*` viene ignorato).
-
-**Messa online**
-
-1. Metti l'app dietro un reverse proxy con HTTPS (Caddy, nginx, Traefik).
-2. Avvia uvicorn con `--proxy-headers` (già nel Dockerfile), così il limite dei tentativi
-   vede il vero IP del client. Se il proxy non gira sulla stessa macchina, aggiungi
-   `--forwarded-allow-ips` con il suo indirizzo.
-3. Imposta `API_DOCS_ENABLED=false` per non pubblicare lo schema dell'API.
-4. Il limite dei tentativi è in memoria: con più worker ognuno ha i suoi contatori. Con più
-   worker aggiungi un limite anche sul proxy.
-
-## Configurazione
-
-Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contano come
-"non configurato".
-
-<details>
-<summary><b>Database e AI</b></summary>
-
-| Variabile | Default | Descrizione |
-|---|---|---|
-| `DATABASE_URL` | `postgresql+asyncpg://postgres:password@localhost:5432/postgres` | Connessione al database |
-| `SIMILARITY_THRESHOLD` | `0.92` | Similarità oltre cui due titoli sono la stessa notizia |
-| `STORY_SIMILARITY_THRESHOLD` | `0.82` | Similarità di titolo + testo oltre cui due articoli raccontano la stessa storia (titoli riscritti da testate diverse) |
-| `STORY_WINDOW_HOURS` | `48` | Quanto indietro si cerca la stessa storia |
-| `EMBEDDING_MODEL` | `paraphrase-multilingual-MiniLM-L12-v2` | Modello di embedding (384 dimensioni, multilingue: una notizia italiana trova il mercato scritto in inglese). Se lo cambi, all'avvio i vettori salvati vengono ricalcolati in background, prima le notizie più recenti |
-| `TYPESAFE_API_KEY` | – | Chiave TypeSafe. Senza chiave niente previsioni, classificazione euristica |
-| `TYPESAFE_MODEL` | `jev-latest` | Modello Jev |
-| `SUMMARIZER_PROVIDER` | `auto` | `gemini`, `groq`, `ollama` o `auto` |
-| `GEMINI_API_KEY` / `GEMINI_MODEL` | – / `gemini-2.5-flash` | Google AI Studio |
-| `GROQ_API_KEY` / `GROQ_MODEL` | – / `llama-3.1-8b-instant` | Groq Cloud |
-| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | `http://localhost:11434` / `qwen2.5:1.5b` | Ollama locale |
-
-</details>
-
-<details>
-<summary><b>Polymarket e previsioni</b></summary>
-
-| Variabile | Default | Descrizione |
-|---|---|---|
-| `POLYMARKET_ENABLED` | `true` | Attiva sync e collegamento dei mercati |
-| `POLYMARKET_SYNC_LIMIT` | `200` | Numero massimo di mercati aperti seguiti |
-| `POLYMARKET_MIN_VOLUME` | `10000` | Volume minimo (USD): esclude i mercati poco liquidi |
-| `MARKET_MATCH_THRESHOLD` | `0.5` | Pertinenza minima notizia ↔ mercato (significato + termini chiave), 0–1 |
-| `MARKET_CANDIDATE_MARGIN` | `0.15` | Candidati: similarità semantica ≥ soglia − margine |
-| `MARKET_MATCH_TERM_WEIGHT` | `0.3` | Peso dei termini chiave nella pertinenza |
-| `MARKET_MATCH_NO_ENTITY_PENALTY` | `0.6` | Moltiplicatore se la notizia non cita nessun nome della domanda |
-| `MARKET_NEWS_WINDOW_HOURS` | `168` | Solo notizie degli ultimi N ore (7 giorni: per molti mercati una settimana di contesto conta) |
-| `MARKET_MAX_ARTICLES` | `8` | Notizie passate a Jev per ogni previsione |
-| `EVIDENCE_HALF_LIFE_HOURS` | `48` | Il peso di una notizia si dimezza ogni N ore (minimo 25 %) |
-| `EVIDENCE_MIN_JEV_RELEVANCE` | `0.25` | Notizie che Jev ha giudicato meno rilevanti di così per un mercato non gli vengono più passate |
-| `TARGETED_NEWS_ENABLED` | `true` | Ricerca mirata su Google News per ogni mercato |
-| `TARGETED_NEWS_MAX_MARKETS` | `25` | Mercati cercati a ogni giro (i più scambiati) |
-| `TARGETED_NEWS_REFRESH_HOURS` | `6` | Ogni quanto ripetere la ricerca per lo stesso mercato |
-| `TARGETED_NEWS_MAX_RESULTS` | `10` | Notizie tenute per ricerca |
-| `TARGETED_NEWS_DAYS` | `7` | Solo risultati degli ultimi N giorni |
-| `TARGETED_NEWS_LOCALE` | `hl=en-US&gl=US&ceid=US:en` | Lingua e paese dei risultati |
-| `PREDICTION_AUTO` | `false` | Previsioni automatiche dopo ogni raccolta (ogni previsione è una chiamata a pagamento) |
-| `PREDICTION_MAX_PER_RUN` | `10` | Tetto di previsioni automatiche per esecuzione |
-| `MODEL_WEIGHT_MAX` | `0.5` | Peso massimo di Jev rispetto al prezzo di mercato |
-| `BLEND_METHOD` | `logodds` | Come si uniscono Jev e prezzo: `logodds` o `linear` |
-| `JEV_CALIB_A` / `JEV_CALIB_B` | `0` / `1` | Calibrazione di Platt della stima di Jev (si stimano col backtest) |
-| `JEV_SAMPLES` | `1` | Chiamate a Jev per previsione, mediate (ognuna si paga) |
-| `MIN_EDGE` | `0.05` | Edge minimo per emettere un segnale |
-| `MIN_EVIDENCE` | `0.5` | Forza minima delle evidenze per emettere un segnale |
-| `KELLY_FRACTION` | `0.25` | Frazione del criterio di Kelly usata per la puntata |
-
-</details>
-
-<details>
-<summary><b>Server</b></summary>
-
-| Variabile | Default | Descrizione |
-|---|---|---|
-| `INGEST_INTERVAL_MINUTES` | `60` | Intervallo della pipeline |
-| `ALERT_SCAN_MINUTES` | `10` | Controllo rapido per le allerte: fonti → collegamenti → allerte, senza riassunti (`0` lo disattiva) |
-| `ALERT_FOLLOWUP_MINUTES` | `5` | Ogni quanto registrare il prezzo dopo le allerte |
-| `ALERT_TIMEZONE` | `Europe/Rome` | Fuso orario delle ore silenziose |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | Bot e chat che ricevono le notifiche |
-| `PUBLIC_URL` | – | Indirizzo della dashboard, per il link nelle notifiche (es. `https://news.example.com`) |
-| `AI_BATCH_SIZE` | `25` | Notizie riassunte e classificate a ogni esecuzione |
-| `FEED_TIMEOUT_SECONDS` | `20` | Tempo massimo per scaricare un feed |
-| `FEED_MAX_BYTES` | `5000000` | Dimensione massima di un feed |
-| `ALLOW_PRIVATE_FEEDS` | `false` | Permette feed su indirizzi interni (vedi sotto) |
-| `CORS_ORIGINS` | – | Origini esterne ammesse, separate da virgola. La dashboard non ne ha bisogno |
-| `API_DOCS_ENABLED` | `true` | Pubblica `/docs` e `/openapi.json`. Disattiva in produzione |
-
-</details>
-
-<details>
-<summary><b>Valutazione economica e portafoglio simulato</b></summary>
-
-| Variabile | Default | Descrizione |
-|---|---|---|
-| `POLYMARKET_CLOB_URL` | `https://clob.polymarket.com` | API pubblica del book (sola lettura) |
-| `RISK_FREE_RATE` | `0.04` | Rendimento annuo dell'alternativa senza rischio, base della soglia di rendimento |
-| `DEFAULT_FEE_BPS` | `500` | Tasso di commissione (punti base, applicato a `p × (1 − p)`) per le categorie sconosciute |
-| `DEFAULT_SPREAD` | `0.02` | Spread ipotizzato quando il book non è disponibile |
-| `MODEL_PSEUDO_COUNT` | `20` | Quante "osservazioni" vale una stima Jev con evidenze piene (regola l'incertezza) |
-| `PAPER_BANKROLL` | `1000` | Capitale iniziale simulato (modificabile dalla dashboard) |
-| `PAPER_PRESET` | `bilanciato` | Preset iniziale: `prudente`, `bilanciato`, `aggressivo` |
-
-</details>
-
-<details>
-<summary><b>Limiti delle API AI</b></summary>
-
-Ogni fornitore ha un limitatore lato client: distanzia le richieste, limita quelle
-contemporanee e, quando l'API risponde 429, mette in pausa quel fornitore per il tempo
-indicato da `Retry-After`. Imposta i valori del tuo piano (li trovi nelle console di Groq,
-Google AI Studio e TypeSafe).
-
-| Variabile | Default | Descrizione |
-|---|---|---|
-| `GROQ_RPM` | `20` | Richieste al minuto verso Groq |
-| `GEMINI_RPM` | `10` | Richieste al minuto verso Gemini |
-| `JEV_RPM` | `30` | Richieste al minuto verso TypeSafe Jev |
-| `JEV_CONCURRENCY` | `2` | Chiamate Jev contemporanee |
-| `OLLAMA_CONCURRENCY` | `1` | Richieste contemporanee a Ollama locale |
-| `AI_MAX_WAIT_SECONDS` | `90` | Attesa massima di un lavoro in background per il suo turno |
-
-- **Pausa di Jev:** se Jev è in pausa, la classificazione si ferma e le notizie restanti
-  vengono riprese al giro successivo (non vengono declassate all'euristica). La previsione
-  manuale dalla dashboard aspetta al massimo 10 secondi, poi risponde "riprova tra N secondi".
-- **Pausa di Groq o Gemini:** si passa al fornitore successivo; senza nessun fornitore
-  disponibile il riassunto è un estratto del testo.
-- **Modelli di ragionamento:** con i modelli Groq di ragionamento (`openai/gpt-oss-20b`,
-  `openai/gpt-oss-120b`) l'app chiede un ragionamento breve (`reasoning_effort=low`) e limita
-  i token della risposta, per non esaurire il limite di token al minuto.
-
-</details>
-
-<details>
-<summary><b>Accesso</b></summary>
-
-| Variabile | Default | Descrizione |
-|---|---|---|
-| `SESSION_TTL_HOURS` | `168` | Durata massima di una sessione (7 giorni) |
-| `SESSION_IDLE_MINUTES` | `720` | Chiusura dopo inattività (12 ore) |
-| `SESSION_COOKIE_SECURE` | `auto` | `auto` = `Secure` tranne su localhost in HTTP; oppure `true` / `false` |
-| `LOGIN_MAX_ATTEMPTS` | `5` | Tentativi falliti per IP e username prima del blocco |
-| `LOGIN_MAX_ATTEMPTS_PER_IP` | `20` | Tentativi falliti per IP, qualunque username |
-| `LOGIN_WINDOW_MINUTES` | `15` | Finestra e durata del blocco |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | – | Admin creato al primo avvio se non esistono utenti |
-
-</details>
-
-**Fonti.** Si gestiscono da *Impostazioni → Fonti*. Al primo avvio, con la tabella delle
-fonti vuota, vengono aggiunte le voci di `feeds.yaml` con `active: true`; le altre compaiono
-tra le fonti consigliate. Ogni fonte può avere un argomento prevalente, usato come indizio
-dal classificatore. Per sicurezza il server rifiuta i feed che puntano a reti interne
-(localhost, 10.x, 192.168.x, metadati cloud), anche dopo un reindirizzamento: altrimenti
-chi aggiunge una fonte potrebbe far interrogare al server la rete interna. Se ti serve un
-feed interno imposta `ALLOW_PRIVATE_FEEDS=true`.
-
-Il catalogo contiene 85 fonti, raggruppate per i temi scambiati su Polymarket:
-- esteri e conflitti;
-- politica USA ed europea, compresi sondaggi, Corte suprema ed elezioni;
-- economia, con fonti primarie come Fed, BCE, Bank of England, BLS, BEA e SEC;
-- crypto;
-- tecnologia e AI, compresi gli annunci ufficiali di OpenAI e Google;
-- scienza, spazio, salute e meteo (NASA, OMS, NOAA per gli uragani);
-- sport;
-- cultura e spettacolo (premi, box office, musica);
-- testate italiane.
-
-In *Impostazioni* puoi aggiungerle tutte, oppure per categoria, con «Seleziona tutte» e «tutte».
-Prima di attivare molte fonti nuove prova i feed con «Prova»: gli indirizzi RSS a volte
-cambiano.
-
-## Come le notizie vengono collegate ai mercati
-
-1. **Candidati.** pgvector trova le notizie recenti simili alla domanda del mercato. Confronta sia
-   il titolo sia il titolo con l'inizio del testo, perché molti titoli sono vaghi.
-2. **Termini chiave.** Dalla domanda si estraggono nomi e sigle (peso 2), parole distintive e
-   numeri (peso 1), anni, mesi e giorni (peso 0,5). Contano anche i sinonimi più comuni: Fed =
-   Federal Reserve = Powell, BTC = Bitcoin, 100k = 100.000 = $100,000. Le sigle corte si
-   confrontano rispettando le maiuscole, così «US» non corrisponde a «us».
-3. **Pertinenza.** Si calcola `0,7 × somiglianza + 0,3 × termini trovati`. Se la notizia non
-   cita nessun nome della domanda la pertinenza scende al 60 %: è lo stesso tema su un altro
-   soggetto, per esempio una notizia sulla BCE per un mercato sulla Fed. Si tengono le notizie
-   con pertinenza ≥ `MARKET_MATCH_THRESHOLD`.
-4. **Utilità per Jev.** L'utilità di ogni notizia è `pertinenza × affidabilità della fonte ×
-   freschezza × giudizio di Jev`.
-   - L'affidabilità dipende da autorevolezza, clickbait e articoli d'opinione. L'autorevolezza
-     di un singolo articolo è una stima rumorosa: per le testate con almeno 5 articoli
-     classificati vale per metà la media della testata.
-   - La freschezza si dimezza ogni `EVIDENCE_HALF_LIFE_HOURS`.
-   - Le notizie che Jev ha già giudicato non rilevanti per quel mercato vengono tolte.
-
-   Una **storia** raggruppa gli articoli con titolo quasi identico (`SIMILARITY_THRESHOLD`) o con
-   titolo + testo molto simili nelle ultime `STORY_WINDOW_HOURS` ore
-   (`STORY_SIMILARITY_THRESHOLD`: le testate riscrivono i titoli). Le conferme contano le
-   testate diverse, non gli articoli: una fonte che ripete la notizia non la rende più certa.
-   Jev legge le `MARKET_MAX_ARTICLES` più utili: una per storia, al massimo 3 per fonte. Per ogni
-   notizia riceve età, tipo (cronaca o opinione), affidabilità della fonte e numero di testate che
-   l'hanno riportata, oltre ai giorni che mancano alla scadenza del mercato.
-5. **Ricerca mirata.** A ogni giro, per i `TARGETED_NEWS_MAX_MARKETS` mercati più scambiati non
-   cercati nelle ultime `TARGETED_NEWS_REFRESH_HOURS` ore, i termini chiave vengono cercati su
-   Google News. I risultati vengono salvati come notizie della fonte automatica «Ricerca mirata»,
-   con il nome della testata originale, e seguono lo stesso percorso: deduplicazione,
-   classificazione, collegamento. Si può lanciare anche a mano dal dettaglio di un mercato
-   («Cerca notizie»). Se il servizio non risponde per 3 mercati di fila, la ricerca si ferma
-   fino al giro successivo.
-
-Nel dettaglio di un mercato ogni notizia mostra la pertinenza, i termini chiave trovati, il
-numero di fonti che la confermano e se arriva dalla ricerca mirata.
-
-## Come nasce una previsione
-
-### 1. Domande a Jev
-
-Per ogni mercato si fa **una sola** chiamata `system_one`. Lo stato contiene la domanda del
-mercato, le regole di risoluzione, la data di scadenza, la data di oggi e le notizie
-collegate. **Il prezzo di mercato non viene passato**, così la stima di Jev resta
-indipendente e confrontabile con il prezzo.
-
-| Domanda | Primitiva | Uso |
-|---|---|---|
-| `resolves_yes` | `Noul` | Probabilità che il mercato si risolva SÌ |
-| `evidence_strength` | `Score` (0–4) | Quanto le notizie informano davvero l'esito |
-| `relevant_nX` | `Noul` | La notizia X è rilevante per l'esito? |
-| `impact_nX` | `Choice` | La notizia X alza, abbassa o non cambia la probabilità del SÌ |
-
-### 2. Dalla stima al segnale
-
-I mercati liquidi di solito sono già ben calibrati, quindi la stima di Jev non viene usata
-così com'è:
-
-1. **Calibrazione (scala di Platt).** `logit P_cal = JEV_CALIB_A + JEV_CALIB_B × logit P_jev`,
-   con `logit p = ln(p / (1 − p))`. I due numeri si stimano col backtest sui mercati risolti:
-   `B < 1` ammorbidisce un Jev troppo sicuro di sé, `B > 1` rende più netto uno troppo
-   prudente. Di base (0 e 1) la stima resta com'è.
-2. **Unione col prezzo in log-odds**, con un peso che cresce con la forza delle evidenze:
-
-```
-w              = MODEL_WEIGHT_MAX × evidence_strength
-logit(blended) = w × logit(P_cal) + (1 − w) × logit(prezzo)
-edge           = blended − prezzo
-```
-
-La media in log-odds è il modo standard di unire previsioni calibrate: la media semplice
-(`BLEND_METHOD=linear`, il metodo di prima) le rende sistematicamente troppo timide. Con
-`w = 0` il blended è il prezzo, con `w = 1` è Jev.
-
-Con `JEV_SAMPLES > 1` ogni previsione chiede a Jev più volte e fa la media (in log-odds)
-delle risposte: meno rumore, ma ogni chiamata si paga.
-
-- `edge ≥ MIN_EDGE` ed evidenze ≥ `MIN_EVIDENCE` → **BUY_YES**
-- `edge ≤ −MIN_EDGE` ed evidenze ≥ `MIN_EVIDENCE` → **BUY_NO**
-- altrimenti → **HOLD**
-
-La puntata suggerita è Kelly frazionario: per il SÌ `(blended − prezzo) / (1 − prezzo) × KELLY_FRACTION`,
-per il NO la formula simmetrica sul prezzo del NO.
-
-### Esempio
-
-| | Valore |
+| Pagina | Contenuto |
 |---|---|
-| Prezzo di mercato (SÌ) | 0.35 |
-| Stima Jev | 0.80 |
-| Forza evidenze | 3/4 → 0.75 |
-| Peso `w` | 0.5 × 0.75 = 0.375 |
-| Probabilità blended | logit⁻¹(0.375 × logit 0.80 + 0.625 × logit 0.35) ≈ **0.533** |
-| Edge | **+0.183** → `BUY_YES` |
-| Puntata (Kelly semplice) | (0.533 − 0.35) / 0.65 × 0.25 ≈ **7.0 % del bankroll** |
-
-La puntata effettiva la decide poi la [valutazione economica](#valutazione-economica-e-portafoglio-simulato), che tiene conto di prezzo reale, costi, incertezza, tempo e limiti.
-
-## API
-
-Documentazione interattiva completa su `/docs` (se `API_DOCS_ENABLED=true`). Tutti gli
-endpoint richiedono una sessione; quelli `POST` anche l'header `X-CSRF-Token`, e quelli che
-avviano lavori o chiamate a pagamento (`/ingest`, `/markets/sync`, `/markets/{id}/predict`,
-`/markets/predict-all`) il ruolo `admin`.
-
-### Accesso
-
-| Metodo | Path | Descrizione |
-|---|---|---|
-| POST | `/auth/login` | `{username, password}` → cookie di sessione, utente e token CSRF |
-| POST | `/auth/logout` | Chiude la sessione corrente |
-| GET | `/auth/me` | Utente corrente e token CSRF |
-| POST | `/auth/password` | `{current_password, new_password}`; chiude le altre sessioni |
-
-### Notizie
-
-| Metodo | Path | Descrizione |
-|---|---|---|
-| GET | `/articles` | Notizie con ricerca, filtri e ordinamento |
-| GET | `/articles/{id}` | Dettaglio di una notizia |
-| GET | `/categories` | Numero di notizie per categoria |
-| POST | `/ingest` | Avvia subito la pipeline completa (admin) |
-| POST | `/ingest/reclassify` | Riclassifica le notizie salvate (admin, `limit` fino a 1000) |
-
-`/articles` accetta:
-- **ricerca:** `q` (testo), `scope` (`all` o `title`), `sort` (`relevance`, `score`, `recent`);
-- **filtri:** `category`, `region`, `source_id`, `since_hours`, `min_market_relevance`, `hide_opinion`;
-- **paginazione:** `limit`, `offset`;
-- **pesi del punteggio:** `w_authority`, `w_tech`, `w_urgency`, `w_clickbait`, con le soglie `max_clickbait`, `min_authority`.
-
-Con `q` ogni notizia ha anche `title_highlight` e `snippet`, con le parole trovate racchiuse
-tra i caratteri `\u0002` e `\u0003`.
-
-```bash
-curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&min_market_relevance=0.5"
-```
-
-### Fonti
-
-| Metodo | Path | Descrizione |
-|---|---|---|
-| GET | `/sources` | Fonti con stato dell'ultimo aggiornamento e numero di notizie |
-| POST | `/sources` | Aggiunge una fonte `{name, url, category_hint, active}` (admin) |
-| PATCH | `/sources/{id}` | Modifica nome, indirizzo, argomento o attivazione (admin) |
-| DELETE | `/sources/{id}` | Elimina la fonte; se ha notizie serve `delete_articles=true` (admin) |
-| POST | `/sources/{id}/fetch` | Scarica subito le notizie di questa fonte (admin) |
-| POST | `/sources/test` | Prova un feed senza salvarlo: titolo, numero di notizie, esempi (admin) |
-| GET | `/sources/catalog` | Fonti consigliate da `feeds.yaml`, con quelle già aggiunte |
-| POST | `/sources/catalog` | Aggiunge fonti dal catalogo `{urls: [...]}` (admin) |
-
-### Mercati e previsioni
-
-| Metodo | Path | Descrizione |
-|---|---|---|
-| POST | `/markets/sync` | Sync mercati + collegamento notizie (+ previsioni se `PREDICTION_AUTO`) |
-| GET | `/markets` | Mercati con ultima previsione. Filtri: `q`, `only_linked`, `include_closed`. Ordinamento: `sort` = `volume`, `end_date`, `price`, `signal` (ultima previsione), `edge`, `news`, `liquidity`, `question`; `order` = `asc`/`desc` (default sensato per ogni campo, valori mancanti sempre in fondo) |
-| GET | `/markets/{id}` | Notizie collegate (rilevanza e impatto) e storico previsioni |
-| POST | `/markets/{id}/predict` | Previsione Jev immediata (aggiorna prima il prezzo) |
-| POST | `/markets/{id}/search-news` | Ricerca mirata su Google News per questo mercato; restituisce `{query, added, linked}` (admin) |
-| POST | `/markets/predict-all` | Avvia in background la previsione Jev su tutti i mercati aperti con notizie recenti. `only_new=true`: solo mai valutati o con notizie nuove; `refresh_first=false`: salta l'aggiornamento dei prezzi. `409` se è già in corso (admin) |
-| GET | `/markets/predict-all` | Avanzamento (`total`, `done`, `skipped`, `failed`, `current`, `message`) e mercati valutabili `eligible: {all, new}` (admin) |
-| POST | `/markets/predict-all/stop` | Interrompe dopo il mercato in corso (admin) |
-| GET | `/predictions/opportunities` | Mercati con edge maggiore. Filtri: `min_edge`, `min_evidence`, `include_hold` |
-| GET | `/predictions/calibration` | Brier score sui mercati risolti |
-| GET | `/status` | Configurazione (Jev attivo, soglie) e contatori per la dashboard |
-| GET | `/markets/{id}/economics` | Valutazione economica dal vivo dell'ultima previsione e piano (`strategy`: azione, ordini, prezzi, motivi; `preset` opzionale) |
-| POST | `/markets/{id}/paper-bet` | Aggiunge subito la scommessa simulata, se conviene (admin) |
-
-### Portafoglio simulato
-
-| Metodo | Path | Descrizione |
-|---|---|---|
-| GET | `/portfolio` | Riepilogo, curva del capitale, preset disponibili |
-| PUT | `/portfolio/settings` | `{preset, auto_paper, auto_sell}` (admin) |
-| POST | `/portfolio/reset` | `{bankroll, preset}`: cancella le scommesse simulate e ricomincia (admin) |
-| GET | `/portfolio/bets` | Scommesse: `status` = `open`, `settled`, `excluded`, `all`; quelle aperte hanno il piano d'uscita (`plan`) |
-| POST | `/portfolio/bets/{id}/exclude` · `/include` | Esclude o riammette una scommessa (admin) |
-| POST | `/portfolio/bets/{id}/sell` | Vende subito una scommessa aperta sul book (admin) |
-| GET · POST | `/portfolio/exclusions` | Esclusioni `{kind: market/event/category, value, label}` (POST admin) |
-| DELETE | `/portfolio/exclusions/{id}` | Rimuove un'esclusione (admin) |
-
-### Backtest
-
-| Metodo | Path | Descrizione |
-|---|---|---|
-| GET · POST | `/backtest/runs` | Elenco dei backtest; avvio `{resolved_after, resolved_before, max_markets, min_volume, horizons, max_calls, exclude_decided, kinds}` (`kinds`: `binary` e/o `multi`) (POST admin, `409` se uno è già in corso) |
-| GET | `/backtest/runs/{id}` | Avanzamento e riepilogo (metriche, calibrazione, suggerimenti) |
-| GET | `/backtest/runs/{id}/cases` | Casi: `status` = `ok`, `skipped`, `all` |
-| POST | `/backtest/runs/{id}/stop` · DELETE `/backtest/runs/{id}` | Ferma o elimina (admin) |
-| GET · PUT | `/backtest/parameters` | `MODEL_WEIGHT_MAX`, `MIN_EDGE`, `JEV_CALIB_A`, `JEV_CALIB_B` in uso; PUT li sostituisce (admin) |
-| POST | `/backtest/parameters/reset` | Torna ai valori del `.env` (admin) |
-
-### Uso e costi
-
-| Metodo | Path | Descrizione |
-|---|---|---|
-| GET | `/usage` | Oggi rispetto ai limiti, storico per giorno, servizio e funzione (`days`, max 90), limiti e prezzi in uso |
-| PUT | `/usage/settings` | Limiti giornalieri e prezzi (admin) |
-| POST | `/usage/settings/reset` | Torna ai valori del `.env` (admin) |
-
-### Mercati a più esiti
-
-| Metodo | Path | Descrizione |
-|---|---|---|
-| GET | `/multi/opportunities` | Eventi con un esito sottovalutato (`min_edge`, `min_evidence`, `include_hold`), con la valutazione economica |
-| GET | `/multi` | Eventi con i primi esiti e l'ultima previsione. `q` (titolo o nome di un esito), `sort` = `volume`, `edge`, `signal`, `end_date`, `news` |
-| GET | `/multi/{id}` | Tutti gli esiti, notizie collegate, storico delle previsioni |
-| POST | `/multi/{id}/predict` | Previsione Jev della distribuzione (admin; `422` senza notizie) |
-
-### Allerte
-
-| Metodo | Path | Descrizione |
-|---|---|---|
-| GET | `/alerts` | Allerte con notizia, prezzi dopo l'allerta e movimento a favore. `kind` = `opportunities` (default) o `all` |
-| GET | `/alerts/summary` | Risultati degli ultimi `days` giorni: movimento medio e quota a favore per ogni intervallo, esito dei mercati risolti |
-| GET · PUT | `/alerts/settings` | Impostazioni (PUT admin) |
-| POST | `/alerts/test-telegram` | Invia un messaggio di prova (admin) |
-| POST | `/alerts/run` | Controlla subito le notizie nuove (admin) |
-
-Codici di errore di `/markets/{id}/predict`: `503` chiave TypeSafe mancante, `422` nessuna
-notizia collegata, `409` mercato chiuso o senza prezzo, `404` mercato sconosciuto.
-
-Esempio di risposta di `/predictions/opportunities` (valori illustrativi):
-
-```json
-[
-  {
-    "market": {
-      "id": "123456",
-      "question": "Will the Fed cut interest rates in December 2026?",
-      "url": "https://polymarket.com/event/fed-decision-in-december",
-      "yes_price": 0.35,
-      "linked_articles": 4
-    },
-    "prediction": {
-      "model_probability": 0.8,
-      "evidence_strength": 0.75,
-      "blended_probability": 0.5188,
-      "edge": 0.1688,
-      "signal": "BUY_YES",
-      "kelly_fraction": 0.0649,
-      "article_count": 4
-    }
-  }
-]
-```
-
-## Flusso di lavoro consigliato
-
-1. Avvia l'app: la prima raccolta e il sync dei mercati partono subito.
-2. Guarda quali mercati hanno notizie collegate:
-   `GET /markets?only_linked=true`
-3. Controlla che le notizie siano pertinenti: `GET /markets/{id}`. Se i collegamenti sono
-   rumorosi alza `MARKET_MATCH_THRESHOLD`, se sono troppo pochi abbassala. Nel dettaglio del
-   mercato «Cerca notizie» lancia subito la ricerca mirata.
-4. Chiedi una previsione sui mercati che ti interessano (`POST /markets/{id}/predict`),
-   oppure su tutti con **Valuta tutti con Jev** (`POST /markets/predict-all`)
-5. Consulta le opportunità: `GET /predictions/opportunities?min_edge=0.08`
-6. Quando i risultati convincono, attiva `PREDICTION_AUTO=true`, tenendo d'occhio i costi
-   con `PREDICTION_MAX_PER_RUN`.
-7. Lascia lavorare il portafoglio simulato per decine di mercati risolti. Prima di usare
-   soldi veri controlla che il risultato reale sia positivo e vicino a quello atteso.
-
-## Valutazione economica e portafoglio simulato
-
-Un edge sulla carta non basta: la valutazione economica (`backend/betting/`) decide se una
-previsione conviene davvero, quanto puntare e a che prezzo massimo. Si calcola dopo ogni
-previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
-
-1. **Prezzo reale.** Legge il book del lato da comprare dal CLOB di Polymarket (API
-   pubblica, sola lettura) e calcola il prezzo medio che pagheresti per quella cifra.
-   Commissione (solo per chi compra dal book, come qui): `tasso × prezzo × (1 − prezzo)` per
-   quota, massima a 50¢ e nulla agli estremi. Il tasso dipende dalla categoria (Esteri 0,
-   Politica/Tecnologia/Economia 4%, Sport 3%, Cultura/Scienza 5%, Cripto 7%; categoria
-   sconosciuta: `DEFAULT_FEE_BPS`). L'endpoint CLOB `/fee-rate` dice se il mercato ha le
-   commissioni attive: se risponde 0 la commissione è zero. Senza book stima un book a 4
-   livelli, da prezzo medio + metà spread in su, uno spread l'uno dall'altro (40/30/20/10%
-   della metà della liquidità dichiarata): chi compra molto paga progressivamente di più.
-   Lo segnala sempre.
-2. **Probabilità prudente.** `p_prudente = p_blended − z × σ`, dove
-   `σ = w × √(p_jev (1 − p_jev) / (MODEL_PSEUDO_COUNT × evidenze + 1))`. Dopo 30 mercati
-   risolti σ viene moltiplicata per `√(Brier osservato / Brier atteso)`, dove il Brier atteso
-   è quello che avrebbero previsioni perfettamente calibrate (media di `p (1 − p)`): allargata
-   se le previsioni blended sono state troppo sicure, ristretta se sono state prudenti (fattore
-   tra 0,75 e 2).
-3. **Margine netto.** `p_prudente − (prezzo + commissione)` deve superare la soglia del preset.
-4. **Tempo.** Il rendimento atteso prudente viene annualizzato sui giorni che mancano alla
-   scadenza e deve superare `RISK_FREE_RATE` + il premio del preset.
-5. **Quanto puntare.** Il capitale di Kelly è calcolato sul book, perché comprare di più
-   peggiora il prezzo. Se ne prende una frazione (in base al preset) e poi si applicano i
-   limiti per mercato, evento, categoria, totale investito, liquidità disponibile e quota del
-   book. Il **prezzo massimo** da pagare è il prezzo a cui `prezzo + commissione` lascia
-   esattamente il margine minimo: `prezzo + commissione(prezzo) = p_prudente − margine minimo`.
-6. **Verdetto.** *Conviene*, *Conviene poco* (la puntata è stata ridotta a meno della metà
-   dai limiti) oppure *Non conviene*, sempre con i motivi.
-
-| Preset | Kelly | z | Margine netto | Premio annuo | Max per mercato | Max per evento | Max per categoria | Max investito | Liquidità min. | Scadenza max |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Prudente | ×0,15 | 1,64 | 4 pt | 15% | 2% | 5% | 15% | 40% | 25.000 $ | 120 gg |
-| Bilanciato | ×0,25 | 1,0 | 3 pt | 8% | 4% | 8% | 25% | 60% | 10.000 $ | 365 gg |
-| Aggressivo | ×0,5 | 0,5 | 2 pt | 3% | 8% | 15% | 40% | 85% | 5.000 $ | 730 gg |
-
-**Portafoglio simulato** (pagina *Portafoglio*):
-- **Scommesse automatiche:** ogni previsione con verdetto *Conviene* o *Conviene poco* diventa una scommessa virtuale al prezzo reale del momento, al massimo una aperta per mercato.
-- **Vendita:** dopo ogni aggiornamento dei mercati e ogni nuova previsione le posizioni aperte
-  vengono riviste con la [strategia](#strategia-di-acquisto-e-vendita): se il piano dice
-  «Vendi», le quote vengono vendute sul book (stato «venduta», con prezzo e motivo). Si può
-  disattivare («Vendi automaticamente») o vendere a mano. Le vendite in guadagno contano come
-  vinte.
-- **Chiusura:** avviene quando il mercato si risolve in modo definitivo (prezzo a 1/0 e, se
-  Gamma lo riporta, `umaResolutionStatus` = «resolved»: un esito solo proposto o contestato
-  può ancora cambiare). Una quota vincente vale 1 $; se il mercato si chiude 50-50 ogni quota
-  vale 0,50 $ e la scommessa risulta «annullata» (fuori dalla percentuale di vittorie).
-- **Cosa mostra:** valore attuale, profitti realizzati e latenti, percentuale di vittorie, curva del capitale e confronto tra profitto atteso e reale.
-- **Esclusioni:**
-  - singole scommesse, anche già chiuse (non contano nei risultati e si possono riammettere);
-  - mercati, eventi o categorie, che le scommesse automatiche saltano.
-- **Impostazioni:** si possono scegliere il preset, attivare o disattivare le scommesse e le vendite automatiche, oppure ricominciare con un nuovo capitale.
-
-## Strategia di acquisto e vendita
-
-La scheda **Cosa fare** del dettaglio di un mercato (e di ogni esito dei mercati a più esiti)
-trasforma previsione e valutazione economica in istruzioni (`backend/betting/strategy.py`):
-
-| Azione | Quando | Cosa indica |
-|---|---|---|
-| **Compra SÌ / NO** | La valutazione dice *Conviene* | Ordine limite: quote, prezzo massimo, cifra. Appena comprate, un ordine limite di vendita |
-| **Aspetta** | Il vantaggio c'è, ma al prezzo attuale costi e incertezza se lo mangiano | Il prezzo a cui conviene: un ordine in attesa |
-| **Evita** | Il problema non è il prezzo: mercato poco liquido, scadenza oltre il preset, limiti di rischio pieni | I motivi |
-| **Nessuna azione** | La stima è vicina al prezzo | A che prezzo comprare SÌ o NO diventerebbe conveniente |
-| **Tieni** | C'è una posizione e il prezzo è ancora sotto la stima | L'ordine limite di vendita |
-| **Vendi** | Il prezzo ha raggiunto la stima, o una nuova previsione l'ha girata | Quante quote e a che prezzo |
-
-**Prezzi a cui la decisione cambia.** Per ogni prezzo del SÌ tra 1¢ e 99¢ la stima blended
-viene ricalcolata come nella previsione (Jev calibrato unito a quel prezzo) e si rifanno i
-controlli: segnale (`MIN_EDGE`), margine dopo commissioni e incertezza, rendimento annuo.
-Il più alto prezzo che li passa tutti è «compra SÌ sotto»; il più basso per il NO è «compra
-NO sopra». Il dettaglio li mostra su una scala dei prezzi insieme al prezzo attuale.
-
-**Quando vendere.** Tenere una quota vale la probabilità che vinca, scontata per il tempo in
-cui il capitale resta bloccato al rendimento che il preset chiede (tasso senza rischio + premio).
-Vendere vale il prezzo di acquisto offerto meno la commissione. Il prezzo di vendita è il più
-basso a cui vendere rende almeno quanto tenere:
-
-```
-vendi se  bid − commissione(bid)  ≥  P(lato vince | prezzo = bid) / (1 + rendimento richiesto)^(giorni/365)
-```
-
-Con poco tempo alla scadenza coincide quasi con la stima; con molti mesi è più basso, perché
-incassare prima libera il capitale. Non c'è uno stop-loss fisso: se il prezzo scende ma la
-stima no, la quota è ancora più conveniente. Si vende invece quando una nuova previsione dice
-che conviene il lato opposto.
-
-**Perché sì / perché no.** Ogni piano elenca i motivi: la differenza tra stima e prezzo, le
-notizie che Jev ha giudicato a favore o contro (con i titoli), il margine dopo i costi, il
-rendimento annuo, il tempo, la probabilità di perdere, il book stimato, le esclusioni e i
-risultati passati (vantaggio sul prezzo nei mercati risolti e prezzo di chiusura dei segnali).
-
-**Fiducia** *alta*, *media* o *bassa*: sale con notizie forti e risultati passati buoni;
-scende con notizie deboli, stima incerta, prezzi stimati senza book e risultati passati
-assenti o negativi.
-
-Il piano compare anche nelle opportunità (con i prezzi del momento della previsione), nel
-portafoglio (piano d'uscita di ogni posizione aperta) e nelle notifiche Telegram (ordine di
-acquisto e di vendita).
-
-## Allerte notizie–prezzo
-
-Su Polymarket il vantaggio viene soprattutto dalla velocità: esce una notizia e il prezzo ci
-mette minuti o ore ad adeguarsi. Le allerte servono a arrivare prima.
-
-**Quando parte un'allerta.** Ogni volta che le notizie vengono collegate ai mercati:
-- nella raccolta completa;
-- in un controllo rapido ogni `ALERT_SCAN_MINUTES` minuti, che scarica le fonti e collega le
-  notizie senza fare riassunti né classificazioni.
-
-Per ogni collegamento nuovo l'app controlla che:
-- la notizia sia fresca (età massima configurabile, 6 ore di default);
-- sia pertinente (60 % di default);
-- venga da una fonte affidabile e non sia un articolo d'opinione;
-- riguardi una categoria seguita.
-
-Per ogni mercato vale la notizia migliore. I mercati in pausa, cioè con un'allerta nelle
-ultime 3 ore, vengono saltati.
-
-**Cosa succede.**
-1. Il prezzo viene aggiornato da Polymarket in quel momento.
-2. Jev valuta il mercato: è una chiamata, contata nel limite giornaliero (30 di default).
-3. La valutazione economica decide se conviene e quanto puntare. La scommessa simulata segue
-   le regole del portafoglio.
-4. Se conviene arriva un messaggio Telegram con la notizia, il prezzo, la stima, l'edge, la
-   puntata e il prezzo massimo. Nelle ore silenziose il messaggio arriva senza suono.
-5. Ogni `ALERT_FOLLOWUP_MINUTES` minuti viene registrato il prezzo 15 minuti, 1, 6 e 24 ore
-   dopo l'allerta.
-
-**I risultati.** Il *movimento a favore* misura di quanti punti il prezzo si è spostato
-nella direzione consigliata. Se è positivo, l'allerta è arrivata prima del mercato. La
-pagina *Allerte* mostra la media e la quota di allerte a favore per ogni intervallo, e
-l'esito dei mercati già risolti. Vengono salvate anche le valutazioni che non convenivano
-(«Tutte le valutazioni»), così si vede quanto costano le allerte rispetto a ciò che rendono.
-
-**Configurare Telegram.**
-1. Crea un bot con [@BotFather](https://t.me/BotFather) e copia il token.
-2. Scrivi un messaggio al bot, poi apri `https://api.telegram.org/bot<TOKEN>/getUpdates`:
-   il numero in `chat.id` è il tuo `TELEGRAM_CHAT_ID`. Per un gruppo aggiungi il bot al
-   gruppo; l'id inizia con `-`.
-3. Metti i due valori nel `.env`, riavvia e premi «Invia messaggio di prova» nella pagina
-   *Allerte*.
-
-Il token resta solo nel `.env`: non compare nelle API, nei log o nei messaggi d'errore.
-
-## Uso e costi delle API
-
-Tra classificazione, riassunti, previsioni, allerte, «Valuta tutti», backtest e più esiti, le
-chiamate a pagamento possono crescere in fretta. La pagina **Uso e costi** le tiene sotto
-controllo.
-
-**Cosa viene registrato.** Ogni chiamata a Jev, Groq e Gemini, con:
-- la **funzione** che l'ha fatta (classificazione, riassunti, riclassificazione, previsioni,
-  Valuta tutti, allerte, più esiti, backtest);
-- i **token** in entrata e in uscita;
-- un **costo stimato**, calcolato dai prezzi che imposti: per milione di token e, per Jev,
-  anche per chiamata. Con i prezzi a 0 si contano chiamate e token, ma non il costo.
-
-Ollama gira in locale e non viene contato.
-
-**Limiti giornalieri.** Si impostano dalla pagina (solo admin) e sostituiscono i valori del
-`.env`:
-- `DAILY_JEV_CALL_LIMIT`: numero massimo di chiamate a Jev;
-- `DAILY_AI_BUDGET_USD`: spesa massima stimata per tutte le API.
-
-Il giorno si azzera a mezzanotte (fuso `ALERT_TIMEZONE`). Oltre il limite:
-- previsioni, allerte, «Valuta tutti» e backtest si fermano con un messaggio chiaro;
-- la classificazione passa all'euristica locale e i riassunti all'estratto del testo, così
-  le notizie continuano ad arrivare;
-- un banner in tutta la dashboard lo segnala.
-
-All'80 % (`USAGE_WARN_SHARE`) e al 100 % di ogni limite arriva un messaggio Telegram, una
-sola volta al giorno, se Telegram è configurato.
-
-**Cosa mostra la pagina.**
-- **Oggi:** chiamate e spesa rispetto ai limiti.
-- **Ultimi 30 giorni:** grafico per giorno, per costo, chiamate o token, con il dettaglio per
-  funzione al passaggio del mouse.
-- **Riepilogo** per funzione e per servizio, con la quota di spesa.
-
-Il costo è una stima: fa fede la fattura del fornitore.
-
-## Mercati a più esiti
-
-Molti degli eventi più scambiati su Polymarket hanno più risposte possibili, una sola delle
-quali vince: «Chi vincerà le elezioni?», «Chi vincerà la Champions?». Su Polymarket ogni
-esito è una quota SÌ/NO a sé; qui vengono tenuti insieme e separati dai mercati Sì/No,
-nella sezione **Più esiti**, perché si leggono come una distribuzione.
-
-- **Sincronizzazione.** Arrivano gli eventi aperti più scambiati (Gamma `/events`,
-  `negRisk`, almeno 3 esiti; `MULTI_SYNC_LIMIT`). Gli esiti di questi eventi non compaiono
-  più tra i mercati Sì/No, tra le opportunità e nelle allerte. Il vincitore viene rilevato
-  quando l'evento si chiude.
-- **Notizie.** Il collegamento funziona come per i mercati Sì/No, sul titolo dell'evento.
-  Una notizia che nomina uno degli esiti (un candidato, una squadra) riceve un bonus.
-- **Previsione.** Con una sola chiamata Jev dà la probabilità di ciascun esito (domanda a
-  scelta multipla), senza vedere i prezzi.
-  - Riceve i `MULTI_MAX_OUTCOMES` esiti più probabili (12 di default); gli altri vengono
-    sommati in «Altri esiti».
-  - I prezzi vengono normalizzati a 100 %, così il margine del mercato sparisce dal
-    riferimento.
-  - Il blend unisce le due distribuzioni in modo log-lineare (`p ∝ Jev^w × mercato^(1−w)`,
-    poi normalizzato), con lo stesso peso dei mercati Sì/No.
-  - L'edge si misura sul **prezzo vero** della quota SÌ, quello che si paga: normalizzare
-    toglie il margine dal riferimento, non dal costo.
-  - Il segnale indica l'esito più lontano dal suo prezzo, se l'edge supera `MIN_EDGE` e le
-    evidenze `MIN_EVIDENCE`: **compra SÌ** se è sottovalutato, **compra NO** se è
-    sopravvalutato (spesso un favorito su cui il mercato è troppo ottimista).
-- **Arbitraggio.** Vince un solo esito, quindi un SÌ di ogni esito paga sempre 1 $ e un NO
-  di ogni esito paga sempre N − 1 $. Se al miglior prezzo del book comprare tutto il set
-  costa meno, commissioni incluse, l'evento mostra il badge «Arbitraggio» con il guadagno per
-  set. Si conosce solo il primo livello del book: la quantità può essere piccola e il prezzo
-  cambiare in fretta.
-- **Vista.** Nell'elenco, per ogni evento, i primi esiti con la barra del prezzo e i
-  marcatori di Jev (rombo) e blended (cerchio). Nel dettaglio: tutti gli esiti, la tabella,
-  le notizie (con l'esito che ciascuna favorisce) e lo storico.
-
-**Economia, portafoglio, allerte e backtest.** Per gli esiti vale tutto quello che vale per i
-mercati Sì/No:
-- **Valutazione economica.** Dopo ogni previsione vengono valutati i 3 esiti più lontani dal
-  prezzo, sulla quota SÌ se sottovalutati e sulla quota NO se sopravvalutati: prezzo reale del book, commissioni, incertezza, rendimento annualizzato,
-  Kelly e limiti del preset. Nel dettaglio dell'evento la scheda «Conviene?» permette di
-  scegliere l'esito.
-- **Portafoglio simulato.** L'esito migliore diventa una scommessa simulata, se conviene. Il
-  limite per evento vale per tutti gli esiti insieme, così non si punta su tre candidati della
-  stessa elezione oltre il rischio del preset. Esclusioni per evento e categoria e chiusura alla
-  risoluzione funzionano come per i mercati Sì/No.
-- **Opportunità.** Gli eventi con un esito sotto- o sopravvalutato compaiono in un blocco a
-  parte, sotto i mercati Sì/No.
-- **Allerte.** Una notizia fresca e pertinente collegata a un evento fa ricalcolare subito la
-  distribuzione (una chiamata). Se conviene arriva una notifica «Compra SÌ su …» (o «Compra NO su …») e il prezzo
-  successivo viene misurato come per i mercati Sì/No.
-- **Backtest.** Scegli «Più esiti» tra i tipi di mercato. Per ogni evento risolto vengono
-  ricostruiti i prezzi storici e gli esiti mostrati a Jev sono i più probabili secondo il
-  prezzo di allora. Il risultato riporta:
-  - il Brier a più esiti (0 = perfetto, 2 = certo e sbagliato);
-  - la probabilità data al vincitore;
-  - quante volte il favorito ha vinto, per Jev e per il mercato;
-  - le scommesse simulate.
-
-Tecnicamente ogni esito è anche una riga della tabella dei mercati, segnata con
-`multi_event_id` e nascosta dagli elenchi Sì/No: book, valutazione economica, scommesse e
-chiusura usano lo stesso codice.
-
-## Backtest
-
-Il portafoglio simulato e le allerte misurano i risultati man mano che i mercati si
-risolvono, cioè in settimane o mesi. Il backtest dà una prima risposta subito: come avrebbe
-previsto Jev i mercati già risolti?
-
-**Come funziona.**
-1. **Mercati.** Prende i mercati Sì/No chiusi nel periodo scelto, i più scambiati per primi
-   (Gamma API, `closed=true`).
-2. **Momenti.** Per ogni mercato e ogni orizzonte (1, 7 o 30 giorni prima della chiusura)
-   ricostruisce la situazione di quel momento:
-   - il **prezzo di allora**, dallo storico della CLOB (`/prices-history`);
-   - le **notizie dei 7 giorni precedenti**, da una di due fonti (scelta nel modulo):
-     - **archivio**: gli articoli che questa app aveva già salvato a quella data
-       (`fetched_at ≤ momento`). Nessuna notizia successiva può entrare: è la misura onesta,
-       ma copre solo il periodo in cui l'app era attiva;
-     - **Google News** con i filtri `after:`/`before:`: copre qualsiasi periodo, ma i filtri
-       per data lasciano passare pagine aggiornate dopo, e i risultati possono sembrare
-       migliori di quanto sono. Quelle con data successiva vengono comunque scartate.
-
-     Di base si usa l'archivio quando ha notizie per quel caso, altrimenti Google News. Ogni
-     caso registra la fonte usata e i risultati dei soli casi d'archivio sono mostrati a parte.
-3. **Selezione delle notizie.** Pertinenza (significato + termini chiave) e scelta delle
-   migliori, come nell'app.
-4. **Previsione.** Jev riceve la stessa richiesta, con «oggi» impostato a quella data e senza
-   vedere il prezzo.
-5. **Segnale e scommessa.** Blend, segnale e valutazione economica con il preset del
-   portafoglio. Il book storico non esiste: il prezzo è quello di allora più metà dello spread
-   tipico.
-6. **Confronto.** L'esito reale del mercato dice chi aveva ragione.
-
-Per gli eventi a più esiti, gli esiti mostrati a Jev sono i più probabili **secondo il prezzo di
-allora** (fino a `MULTI_MAX_OUTCOMES`, tra i 30 più scambiati), come dal vivo. Se il vincitore
-era poco quotato finisce negli «altri esiti»: sceglierli sapendo chi ha vinto renderebbe i
-risultati migliori del vero.
-
-**Casi saltati** (senza consumare chiamate):
-- prezzo storico non disponibile;
-- esito già scontato dal prezzo (sotto il 3 % o sopra il 97 %, disattivabile);
-- nessuna notizia in quei giorni.
-
-C'è un limite di chiamate a Jev per ogni backtest. Il lavoro gira in background, con
-avanzamento e pulsante per fermarlo. Se il server si riavvia, il backtest risulta interrotto.
-
-**Risultati.**
-- Brier score (più basso è meglio) di prezzo, Jev e blended, in totale, per orizzonte e per
-  categoria.
-- **Vantaggio sul prezzo** (Brier del prezzo − Brier del blended) con l'**intervallo al 95%**,
-  calcolato con un bootstrap che ricampiona i mercati interi: gli orizzonti di uno stesso
-  mercato condividono l'esito e non sono casi indipendenti. Se l'intervallo comprende lo zero,
-  il vantaggio può essere dovuto al caso.
-- Quota di segnali giusti e scommesse simulate: profitto e ROI.
-- Grafico di calibrazione (previsto contro accaduto).
-- Tabella dei casi, con le notizie lette da Jev.
-
-**Parametri suggeriti.**
-- La **calibrazione di Jev** (scala di Platt: regressione logistica dell'esito su
-  `logit P_jev`, con una leggera penalità verso «nessuna correzione»).
-- Con Jev calibrato, il **peso massimo di Jev** che dà il Brier più basso al blended.
-- Con quel peso, l'**edge minimo** che avrebbe reso di più puntando 1 $ per segnale, se ci
-  sono almeno 10 scommesse.
-- **Verifica fuori campione.** I mercati vengono ordinati per data di chiusura: i parametri si
-  stimano sul 70% più vecchio e si provano sul 30% più recente, come si userebbero dal vivo.
-  Un valore è *consigliato* solo se migliora anche lì; i valori mostrati sono poi ristimati su
-  tutti i mercati. Servono almeno 10 mercati per parte, altrimenti nulla è consigliato.
-- L'affidabilità dipende dai **mercati diversi** (non dai casi): *bassa* sotto 30, *media*
-  sotto 100, *alta* da 100 in su.
-
-Un admin può applicare i valori consigliati con un clic: vengono salvati nel database,
-valgono per le previsioni successive e sostituiscono i valori del `.env` finché non premi
-«Ripristina i valori del .env». Si possono modificare solo `MODEL_WEIGHT_MAX`, `MIN_EDGE`,
-`JEV_CALIB_A` e `JEV_CALIB_B`.
-
-**Il limite.** Jev potrebbe conoscere già l'esito di eventi passati: i mercati risolti prima
-della data fino a cui arrivano le conoscenze del suo modello possono dare risultati troppo
-buoni. Per una misura onesta scegli mercati chiusi dopo quella data e, quando l'archivio li
-copre, le sole notizie dell'archivio.
-
-## Calibrazione
-
-Quando un mercato seguito si risolve, il sync lo rileva e salva l'esito.
-`/predictions/calibration` confronta, sull'ultima previsione fatta per ogni mercato, il
-**Brier score** (errore quadratico medio, più basso è meglio) di:
-
-- `brier_market`: il prezzo di mercato al momento della previsione;
-- `brier_model`: la stima grezza di Jev;
-- `brier_blended`: la probabilità blended usata per i segnali.
-
-Il sistema aggiunge valore solo se `brier_blended` è stabilmente **inferiore** a
-`brier_market` su molti mercati. Con pochi mercati risolti il confronto non è significativo:
-`gain_blended` e `gain_model` danno il vantaggio sul prezzo con l'intervallo al 95%
-(bootstrap sui mercati). Se l'intervallo comprende lo zero, il vantaggio può essere dovuto al caso.
-
-**Prezzo di chiusura (CLV).** Il sync registra l'ultimo prezzo di ogni mercato mentre si
-scambia ancora (`last_trading_price`): è la «chiusura», la stima del mercato quando tutte le
-informazioni sono note. Comprare stabilmente sotto la chiusura è il segno più affidabile di un
-vantaggio reale e si misura molto prima che i mercati risolti bastino per il Brier:
-- `signal_clv` in Calibrazione: di quanto il prezzo si è mosso verso ogni segnale fino alla chiusura;
-- nel portafoglio simulato: chiusura del lato comprato − prezzo medio pagato, per scommessa e
-  in media (`clv`; `clv_open` è il movimento finora sulle aperte);
-- nelle allerte: movimento dal prezzo dell'allerta alla chiusura, nella direzione consigliata.
-
-## Sviluppo e test
-
-I test richiedono un PostgreSQL con pgvector. TypeSafe e Polymarket vengono simulati a
-livello HTTP, quindi non servono chiavi né rete.
-
-```bash
-pip install -r requirements.txt -r requirements-dev.txt
-export TEST_DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/newsagg
-pytest
-```
-
-I test non usano il modello di embedding, quindi `sentence-transformers` (e PyTorch) si può
-saltare se serve solo far girare i test.
-
-**CI.** Su GitHub ogni push su `main` e ogni pull request avviano
-`.github/workflows/tests.yml`:
-- **backend:** tutti i test, su un Postgres con pgvector (`pgvector/pgvector:pg16`) e senza
-  PyTorch;
-- **frontend:** controllo di sintassi dei moduli JavaScript con `node --check`.
-
-In CI un database non raggiungibile fa fallire i test invece di saltarli.
-
-⚠️ Il test end-to-end **cancella e ricrea tutte le tabelle** del database indicato da
-`TEST_DATABASE_URL`: usa sempre un database dedicato.
-
-| File | Contenuto |
+| [Guida alla dashboard](docs/guida.md) | Le pagine, il flusso di lavoro consigliato, cosa fare se la dashboard non si apre |
+| [Il metodo](docs/metodo.md) | Raccolta, collegamento notizie–mercati, previsione, mercati a più esiti |
+| [Strategia e portafoglio](docs/strategia.md) | Valutazione economica, cosa fare e quando vendere, portafoglio simulato |
+| [Allerte](docs/allerte.md) | Notifiche Telegram e misura del loro anticipo sul prezzo |
+| [Backtest e calibrazione](docs/verifica.md) | Quanto fidarsi delle previsioni, sul passato e sul presente |
+| [Uso e costi](docs/costi.md) | Chiamate a pagamento, stima dei costi, limiti giornalieri |
+| [Configurazione](docs/configurazione.md) | Tutte le variabili di `.env` |
+| [Accesso e sicurezza](docs/sicurezza.md) | Utenti e ruoli, sessioni, protezioni |
+| [Deploy](docs/deploy.md) | Immagini CPU/GPU, uso in locale e nella rete di casa, VPS con Cloudflare Tunnel, backup |
+| [API](docs/api.md) | Gli endpoint REST |
+| [Sviluppo e test](docs/sviluppo.md) | Test, CI, struttura del codice |
+
+## Tecnologie
+
+| Livello | Strumenti |
 |---|---|
-| `tests/test_pipeline.py` | Punteggio composito, euristica, valutatore Jev, riassunti |
-| `tests/test_forecast.py` | Calibrazione di Platt, unione in log-odds (anche a più esiti), Kelly, segnali, Brier score |
-| `tests/test_polymarket.py` | Parsing e filtri dei mercati Gamma, esito definitivo (oracolo UMA) e 50-50 |
-| `tests/test_dedup.py` | Stessa storia da testate diverse raggruppata, conferme contate per testata |
-| `tests/test_reembed.py` | Cambio del modello di embedding (vettori ricalcolati), affidabilità storica della testata |
-| `tests/test_markets_e2e.py` | Flusso completo: raccolta → mercati → previsione → API → risoluzione |
-| `tests/test_auth.py` | Password, cookie, CSRF, ruoli, limite tentativi, scadenze, logout, header di sicurezza |
-| `tests/test_sources.py` | Fetcher (pulizia HTML, reindirizzamenti, blocco reti interne, limiti), catalogo, migrazioni, API delle fonti |
-| `tests/test_search.py` | Ricerca su titolo, testo e riassunto, prefissi, sintassi, evidenziazioni, filtri, uso dell'indice |
-| `tests/test_economics.py` | Book, commissioni `p × (1 − p)`, prezzo massimo al netto della commissione, book stimato a livelli, Kelly sul book, incertezza, annualizzazione, verdetti e limiti dei preset |
-| `tests/test_markets_sort.py` | Ordinamento dei mercati per ogni campo e direzione, valori mancanti in fondo, paginazione stabile |
-| `tests/test_ratelimit.py` | Limitatore (distanziamento, pausa, concorrenza), Groq sotto rate limit e con modelli di ragionamento, coda che riprende, 429 sulla previsione manuale, file senza cache |
-| `tests/test_portfolio.py` | Scommesse automatiche, esclusioni, chiusura (anche 50-50), vendita automatica e a mano, piano nell'API, commissioni per categoria, prezzo di chiusura (CLV), profitti e perdite, curva, API e permessi |
-| `tests/test_strategy.py` | Prezzi a cui comprare e vendere, azioni (compra, aspetta, evita, tieni, vendi), motivi, fiducia |
-
-## Struttura del progetto
-
-```
-backend/
-├── main.py                 # app FastAPI, avvio e chiusura
-├── config.py               # impostazioni da .env
-├── auth/                   # password, sessioni, ruoli, CLI utenti
-├── ai/
-│   ├── jev.py              # client TypeSafe condiviso
-│   ├── typesafe_evaluator.py  # classificazione e punteggi delle notizie
-│   ├── summarizer.py       # riassunti Gemini / Groq / Ollama
-│   ├── ratelimit.py        # limiti di frequenza per servizio
-│   └── usage.py            # uso e costi delle chiamate, limiti giornalieri
-├── ingestor/
-│   ├── fetcher.py          # download sicuro e pulizia dei feed RSS/Atom
-│   ├── sources.py          # catalogo (feeds.yaml) e validazione delle fonti
-│   ├── deduplicator.py     # hash URL ed embedding
-│   └── scheduler.py        # pipeline periodica e riclassificazione
-├── markets/
-│   ├── polymarket.py       # client Gamma API (sola lettura)
-│   ├── service.py          # sync, collegamento notizie, previsioni Jev
-│   ├── matching.py         # termini chiave, pertinenza e classifica delle evidenze
-│   ├── targeted.py         # ricerca mirata su Google News per mercato
-│   └── forecast.py         # blending, edge, Kelly, Brier
-├── betting/
-│   ├── profiles.py         # preset di rischio
-│   ├── economics.py        # valutazione economica (funzioni pure)
-│   └── portfolio.py        # portafoglio simulato
-├── multi/
-│   └── service.py          # eventi a più esiti: sync, notizie, previsione della distribuzione
-├── backtest/
-│   ├── engine.py           # ricostruzione del passato: prezzo storico, notizie di allora, Jev
-│   └── analysis.py         # metriche, calibrazione e parametri suggeriti
-├── alerts/
-│   ├── service.py          # rilevamento, valutazione immediata, prezzi dopo l'allerta
-│   └── telegram.py         # notifiche Telegram
-├── db/                     # modelli SQLAlchemy, query e migrazioni idempotenti
-└── api/                    # schemi e route FastAPI
-frontend/                   # dashboard: app.js, ui.js, charts.js, explain.js, views/ (notizie, impostazioni, metodo)
-scripts/check_env.py        # verifica chiavi e database
-feeds.yaml                  # catalogo delle fonti consigliate
-```
-
-## Se la dashboard non si apre
-
-Se la pagina resta vuota con solo il logo, il JavaScript dell'app non è partito. Dopo 8
-secondi la pagina lo dice e propone di ricaricarla.
-
-1. **Ricarica forzata** (Ctrl+F5 o Cmd+Shift+R). Dopo un aggiornamento il browser può avere
-   in cache file vecchi; ora i file della dashboard sono serviti con `Cache-Control: no-cache`,
-   quindi dal prossimo aggiornamento non dovrebbe più succedere.
-2. **Se persiste**, apri gli strumenti per sviluppatori del browser (F12 → Console e Rete) e
-   controlla i log del container: una richiesta che non risponde indica un server bloccato.
+| Backend | FastAPI, SQLAlchemy async + asyncpg, APScheduler |
+| Dati | PostgreSQL 16 con pgvector |
+| Modelli | TypeSafe Jev (previsioni e classificazione), sentence-transformers `paraphrase-multilingual-MiniLM-L12-v2` (embedding), Gemini / Groq / Ollama (riassunti) |
+| Frontend | HTML, CSS e JavaScript senza dipendenze né build, tema chiaro e scuro, accessibile da tastiera |
+| Infrastruttura | Docker (CPU o CUDA), Cloudflare Tunnel, GitHub Actions |
 
 ## Limiti noti
 
-- **Solo mercati binari** Sì/No. I mercati con più esiti vengono ignorati.
-- **Nessuna esecuzione di ordini**: per piazzare ordini servirebbero l'API CLOB di
-  Polymarket, un wallet e la firma degli ordini.
-- **Solo simulazione**: il portafoglio è virtuale. Le scommesse simulate ipotizzano di
-  comprare al book del momento senza muovere il mercato oltre la profondità letta.
-- **Formati dell'API CLOB e delle commissioni non verificati dal vivo**: il codice segue i
-  formati documentati (`/book`, `clobTokenIds`, `takerBaseFee`); se Polymarket li cambia,
-  la valutazione usa il prezzo stimato e lo segnala.
-- **Termini chiave e sinonimi in inglese**: i mercati Polymarket sono in inglese. Le notizie
-  in italiano si collegano solo per significato, quindi con meno precisione. La lista dei
-  sinonimi (`ALIASES` in `matching.py`) copre i casi più comuni e si può ampliare.
-- **Ricerca mirata via Google News RSS**: è un servizio non ufficiale e senza garanzie di
-  disponibilità. I link puntano a pagine di reindirizzamento di Google e i risultati
-  contengono solo titolo e testata, non il testo.
-- **Nessun recupero password via email**: un admin reimposta la password da riga di
-  comando con `set-password`.
+- **Nessuna esecuzione di ordini.** Per piazzarli servirebbero l'API CLOB di Polymarket, un
+  wallet e la firma degli ordini. Il portafoglio è solo simulato e ipotizza di comprare al
+  book del momento senza muovere il mercato oltre la profondità letta.
+- **Commissioni.** Il tasso dipende dalla categoria e l'endpoint `/fee-rate` dice solo se un
+  mercato ne è esente: la documentazione di Polymarket e la sua API non coincidono.
+- **Soglie di similarità** tarate sul modello di embedding precedente: con quello multilingue
+  vanno verificate sui propri dati.
+- **Ricerca mirata via Google News RSS**: servizio non ufficiale, senza garanzie; i risultati
+  hanno solo titolo e testata.
+- **Nessun recupero password via email**: un admin la reimposta con
+  `python -m backend.auth.cli set-password`.
 
 [Polymarket]: https://polymarket.com
