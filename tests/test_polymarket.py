@@ -78,3 +78,53 @@ async def test_fetch_order_book():
     async with httpx.AsyncClient(base_url="https://clob.test", transport=httpx.MockTransport(handler)) as client:
         book = await polymarket.fetch_order_book("111", client=client)
     assert book.best_ask == 0.5
+
+
+def clob_history_like_polymarket(calls, hourly=True):
+    """Mimics the CLOB: 400 for windows longer than 15 days; with hourly=False no points
+    finer than 12 hours (as for many resolved markets)."""
+    def handler(request: httpx.Request):
+        q = request.url.params
+        start, end, fidelity = int(q["startTs"]), int(q["endTs"]), int(q["fidelity"])
+        calls.append((start, end, fidelity))
+        if end - start > 15 * 86400:
+            return httpx.Response(400, json={"error": "invalid filters: 'startTs' and 'endTs' interval is too long"})
+        if not hourly and fidelity < 720:
+            return httpx.Response(200, json={"history": []})
+        step = fidelity * 60
+        # One point past endTs, as the CLOB appends the current price: it must be dropped
+        return httpx.Response(200, json={"history": [{"t": t, "p": 0.4} for t in range(start, end + 1, step)]
+                                         + [{"t": end + 10 * 86400, "p": 0.9}]})
+    return handler
+
+
+async def test_price_history_splits_long_periods_into_short_windows():
+    from datetime import datetime, timedelta, timezone
+    end = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    start = end - timedelta(days=32)
+    calls = []
+    async with httpx.AsyncClient(base_url="https://clob.test", transport=httpx.MockTransport(clob_history_like_polymarket(calls))) as client:
+        points = await polymarket.fetch_price_history("111", start, end, client=client)
+    assert len(calls) == 3 and all(e - s <= 14 * 86400 for s, e, _ in calls)
+    assert points[0][0] == start and points[-1][0] == end and all(p == 0.4 for _, p in points)
+    assert len({t for t, _ in points}) == len(points) == 32 * 24 + 1      # hourly, no duplicates at the joins
+    assert polymarket.price_at(points, end - timedelta(days=30)) == 0.4
+
+
+async def test_price_history_falls_back_to_12_hours_for_resolved_markets():
+    from datetime import datetime, timedelta, timezone
+    end = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    calls = []
+    async with httpx.AsyncClient(base_url="https://clob.test", transport=httpx.MockTransport(clob_history_like_polymarket(calls, hourly=False))) as client:
+        points = await polymarket.fetch_price_history("111", end - timedelta(days=9), end, client=client)
+    assert [c[2] for c in calls] == [60, 720] and len(points) == 9 * 2 + 1
+    assert polymarket.price_at(points, end - timedelta(days=7, hours=5)) == 0.4
+
+
+async def test_price_history_unknown_market_is_empty_not_an_error():
+    from datetime import datetime, timedelta, timezone
+    def handler(request):
+        return httpx.Response(400, json={"error": "invalid market"})
+    end = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    async with httpx.AsyncClient(base_url="https://clob.test", transport=httpx.MockTransport(handler)) as client:
+        assert await polymarket.fetch_price_history("bad", end - timedelta(days=3), end, client=client) == []
