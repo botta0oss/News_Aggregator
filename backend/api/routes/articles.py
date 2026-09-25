@@ -9,6 +9,7 @@ from backend.db.database import get_db
 from backend.db.models import Article, ProcessedArticle, Source, Cluster
 from backend.api.schemas import ArticleListResponse, ArticleResponse
 from backend.ai.typesafe_evaluator import calculate_composite_score
+from backend.i18n import tr
 
 router = APIRouter(prefix="/articles", tags=["articles"])
 
@@ -44,25 +45,25 @@ def _base_query():
 
 @router.get("", response_model=ArticleListResponse)
 async def get_articles(
-    q: Optional[str] = Query(None, max_length=200, description="Testo da cercare in titolo, contenuto e riassunto"),
-    scope: Literal["all", "title"] = Query("all", description="Dove cercare"),
-    sort: Optional[Literal["relevance", "score", "recent"]] = Query(None, description="Ordinamento (default: pertinenza se c'è una ricerca)"),
-    category: str = Query(None, description="Filtra per macro categoria"),
+    q: Optional[str] = Query(None, max_length=200, description="Text to search in title, content and summary"),
+    scope: Literal["all", "title"] = Query("all", description="Where to search"),
+    sort: Optional[Literal["relevance", "score", "recent"]] = Query(None, description="Sorting (default: relevance when there is a search)"),
+    category: str = Query(None, description="Filter by macro category"),
     region: Optional[str] = Query(None, max_length=40),
     source_id: Optional[uuid.UUID] = Query(None),
     since_hours: Optional[int] = Query(None, ge=1, le=24 * 365),
     min_market_relevance: Optional[float] = Query(None, ge=0.0, le=1.0),
-    hide_opinion: bool = Query(False, description="Escludi opinioni e commenti"),
+    hide_opinion: bool = Query(False, description="Exclude opinion and commentary"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     # Weight parameters for dynamic composite ranking
-    w_authority: float = Query(0.35, ge=0.0, le=2.0, description="Peso autorevolezza"),
-    w_tech: float = Query(0.25, ge=0.0, le=2.0, description="Peso profondità tecnica"),
-    w_urgency: float = Query(0.25, ge=0.0, le=2.0, description="Peso urgenza/breaking"),
-    w_clickbait: float = Query(0.40, ge=0.0, le=2.0, description="Penalità clickbait"),
+    w_authority: float = Query(0.35, ge=0.0, le=2.0, description="Authority weight"),
+    w_tech: float = Query(0.25, ge=0.0, le=2.0, description="Technical depth weight"),
+    w_urgency: float = Query(0.25, ge=0.0, le=2.0, description="Urgency/breaking weight"),
+    w_clickbait: float = Query(0.40, ge=0.0, le=2.0, description="Clickbait penalty"),
     # Hard thresholds
-    max_clickbait: float = Query(None, ge=0.0, le=1.0, description="Soglia massima tollerata clickbait"),
-    min_authority: float = Query(None, ge=0.0, le=1.0, description="Soglia minima autorevolezza"),
+    max_clickbait: float = Query(None, ge=0.0, le=1.0, description="Maximum tolerated clickbait"),
+    min_authority: float = Query(None, ge=0.0, le=1.0, description="Minimum authority"),
     db: AsyncSession = Depends(get_db)
 ):
     query = _base_query()
@@ -200,5 +201,5 @@ def _article_dict(article, processed, source, cluster) -> dict:
 async def get_article(article_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     row = (await db.execute(_base_query().where(Article.id == article_id))).first()
     if not row:
-        raise HTTPException(status_code=404, detail="Article not found")
+        raise HTTPException(status_code=404, detail=tr("Notizia non trovata", "Article not found"))
     return _article_dict(*row)

@@ -10,6 +10,7 @@ from backend.auth.service import (
     ActiveSession, authenticate, change_password, create_session, revoke_session,
 )
 from backend.db.database import get_db
+from backend.i18n import tr
 
 logger = logging.getLogger("backend.auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -45,7 +46,8 @@ async def login(body: LoginRequest, request: Request, response: Response, db: As
     username = normalize_username(body.username)
     wait = login_limiter.retry_after(ip, username)
     if wait:
-        raise HTTPException(status_code=429, detail=f"Troppi tentativi. Riprova tra {max(1, round(wait / 60))} minuti.",
+        raise HTTPException(status_code=429, detail=tr(f"Troppi tentativi. Riprova tra {max(1, round(wait / 60))} minuti.",
+                                  f"Too many attempts. Try again in {max(1, round(wait / 60))} minutes."),
                             headers={"Retry-After": str(wait)})
 
     user = await authenticate(db, username, body.password)
@@ -53,7 +55,7 @@ async def login(body: LoginRequest, request: Request, response: Response, db: As
         login_limiter.record_failure(ip, username)
         logger.warning("Failed login for %r from %s", username, ip)
         # Same message whether the username exists or not
-        raise HTTPException(status_code=401, detail="Username o password non corretti.")
+        raise HTTPException(status_code=401, detail=tr("Username o password non corretti.", "Wrong username or password."))
 
     login_limiter.reset(ip, username)
     await revoke_session(db, session_token(request))  # never reuse a pre-login session

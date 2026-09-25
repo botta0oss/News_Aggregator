@@ -14,6 +14,7 @@ import feedparser
 import httpx
 
 from backend.config import settings
+from backend.i18n import tr
 
 logger = logging.getLogger(__name__)
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -53,17 +54,17 @@ async def check_url(url: str) -> None:
     """Rejects non-HTTP URLs and, unless allowed, hosts resolving to internal addresses (SSRF)."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise FeedError("L'indirizzo deve iniziare con http:// o https://")
+        raise FeedError(tr("L'indirizzo deve iniziare con http:// o https://", "The address must start with http:// or https://"))
     if settings.ALLOW_PRIVATE_FEEDS:
         return
     try:
         addresses = await resolve_host(parsed.hostname)
     except OSError:
-        raise FeedError(f"Il dominio {parsed.hostname} non esiste o non risponde")
+        raise FeedError(tr(f"Il dominio {parsed.hostname} non esiste o non risponde", f"The domain {parsed.hostname} does not exist or does not respond"))
     for address in addresses:
         ip = ipaddress.ip_address(address.split("%")[0])
         if not ip.is_global or ip.is_multicast:
-            raise FeedError("L'indirizzo punta a una rete interna: non è consentito")
+            raise FeedError(tr("L'indirizzo punta a una rete interna: non è consentito", "The address points to an internal network: not allowed"))
 
 
 async def download(url: str) -> bytes:
@@ -80,26 +81,26 @@ async def download(url: str) -> bytes:
                         url = urljoin(url, res.headers["location"])
                         continue
                     if res.status_code >= 400:
-                        raise FeedError(f"Il server ha risposto con errore {res.status_code}")
+                        raise FeedError(tr(f"Il server ha risposto con errore {res.status_code}", f"The server answered with error {res.status_code}"))
                     chunks, size = [], 0
                     async for chunk in res.aiter_bytes():
                         size += len(chunk)
                         if size > settings.FEED_MAX_BYTES:
-                            raise FeedError("Il feed è troppo grande")
+                            raise FeedError(tr("Il feed è troppo grande", "The feed is too large"))
                         chunks.append(chunk)
                     return b"".join(chunks)
             except httpx.TimeoutException:
-                raise FeedError("Il server non ha risposto in tempo")
+                raise FeedError(tr("Il server non ha risposto in tempo", "The server did not answer in time"))
             except httpx.HTTPError as e:
-                raise FeedError(f"Connessione non riuscita: {e.__class__.__name__}")
-        raise FeedError("Troppi reindirizzamenti")
+                raise FeedError(tr(f"Connessione non riuscita: {e.__class__.__name__}", f"Connection failed: {e.__class__.__name__}"))
+        raise FeedError(tr("Troppi reindirizzamenti", "Too many redirects"))
 
 
 def parse_feed(content: bytes) -> FeedResult:
     feed = feedparser.parse(content)
     # feedparser does not always flag an HTML page as an error: no entries and no feed version means "not a feed"
     if not feed.entries and (feed.get("bozo") or not feed.get("version")):
-        raise FeedError("Il contenuto non è un feed RSS o Atom valido")
+        raise FeedError(tr("Il contenuto non è un feed RSS o Atom valido", "The content is not a valid RSS or Atom feed"))
     entries = []
     for entry in feed.entries:
         title = clean_html(entry.get("title", ""))

@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 
 from backend.ai.ratelimit import RateLimited
 from backend.config import settings
+from backend.i18n import lang, tr
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,11 @@ FEATURES = {
     "piu_esiti": "Più esiti",
     "backtest": "Backtest",
     "altro": "Altro",
+}
+FEATURES_EN = {
+    "classificazione": "News classification", "riassunti": "Summaries", "riclassificazione": "Reclassification",
+    "previsioni": "Forecasts", "valuta_tutti": "Assess all with Jev", "allerte": "Alerts", "piu_esiti": "Multi-outcome",
+    "backtest": "Backtest", "altro": "Other",
 }
 PAID = ("jev", "groq", "gemini")
 
@@ -139,10 +145,12 @@ async def check(provider: str) -> None:
     t = await _ensure_today()
     if provider == "jev" and settings.DAILY_JEV_CALL_LIMIT > 0 and t.jev_calls >= settings.DAILY_JEV_CALL_LIMIT:
         raise BudgetExceeded(provider, seconds_to_midnight(),
-                             f"Limite giornaliero di {settings.DAILY_JEV_CALL_LIMIT} chiamate a Jev raggiunto: si riparte a mezzanotte.")
+                             tr(f"Limite giornaliero di {settings.DAILY_JEV_CALL_LIMIT} chiamate a Jev raggiunto: si riparte a mezzanotte.",
+                                f"Daily limit of {settings.DAILY_JEV_CALL_LIMIT} Jev calls reached: it restarts at midnight."))
     if settings.DAILY_AI_BUDGET_USD > 0 and t.cost >= settings.DAILY_AI_BUDGET_USD:
         raise BudgetExceeded(provider, seconds_to_midnight(),
-                             f"Budget giornaliero di {settings.DAILY_AI_BUDGET_USD:.2f} $ per le API AI raggiunto: si riparte a mezzanotte.")
+                             tr(f"Budget giornaliero di {settings.DAILY_AI_BUDGET_USD:.2f} $ per le API AI raggiunto: si riparte a mezzanotte.",
+                                f"Daily AI API budget of ${settings.DAILY_AI_BUDGET_USD:.2f} reached: it restarts at midnight."))
 
 
 async def record(provider: str, input_tokens: Optional[int] = 0, output_tokens: Optional[int] = 0, ok: bool = True) -> None:
@@ -176,17 +184,21 @@ def shares(t: Optional[_Today] = None) -> dict:
 
 async def _maybe_warn(t: _Today) -> None:
     """Once per day and per threshold (warning share, then 100%): log and, if configured, Telegram."""
-    labels = {"jev_calls": "delle chiamate a Jev", "cost": "del budget per le API AI"}
+    labels = {"jev_calls": tr("delle chiamate a Jev", "of Jev calls"), "cost": tr("del budget per le API AI", "of the AI API budget")}
     for key, share in shares(t).items():
         if share is None:
             continue
         if share >= 1.0 and (key, "full") not in t.warned:
             t.warned |= {(key, "full"), (key, "warn")}
-            text = (f"⚠️ <b>News × Markets</b>: limite giornaliero {labels[key]} esaurito. Le chiamate a pagamento "
-                    "riprendono a mezzanotte; classificazione e riassunti usano le alternative gratuite.")
+            text = "⚠️ <b>News × Markets</b>: " + tr(
+                f"limite giornaliero {labels[key]} esaurito. Le chiamate a pagamento "
+                "riprendono a mezzanotte; classificazione e riassunti usano le alternative gratuite.",
+                f"daily limit {labels[key]} used up. Paid calls "
+                "resume at midnight; classification and summaries use the free alternatives.")
         elif settings.USAGE_WARN_SHARE <= share < 1.0 and (key, "warn") not in t.warned:
             t.warned.add((key, "warn"))
-            text = f"⚠️ <b>News × Markets</b>: usato il {round(share * 100)}% del limite giornaliero {labels[key]}."
+            text = "⚠️ <b>News × Markets</b>: " + tr(f"usato il {round(share * 100)}% del limite giornaliero {labels[key]}.",
+                                                     f"used {round(share * 100)}% of the daily limit {labels[key]}.")
         else:
             continue
         logger.warning(text)
@@ -234,4 +246,5 @@ async def report(db, days: int = 30) -> dict:
     items = [{"day": d.isoformat(), "provider": p, "feature": f, "calls": c, "errors": e,
               "input_tokens": int(i), "output_tokens": int(o), "cost": round(float(cost), 4)}
              for d, p, f, c, e, i, o, cost in rows]
-    return {"days": days, "since": since.date().isoformat(), "items": items, "features": FEATURES}
+    features = FEATURES if lang() == "it" else {**FEATURES, **FEATURES_EN}
+    return {"days": days, "since": since.date().isoformat(), "items": items, "features": features}

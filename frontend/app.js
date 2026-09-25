@@ -1,3 +1,4 @@
+import { t, lang, setLang } from "./i18n.js";
 import {
   h, clear, api, setCsrfToken, fmt, toast, debounce, icon, hydrateIcons, externalLink,
   signalBadge, impactBadge, marketStateBadge, meter, statTile, emptyState, skeleton, infoTip, GLOSSARY,
@@ -68,23 +69,23 @@ function loginView(message) {
   error.hidden = !message;
   const username = h("input", { id: "login-username", class: "input", name: "username", autocomplete: "username", required: true, autocapitalize: "none", spellcheck: "false", maxlength: "64" });
   const password = h("input", { id: "login-password", class: "input", name: "password", type: "password", autocomplete: "current-password", required: true, maxlength: "256" });
-  const reveal = h("button", { class: "input-addon", type: "button", "aria-label": "Mostra password", "aria-pressed": "false" }, icon("eye"));
+  const reveal = h("button", { class: "input-addon", type: "button", "aria-label": t("Mostra password"), "aria-pressed": "false" }, icon("eye"));
   reveal.addEventListener("click", () => {
     const show = password.type === "password";
     password.type = show ? "text" : "password";
     reveal.setAttribute("aria-pressed", String(show));
-    reveal.setAttribute("aria-label", show ? "Nascondi password" : "Mostra password");
+    reveal.setAttribute("aria-label", show ? t("Nascondi password") : t("Mostra password"));
   });
-  const submit = h("button", { class: "btn btn-primary btn-block", type: "submit" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Accedi");
+  const submit = h("button", { class: "btn btn-primary btn-block", type: "submit" }, h("span", { class: "spinner", "aria-hidden": "true" }), t("Accedi"));
   const form = h("form", { class: "form", novalidate: true },
-    h("div", { class: "form-field" }, h("label", { for: "login-username" }, "Username"), username),
-    h("div", { class: "form-field" }, h("label", { for: "login-password" }, "Password"), h("div", { class: "input-group" }, password, reveal)),
+    h("div", { class: "form-field" }, h("label", { for: "login-username" }, t("Username")), username),
+    h("div", { class: "form-field" }, h("label", { for: "login-password" }, t("Password")), h("div", { class: "input-group" }, password, reveal)),
     error, submit,
   );
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!username.value.trim() || !password.value) {
-      error.textContent = "Inserisci username e password.";
+      error.textContent = t("Inserisci username e password.");
       error.hidden = false;
       (username.value.trim() ? password : username).focus();
       return;
@@ -118,11 +119,11 @@ function loginView(message) {
   return h("div", { class: "login-wrap" },
     h("section", { class: "card login-card", "aria-labelledby": "login-title" },
       h("div", { class: "login-head" }, h("span", { class: "login-icon" }, icon("lock")), h("div", {},
-        h("h1", { id: "login-title" }, "Accedi"),
-        h("p", { class: "secondary small" }, "Dashboard privata di News × Markets."),
+        h("h1", { id: "login-title" }, t("Accedi")),
+        h("p", { class: "secondary small" }, t("Dashboard privata di News × Markets.")),
       )),
       form,
-      h("p", { class: "muted small" }, "Non hai un account? Chiedi a chi gestisce il server di crearlo con ",
+      h("p", { class: "muted small" }, t("Non hai un account? Chiedi a chi gestisce il server di crearlo con "),
         h("code", {}, "python -m backend.auth.cli create-user"), "."),
     ),
   );
@@ -131,11 +132,11 @@ function loginView(message) {
 function cookieRefusedMessage() {
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
   if (window.location.protocol === "http:" && !local) {
-    return "Password corretta, ma il browser non ha salvato la sessione: il cookie è riservato alle connessioni HTTPS "
-      + "e stai usando HTTP da un indirizzo di rete. Su una rete di casa fidata imposta SESSION_COOKIE_SECURE=false "
-      + "nel file .env e riavvia; altrimenti usa HTTPS (per esempio con Cloudflare Tunnel).";
+    return t("Password corretta, ma il browser non ha salvato la sessione: il cookie è riservato alle connessioni HTTPS ")
+      + t("e stai usando HTTP da un indirizzo di rete. Su una rete di casa fidata imposta SESSION_COOKIE_SECURE=false ")
+      + t("nel file .env e riavvia; altrimenti usa HTTPS (per esempio con Cloudflare Tunnel).");
   }
-  return "Password corretta, ma il browser non ha salvato la sessione. Controlla che i cookie non siano bloccati per questo sito.";
+  return t("Password corretta, ma il browser non ha salvato la sessione. Controlla che i cookie non siano bloccati per questo sito.");
 }
 
 async function logout() {
@@ -143,7 +144,7 @@ async function logout() {
     await api("/auth/logout", { method: "POST", handle401: false });
   } catch { /* the session is gone either way */ }
   afterLogin = null;
-  showLogin("Sei uscito. A presto.");
+  showLogin(t("Sei uscito. A presto."));
   window.history.replaceState(null, "", "#/opportunita");
 }
 
@@ -165,18 +166,18 @@ function renderBanner() {
   const banner = document.getElementById("banner");
   clear(banner);
   if (!status) {
-    banner.append(icon("alert"), h("span", {}, "Il server non risponde. Controlla che l'API sia avviata e che il database sia raggiungibile."));
+    banner.append(icon("alert"), h("span", {}, t("Il server non risponde. Controlla che l'API sia avviata e che il database sia raggiungibile.")));
     banner.hidden = false;
   } else if (!status.jev_enabled) {
     banner.append(icon("alert"), h("span", {},
-      "Previsioni disattivate: manca la chiave TypeSafe. Aggiungi ", h("code", {}, "TYPESAFE_API_KEY"),
-      " al file .env e riavvia. Nel frattempo le notizie vengono classificate con un'euristica locale.",
+      t("Previsioni disattivate: manca la chiave TypeSafe. Aggiungi "), h("code", {}, "TYPESAFE_API_KEY"),
+      t(" al file .env e riavvia. Nel frattempo le notizie vengono classificate con un'euristica locale."),
     ));
     banner.hidden = false;
   } else if (status.usage?.blocked) {
     banner.append(icon("alert"), h("span", {},
-      "Limite giornaliero delle API AI raggiunto: previsioni, allerte e backtest sono in pausa fino a mezzanotte. ",
-      h("a", { href: "#/uso" }, "Vedi uso e costi")));
+      t("Limite giornaliero delle API AI raggiunto: previsioni, allerte e backtest sono in pausa fino a mezzanotte. "),
+      h("a", { href: "#/uso" }, t("Vedi uso e costi"))));
     banner.hidden = false;
   } else {
     banner.hidden = true;
@@ -186,12 +187,12 @@ function renderBanner() {
 /** One line in the top bar: is the data fresh and is Jev working? */
 function renderStatusLine() {
   const el = document.getElementById("topbar-status");
-  if (!status) return el.replaceChildren(h("span", { class: "dot warn", "aria-hidden": "true" }), "Server non raggiungibile");
+  if (!status) return el.replaceChildren(h("span", { class: "dot warn", "aria-hidden": "true" }), t("Server non raggiungibile"));
   const parts = [
-    status.last_article_at ? `Ultima notizia ${fmt.ago(status.last_article_at)}` : "Nessuna notizia ancora",
-    `${fmt.int(status.open_markets)} mercati aperti`,
-    `Jev ${status.jev_enabled ? "attivo" : "non configurato"}`,
-    status.prediction_auto ? "previsioni automatiche" : "previsioni manuali",
+    status.last_article_at ? t("Ultima notizia {0}", fmt.ago(status.last_article_at)) : t("Nessuna notizia ancora"),
+    t("{0} mercati aperti", fmt.int(status.open_markets)),
+    t("Jev {0}", status.jev_enabled ? t("attivo") : t("non configurato")),
+    status.prediction_auto ? t("previsioni automatiche") : t("previsioni manuali"),
   ];
   el.replaceChildren(h("span", { class: `dot${status.jev_enabled ? "" : " warn"}`, "aria-hidden": "true" }), parts.join(" · "));
   el.title = el.textContent;
@@ -241,18 +242,25 @@ function setupShell() {
   setupCollapse();
   setupMenu(document.getElementById("btn-jobs"), document.getElementById("jobs-menu"));
   window.addEventListener("auth:required", () => {
-    if (me) showLogin("La sessione è scaduta. Accedi di nuovo.");
+    if (me) showLogin(t("La sessione è scaduta. Accedi di nuovo."));
   });
   const ingest = document.getElementById("btn-ingest");
   const sync = document.getElementById("btn-sync");
-  ingest.addEventListener("click", () => runJob(ingest, "/ingest", "Aggiornamento notizie avviato. La pagina si aggiorna da sola."));
-  sync.addEventListener("click", () => runJob(sync, "/markets/sync", "Aggiornamento mercati avviato. La pagina si aggiorna da sola."));
+  ingest.addEventListener("click", () => runJob(ingest, "/ingest", t("Aggiornamento notizie avviato. La pagina si aggiorna da sola.")));
+  sync.addEventListener("click", () => runJob(sync, "/markets/sync", t("Aggiornamento mercati avviato. La pagina si aggiorna da sola.")));
+
+  // Language: IT / EN next to the theme button; switching reloads the page in the other language
+  for (const btn of document.querySelectorAll("#lang-switch [data-lang]")) {
+    btn.setAttribute("aria-pressed", String(btn.dataset.lang === lang));
+    btn.addEventListener("click", () => { if (btn.dataset.lang !== lang) setLang(btn.dataset.lang); });
+  }
+  localizeStatic();
 
   const themeBtn = document.getElementById("btn-theme");
   const paintThemeButton = () => {
     const light = document.documentElement.dataset.theme === "light";
     themeBtn.replaceChildren(icon(light ? "moon" : "sun"));
-    themeBtn.setAttribute("aria-label", light ? "Passa al tema scuro" : "Passa al tema chiaro");
+    themeBtn.setAttribute("aria-label", light ? t("Passa al tema scuro") : t("Passa al tema chiaro"));
     document.querySelector('meta[name="theme-color"]').setAttribute("content", light ? "#f1f5f9" : "#020617");
   };
   themeBtn.addEventListener("click", () => {
@@ -263,6 +271,28 @@ function setupShell() {
     paintThemeButton();
   });
   paintThemeButton();
+}
+
+/** The fixed texts of index.html, in the interface language. */
+function localizeStatic() {
+  const text = (sel, value) => { const el = document.querySelector(sel); if (el) el.textContent = value; };
+  const attr = (sel, name, value) => document.querySelectorAll(sel).forEach((el) => el.setAttribute(name, value));
+  text(".skip-link", t("Vai al contenuto"));
+  attr("#sidebar", "aria-label", t("Menu principale"));
+  attr(".brand", "aria-label", t("News × Markets, vai alle opportunità"));
+  attr("#side-nav", "aria-label", t("Sezioni"));
+  text("#btn-jobs .btn-label", t("Aggiorna"));
+  text("#btn-ingest b", t("Aggiorna notizie"));
+  text("#btn-ingest .muted", t("Scarica le fonti, classifica e collega ai mercati"));
+  text("#btn-sync b", t("Aggiorna mercati"));
+  text("#btn-sync .muted", t("Prezzi da Polymarket e collegamento delle notizie"));
+  text("#footer p", t("Segnali indicativi, non consulenza finanziaria. L'app non piazza ordini su Polymarket."));
+  attr("#bottom-nav", "aria-label", t("Sezioni principali"));
+  text("#more-title", t("Tutte le sezioni"));
+  attr("#btn-more-close", "aria-label", t("Chiudi"));
+  attr("#sheet-nav", "aria-label", t("Tutte le sezioni"));
+  attr("#lang-switch", "aria-label", t("Lingua"));
+  attr('meta[name="description"]', "content", t("Notizie classificate con TypeSafe Jev e previsioni sui mercati Polymarket"));
 }
 
 // ---------- Router ----------
@@ -306,8 +336,8 @@ async function route({ quiet = false } = {}) {
     if (!quiet) view.focus({ preventScroll: true });
   } catch (e) {
     if (token !== renderToken || e.status === 401) return;
-    clear(view).append(emptyState("Impossibile caricare la pagina", e.message,
-      h("button", { class: "btn btn-ghost", type: "button", on: { click: () => route() } }, icon("refresh"), "Riprova")));
+    clear(view).append(emptyState(t("Impossibile caricare la pagina"), e.message,
+      h("button", { class: "btn btn-ghost", type: "button", on: { click: () => route() } }, icon("refresh"), t("Riprova"))));
   }
 }
 
@@ -348,7 +378,7 @@ async function viewOpportunities() {
   const kpis = h("div", { class: "kpis" });
   // Multi-outcome events: a separate block, read as distributions
   const multiHead = h("div", { class: "section-head", hidden: true },
-    h("h2", {}, "Mercati a più esiti"), h("a", { class: "btn btn-ghost btn-sm", href: "#/multi" }, "Tutti gli eventi"));
+    h("h2", {}, t("Mercati a più esiti")), h("a", { class: "btn btn-ghost btn-sm", href: "#/multi" }, t("Tutti gli eventi")));
   const multiList = h("div", { class: "multi-grid" });
   const reloadMulti = async () => {
     try {
@@ -367,52 +397,52 @@ async function viewOpportunities() {
       });
       const active = opps.filter((o) => o.prediction.signal !== "HOLD").length;
       kpis.replaceChildren(
-        statTile("Mercati aperti", fmt.int(status?.open_markets ?? 0), "binari Sì/No su Polymarket"),
-        statTile("Con notizie collegate", fmt.int(status?.linked_markets ?? 0), "notizie recenti simili alla domanda"),
-        statTile("Previsioni Jev", fmt.int(status?.predictions ?? 0), status?.last_prediction_at ? `ultima ${fmt.ago(status.last_prediction_at)}` : "nessuna ancora"),
-        statTile("Segnali attivi", fmt.int(active), `edge ≥ ${oppFilters.minEdge} pt`),
+        statTile(t("Mercati aperti"), fmt.int(status?.open_markets ?? 0), t("binari Sì/No su Polymarket")),
+        statTile(t("Con notizie collegate"), fmt.int(status?.linked_markets ?? 0), t("notizie recenti simili alla domanda")),
+        statTile(t("Previsioni Jev"), fmt.int(status?.predictions ?? 0), status?.last_prediction_at ? t("ultima {0}", fmt.ago(status.last_prediction_at)) : t("nessuna ancora")),
+        statTile(t("Segnali attivi"), fmt.int(active), t("edge ≥ {0} pt", oppFilters.minEdge)),
       );
       list.replaceChildren(...(opps.length ? opps.map(opportunityCard) : [opportunitiesEmpty()]));
     } catch (e) {
-      list.replaceChildren(emptyState("Impossibile caricare le opportunità", e.message));
+      list.replaceChildren(emptyState(t("Impossibile caricare le opportunità"), e.message));
     }
   };
   const reloadSoon = debounce(reload, 250);
 
-  const filters = h("div", { class: "filters", role: "group", "aria-label": "Filtri" },
-    rangeField("f-edge", "Edge minimo", { min: 0, max: 30, step: 1, value: oppFilters.minEdge, format: (v) => `${v} pt` }, (v) => { oppFilters.minEdge = v; reloadSoon(); }),
-    rangeField("f-evidence", "Evidenze minime", { min: 0, max: 100, step: 5, value: oppFilters.minEvidence, format: (v) => `${v}%` }, (v) => { oppFilters.minEvidence = v; reloadSoon(); }),
-    checkField("f-hold", "Mostra anche «Attendi»", oppFilters.includeHold, (v) => { oppFilters.includeHold = v; reload(); }),
+  const filters = h("div", { class: "filters", role: "group", "aria-label": t("Filtri") },
+    rangeField("f-edge", t("Edge minimo"), { min: 0, max: 30, step: 1, value: oppFilters.minEdge, format: (v) => `${v} ${t("pt")}` }, (v) => { oppFilters.minEdge = v; reloadSoon(); }),
+    rangeField("f-evidence", t("Evidenze minime"), { min: 0, max: 100, step: 5, value: oppFilters.minEvidence, format: (v) => `${v}%` }, (v) => { oppFilters.minEvidence = v; reloadSoon(); }),
+    checkField("f-hold", t("Mostra anche «Attendi»"), oppFilters.includeHold, (v) => { oppFilters.includeHold = v; reload(); }),
   );
 
   await reload();
   const bulk = bulkPredict(ctx);
   return h("div", {},
-    pageHead("Opportunità", "Mercati in cui la stima di Jev, pesata per la forza delle notizie, si discosta dal prezzo. Ordinati per edge.",
-      h("a", { class: "btn btn-ghost", href: "#/metodo" }, icon("help"), "Come funziona"), bulk.button),
+    pageHead(t("Opportunità"), t("Mercati in cui la stima di Jev, pesata per la forza delle notizie, si discosta dal prezzo. Ordinati per edge."),
+      h("a", { class: "btn btn-ghost", href: "#/metodo" }, icon("help"), t("Come funziona")), bulk.button),
     bulk.panel, kpis, filters, list,
     h("div", { class: "opps-multi" }, multiHead, multiList),
   );
 }
 
 function opportunitiesEmpty() {
-  if (!status) return emptyState("Nessun dato", "Il server non risponde.");
+  if (!status) return emptyState(t("Nessun dato"), t("Il server non risponde."));
   if (status.open_markets === 0) {
-    return emptyState("Nessun mercato ancora", isAdmin() ? "Scarica i mercati Sì/No più scambiati da Polymarket per iniziare." : "Un amministratore deve scaricare i mercati da Polymarket.",
-      isAdmin() ? h("button", { class: "btn btn-primary", type: "button", on: { click: () => document.getElementById("btn-sync").click() } }, icon("sync"), "Aggiorna mercati") : null);
+    return emptyState(t("Nessun mercato ancora"), isAdmin() ? t("Scarica i mercati Sì/No più scambiati da Polymarket per iniziare.") : t("Un amministratore deve scaricare i mercati da Polymarket."),
+      isAdmin() ? h("button", { class: "btn btn-primary", type: "button", on: { click: () => document.getElementById("btn-sync").click() } }, icon("sync"), t("Aggiorna mercati")) : null);
   }
   if (status.linked_markets === 0) {
-    return emptyState("Nessuna notizia collegata ai mercati", "Le notizie recenti non somigliano ancora a nessuna domanda di mercato. Aggiorna le notizie o abbassa MARKET_MATCH_THRESHOLD nel file .env.",
-      isAdmin() ? h("button", { class: "btn btn-primary", type: "button", on: { click: () => document.getElementById("btn-ingest").click() } }, icon("refresh"), "Aggiorna notizie") : null);
+    return emptyState(t("Nessuna notizia collegata ai mercati"), t("Le notizie recenti non somigliano ancora a nessuna domanda di mercato. Aggiorna le notizie o abbassa MARKET_MATCH_THRESHOLD nel file .env."),
+      isAdmin() ? h("button", { class: "btn btn-primary", type: "button", on: { click: () => document.getElementById("btn-ingest").click() } }, icon("refresh"), t("Aggiorna notizie")) : null);
   }
   if (!status.jev_enabled) {
-    return emptyState("Previsioni non disponibili", "Configura TYPESAFE_API_KEY per ottenere le stime di Jev sui mercati con notizie collegate.");
+    return emptyState(t("Previsioni non disponibili"), t("Configura TYPESAFE_API_KEY per ottenere le stime di Jev sui mercati con notizie collegate."));
   }
   if (status.predictions === 0) {
-    return emptyState("Nessuna previsione ancora", `${fmt.int(status.linked_markets)} mercati hanno notizie collegate. Apri un mercato e chiedi una previsione a Jev.`,
-      h("a", { class: "btn btn-primary", href: "#/mercati" }, "Vedi i mercati con notizie"));
+    return emptyState(t("Nessuna previsione ancora"), t("{0} mercati hanno notizie collegate. Apri un mercato e chiedi una previsione a Jev.", fmt.int(status.linked_markets)),
+      h("a", { class: "btn btn-primary", href: "#/mercati" }, t("Vedi i mercati con notizie")));
   }
-  return emptyState("Nessuna opportunità con questi filtri", "Abbassa l'edge o le evidenze minime, oppure mostra anche i mercati in attesa.");
+  return emptyState(t("Nessuna opportunità con questi filtri"), t("Abbassa l'edge o le evidenze minime, oppure mostra anche i mercati in attesa."));
 }
 
 function opportunityCard({ market, prediction: p }) {
@@ -421,31 +451,31 @@ function opportunityCard({ market, prediction: p }) {
     h("div", {},
       h("a", { class: "opp-title", href: marketHref(market.id) }, market.question),
       h("div", { class: "opp-meta" },
-        h("span", {}, `Scade ${fmt.date(market.end_date)}`),
-        h("span", {}, `Volume ${fmt.usd(market.volume)}`),
-        h("span", {}, `${p.article_count} notizie analizzate`),
-        h("span", { title: fmt.dateTime(p.created_at) }, `Previsione ${fmt.ago(p.created_at)}`),
+        h("span", {}, t("Scade {0}", fmt.date(market.end_date))),
+        h("span", {}, t("Volume {0}", fmt.usd(market.volume))),
+        h("span", {}, t("{0} notizie analizzate", p.article_count)),
+        h("span", { title: fmt.dateTime(p.created_at) }, t("Previsione {0}", fmt.ago(p.created_at))),
       ),
       probTrack({ market: p.market_probability, blended: p.blended_probability, jev: p.model_probability }),
       probLegend({ market: p.market_probability, blended: p.blended_probability, jev: p.model_probability }),
-      h("p", { class: "opp-explain" }, explainSentence(p, status), " ", h("a", { href: marketHref(market.id) }, "Vedi il calcolo")),
+      h("p", { class: "opp-explain" }, explainSentence(p, status), " ", h("a", { href: marketHref(market.id) }, t("Vedi il calcolo"))),
       planLine(p.economics),
     ),
     h("div", { class: "opp-side" },
       h("div", { class: "opp-side-top" },
         signalBadge(p.signal),
-        market.url ? externalLink(market.url, "Polymarket ", icon("external")) : null,
+        market.url ? externalLink(market.url, t("Polymarket "), icon("external")) : null,
       ),
       h("div", { class: "opp-figures" },
-        h("div", {}, h("div", { class: "fig-label" }, "Edge", infoTip(GLOSSARY.edge)), h("div", { class: `fig-value ${edgeCls}` }, fmt.pts(p.edge))),
+        h("div", {}, h("div", { class: "fig-label" }, t("Edge"), infoTip(GLOSSARY.edge)), h("div", { class: `fig-value ${edgeCls}` }, fmt.pts(p.edge))),
         p.economics
-          ? h("div", {}, h("div", { class: "fig-label" }, "Conviene?", infoTip("Valutazione economica al momento della previsione: prezzo reale dal book, costi, incertezza, tempo e limiti del preset.")),
+          ? h("div", {}, h("div", { class: "fig-label" }, t("Conviene?"), infoTip(t("Valutazione economica al momento della previsione: prezzo reale dal book, costi, incertezza, tempo e limiti del preset."))),
             verdictBadge(p.economics.verdict),
-            p.economics.verdict !== "NO" ? h("div", { class: "fig-label", style: { marginTop: "4px" } }, `Puntata ${fmt.money(p.economics.outlay)}`) : null)
-          : h("div", {}, h("div", { class: "fig-label" }, "Puntata suggerita", infoTip(GLOSSARY.kelly)), h("div", { class: "fig-value" }, p.kelly_fraction > 0 ? `${fmt.pct(p.kelly_fraction)}` : "–"),
-            p.kelly_fraction > 0 ? h("div", { class: "fig-label" }, "del bankroll") : null),
+            p.economics.verdict !== "NO" ? h("div", { class: "fig-label", style: { marginTop: "4px" } }, t("Puntata {0}", fmt.money(p.economics.outlay))) : null)
+          : h("div", {}, h("div", { class: "fig-label" }, t("Puntata suggerita"), infoTip(GLOSSARY.kelly)), h("div", { class: "fig-value" }, p.kelly_fraction > 0 ? `${fmt.pct(p.kelly_fraction)}` : "–"),
+            p.kelly_fraction > 0 ? h("div", { class: "fig-label" }, t("del bankroll")) : null),
       ),
-      h("div", {}, h("div", { class: "fig-label" }, "Forza delle evidenze", infoTip(GLOSSARY.evidence)), meter(p.evidence_strength, "Forza delle evidenze")),
+      h("div", {}, h("div", { class: "fig-label" }, t("Forza delle evidenze"), infoTip(GLOSSARY.evidence)), meter(p.evidence_strength, t("Forza delle evidenze"))),
     ),
   );
 }
@@ -453,14 +483,14 @@ function opportunityCard({ market, prediction: p }) {
 // ---------- Mercati ----------
 // key -> label, default direction, direction wording (what "asc" and "desc" mean for this field)
 const MARKET_SORTS = {
-  volume: { label: "Volume", dir: "desc", asc: "dal più basso", desc: "dal più alto" },
-  end_date: { label: "Scadenza", dir: "asc", asc: "prima i più vicini", desc: "prima i più lontani" },
-  price: { label: "Prezzo SÌ", dir: "desc", asc: "dal più basso", desc: "dal più alto" },
-  signal: { label: "Ultimo segnale", dir: "desc", asc: "prima i meno recenti", desc: "prima i più recenti" },
-  edge: { label: "Edge", dir: "desc", asc: "dal più piccolo", desc: "dal più grande" },
-  news: { label: "Notizie collegate", dir: "desc", asc: "prima le meno", desc: "prima le più" },
-  liquidity: { label: "Liquidità", dir: "desc", asc: "dalla più bassa", desc: "dalla più alta" },
-  question: { label: "Nome", dir: "asc", asc: "A → Z", desc: "Z → A" },
+  volume: { label: t("Volume"), dir: "desc", asc: t("dal più basso"), desc: t("dal più alto") },
+  end_date: { label: t("Scadenza"), dir: "asc", asc: t("prima i più vicini"), desc: t("prima i più lontani") },
+  price: { label: t("Prezzo SÌ"), dir: "desc", asc: t("dal più basso"), desc: t("dal più alto") },
+  signal: { label: t("Ultimo segnale"), dir: "desc", asc: t("prima i meno recenti"), desc: t("prima i più recenti") },
+  edge: { label: t("Edge"), dir: "desc", asc: t("dal più piccolo"), desc: t("dal più grande") },
+  news: { label: t("Notizie collegate"), dir: "desc", asc: t("prima le meno"), desc: t("prima le più") },
+  liquidity: { label: t("Liquidità"), dir: "desc", asc: t("dalla più bassa"), desc: t("dalla più alta") },
+  question: { label: t("Nome"), dir: "asc", asc: t("A → Z"), desc: t("Z → A") },
 };
 const marketFilters = { q: "", onlyLinked: null, includeClosed: false, sort: "volume", order: null };
 try {
@@ -504,9 +534,9 @@ async function viewMarkets() {
     offset += data.markets.length;
     const s = MARKET_SORTS[marketFilters.sort];
     summary.textContent = data.total
-      ? `${fmt.int(offset)} di ${fmt.count(data.total, "mercato", "mercati")}, ordinati per ${s.label.charAt(0).toLowerCase() + s.label.slice(1)} (${s[sortDir()]})` : "";
+      ? t("{0} di {1}, ordinati per {2} ({3})", fmt.int(offset), fmt.count(data.total, t("mercato"), t("mercati")), s.label.charAt(0).toLowerCase() + s.label.slice(1), s[sortDir()]) : "";
     more.replaceChildren(offset < data.total
-      ? h("button", { class: "btn btn-ghost", type: "button", on: { click: () => load(false) } }, "Carica altri")
+      ? h("button", { class: "btn btn-ghost", type: "button", on: { click: () => load(false) } }, t("Carica altri"))
       : "");
     tableWrap.hidden = data.total === 0;
     empty.hidden = data.total !== 0;
@@ -516,15 +546,15 @@ async function viewMarkets() {
 
   // Column headers: click sorts, a second click on the same column reverses the direction
   const COLUMNS = [
-    ["question", "Mercato", ""], ["price", "Prezzo SÌ", "num"], ["volume", "Volume", "num"], ["liquidity", "Liquidità", "num"],
-    ["end_date", "Scadenza", ""], ["news", "Notizie", "num"], ["signal", "Ultimo segnale", ""], ["edge", "Edge", "num"],
+    ["question", t("Mercato"), ""], ["price", t("Prezzo SÌ"), "num"], ["volume", t("Volume"), "num"], ["liquidity", t("Liquidità"), "num"],
+    ["end_date", t("Scadenza"), ""], ["news", t("Notizie"), "num"], ["signal", t("Ultimo segnale"), ""], ["edge", t("Edge"), "num"],
   ];
   function paintSort() {
     const dir = sortDir();
     headRow.replaceChildren(...COLUMNS.map(([key, label, cls]) => {
       const active = marketFilters.sort === key;
       const btn = h("button", { class: `th-sort${active ? " active" : ""}`, type: "button",
-        title: active ? `Ordinato per ${label.toLowerCase()}, ${MARKET_SORTS[key][dir]}. Clic per invertire` : `Ordina per ${label.toLowerCase()}` },
+        title: active ? t("Ordinato per {0}, {1}. Clic per invertire", label.toLowerCase(), MARKET_SORTS[key][dir]) : t("Ordina per {0}", label.toLowerCase()) },
       label, icon(active ? (dir === "asc" ? "arrowUp" : "arrowDown") : "sort", `icon-svg sort-icon${active ? "" : " sort-idle"}`));
       btn.addEventListener("click", () => {
         if (active) setMarketSort(key, dir === "asc" ? "desc" : "asc");
@@ -538,32 +568,32 @@ async function viewMarkets() {
       Object.entries(MARKET_SORTS).map(([key, s]) => h("option", { value: key, selected: key === marketFilters.sort }, s.label)));
     select.addEventListener("change", () => { setMarketSort(select.value, null); reload(); });
     const s = MARKET_SORTS[marketFilters.sort];
-    const flip = h("button", { class: "btn btn-ghost", type: "button", "aria-label": `Direzione: ${s[dir]}. Clic per invertire` },
+    const flip = h("button", { class: "btn btn-ghost", type: "button", "aria-label": t("Direzione: {0}. Clic per invertire", s[dir]) },
       icon(dir === "asc" ? "arrowUp" : "arrowDown"), s[dir]);
     flip.addEventListener("click", () => { setMarketSort(marketFilters.sort, dir === "asc" ? "desc" : "asc"); reload(); });
-    sortControls.replaceChildren(h("label", { class: "field", for: "m-sort" }, "Ordina per", select), flip);
+    sortControls.replaceChildren(h("label", { class: "field", for: "m-sort" }, t("Ordina per"), select), flip);
   }
 
-  const search = h("input", { id: "m-search", class: "search", type: "search", placeholder: "Cerca un mercato (es. Fed, elezioni, Bitcoin)", value: marketFilters.q, "aria-label": "Cerca un mercato" });
+  const search = h("input", { id: "m-search", class: "search", type: "search", placeholder: t("Cerca un mercato (es. Fed, elezioni, Bitcoin)"), value: marketFilters.q, "aria-label": t("Cerca un mercato") });
   search.addEventListener("input", () => { marketFilters.q = search.value.trim(); reloadSoon(); });
 
   const tableWrap = h("div", { class: "table-wrap" },
     h("table", { class: "markets-table" }, h("thead", {}, headRow), tbody),
   );
-  const empty = emptyState("Nessun mercato trovato",
-    marketFilters.onlyLinked ? "Nessun mercato con notizie collegate corrisponde alla ricerca. Togli il filtro «Solo con notizie» per vederli tutti." : "Aggiorna i mercati da Polymarket o cambia la ricerca.");
+  const empty = emptyState(t("Nessun mercato trovato"),
+    marketFilters.onlyLinked ? t("Nessun mercato con notizie collegate corrisponde alla ricerca. Togli il filtro «Solo con notizie» per vederli tutti.") : t("Aggiorna i mercati da Polymarket o cambia la ricerca."));
   empty.hidden = true;
 
   paintSort();
   await load(true);
   const bulk = bulkPredict(ctx);
   return h("div", {},
-    pageHead("Mercati", "I mercati Sì/No più scambiati su Polymarket. Il prezzo in centesimi è la probabilità implicita del SÌ.", bulk.button),
+    pageHead(t("Mercati"), t("I mercati Sì/No più scambiati su Polymarket. Il prezzo in centesimi è la probabilità implicita del SÌ."), bulk.button),
     bulk.panel,
-    h("div", { class: "filters", role: "group", "aria-label": "Filtri e ordinamento" },
+    h("div", { class: "filters", role: "group", "aria-label": t("Filtri e ordinamento") },
       h("div", { class: "search-wrap" }, icon("search"), search),
-      checkField("m-linked", "Solo con notizie", marketFilters.onlyLinked, (v) => { marketFilters.onlyLinked = v; reloadSoon(); }),
-      checkField("m-closed", "Includi chiusi", marketFilters.includeClosed, (v) => { marketFilters.includeClosed = v; reloadSoon(); }),
+      checkField("m-linked", t("Solo con notizie"), marketFilters.onlyLinked, (v) => { marketFilters.onlyLinked = v; reloadSoon(); }),
+      checkField("m-closed", t("Includi chiusi"), marketFilters.includeClosed, (v) => { marketFilters.includeClosed = v; reloadSoon(); }),
       sortControls,
     ),
     h("div", { class: "stack" }, summary, tableWrap, empty, more),
@@ -573,7 +603,7 @@ async function viewMarkets() {
 function daysLeft(end) {
   if (!end) return null;
   const days = Math.ceil((new Date(end).getTime() - Date.now()) / 86_400_000);
-  return days < 0 ? "scaduto" : days === 0 ? "oggi" : days === 1 ? "domani" : `tra ${fmt.int(days)} gg`;
+  return days < 0 ? t("scaduto") : days === 0 ? t("oggi") : days === 1 ? t("domani") : t("tra {0} gg", fmt.int(days));
 }
 
 function marketRow(m) {
@@ -588,7 +618,7 @@ function marketRow(m) {
     h("td", { class: "num" }, fmt.int(m.linked_articles)),
     h("td", { class: "nowrap" }, p
       ? [signalBadge(p.signal), h("div", { class: "muted small", title: fmt.dateTime(p.created_at) }, fmt.ago(p.created_at))]
-      : m.closed ? marketStateBadge(m) : h("span", { class: "muted small" }, "Nessuna previsione")),
+      : m.closed ? marketStateBadge(m) : h("span", { class: "muted small" }, t("Nessuna previsione"))),
     h("td", { class: `num ${p ? (p.edge > 0 ? "pos" : p.edge < 0 ? "neg" : "") : ""}` }, p ? fmt.pts(p.edge) : "–"),
   );
   return row;
@@ -599,18 +629,18 @@ async function viewMarketDetail(id) {
   const [market] = await Promise.all([api(`/markets/${encodeURIComponent(id)}`), status ? null : loadStatus()]);
   const latest = market.latest_prediction;
 
-  const predictBtn = h("button", { class: "btn btn-primary", type: "button" }, h("span", { class: "spinner", "aria-hidden": "true" }), icon("refresh"), latest ? "Nuova previsione" : "Chiedi una previsione a Jev");
+  const predictBtn = h("button", { class: "btn btn-primary", type: "button" }, h("span", { class: "spinner", "aria-hidden": "true" }), icon("refresh"), latest ? t("Nuova previsione") : t("Chiedi una previsione a Jev"));
   let blocker = null;
-  if (!isAdmin()) blocker = "Solo gli amministratori possono chiedere previsioni (sono chiamate a pagamento).";
-  else if (!status?.jev_enabled) blocker = "Serve TYPESAFE_API_KEY nel file .env.";
-  else if (market.closed) blocker = "Il mercato è chiuso.";
-  else if (market.evidence.length === 0) blocker = "Nessuna notizia recente collegata a questo mercato.";
+  if (!isAdmin()) blocker = t("Solo gli amministratori possono chiedere previsioni (sono chiamate a pagamento).");
+  else if (!status?.jev_enabled) blocker = t("Serve TYPESAFE_API_KEY nel file .env.");
+  else if (market.closed) blocker = t("Il mercato è chiuso.");
+  else if (market.evidence.length === 0) blocker = t("Nessuna notizia recente collegata a questo mercato.");
   predictBtn.disabled = Boolean(blocker);
   predictBtn.addEventListener("click", async () => {
     setBusy(predictBtn, true);
     try {
       const p = await api(`/markets/${encodeURIComponent(id)}/predict`, { method: "POST" });
-      toast(`Previsione salvata: ${p.signal === "BUY_YES" ? "Compra SÌ" : p.signal === "BUY_NO" ? "Compra NO" : "Attendi"} (edge ${fmt.pts(p.edge)})`);
+      toast(t("Previsione salvata: {0} (edge {1})", p.signal === "BUY_YES" ? t("Compra SÌ") : p.signal === "BUY_NO" ? t("Compra NO") : t("Attendi"), fmt.pts(p.edge)));
       await loadStatus();
       route({ quiet: true });
     } catch (e) {
@@ -620,38 +650,38 @@ async function viewMarketDetail(id) {
   });
 
   const forecastCard = h("section", { class: "card", "aria-labelledby": "h-forecast" },
-    h("div", { class: "card-head" }, h("h2", { id: "h-forecast" }, "Ultima previsione"), latest ? signalBadge(latest.signal) : null),
+    h("div", { class: "card-head" }, h("h2", { id: "h-forecast" }, t("Ultima previsione")), latest ? signalBadge(latest.signal) : null),
     latest
       ? h("div", {},
         probTrack({ market: latest.market_probability, blended: latest.blended_probability, jev: latest.model_probability }),
         probLegend({ market: latest.market_probability, blended: latest.blended_probability, jev: latest.model_probability }),
         h("div", { class: "opp-figures", style: { marginTop: "16px", gridTemplateColumns: "repeat(3, minmax(0, 1fr))" } },
-          h("div", {}, h("div", { class: "fig-label" }, "Edge"), h("div", { class: `fig-value ${latest.edge > 0 ? "pos" : latest.edge < 0 ? "neg" : ""}` }, fmt.pts(latest.edge))),
-          h("div", {}, h("div", { class: "fig-label" }, "Puntata"), h("div", { class: "fig-value" }, latest.kelly_fraction > 0 ? fmt.pct(latest.kelly_fraction) : "–")),
-          h("div", {}, h("div", { class: "fig-label" }, "Notizie"), h("div", { class: "fig-value" }, fmt.int(latest.article_count))),
+          h("div", {}, h("div", { class: "fig-label" }, t("Edge")), h("div", { class: `fig-value ${latest.edge > 0 ? "pos" : latest.edge < 0 ? "neg" : ""}` }, fmt.pts(latest.edge))),
+          h("div", {}, h("div", { class: "fig-label" }, t("Puntata")), h("div", { class: "fig-value" }, latest.kelly_fraction > 0 ? fmt.pct(latest.kelly_fraction) : "–")),
+          h("div", {}, h("div", { class: "fig-label" }, t("Notizie")), h("div", { class: "fig-value" }, fmt.int(latest.article_count))),
         ),
-        h("div", { style: { marginTop: "12px" } }, h("div", { class: "fig-label" }, "Forza delle evidenze"), meter(latest.evidence_strength, "Forza delle evidenze")),
-        h("p", { class: "muted small", style: { marginTop: "10px" } }, `Calcolata ${fmt.ago(latest.created_at)} con ${latest.model_name || "Jev"}. Il prezzo usato è quello di quel momento.`),
+        h("div", { style: { marginTop: "12px" } }, h("div", { class: "fig-label" }, t("Forza delle evidenze")), meter(latest.evidence_strength, t("Forza delle evidenze"))),
+        h("p", { class: "muted small", style: { marginTop: "10px" } }, t("Calcolata {0} con {1}. Il prezzo usato è quello di quel momento.", fmt.ago(latest.created_at), latest.model_name || t("Jev"))),
       )
-      : h("p", { class: "secondary" }, "Nessuna previsione per questo mercato. Jev legge le regole del mercato e le notizie collegate e stima la probabilità del SÌ, senza vedere il prezzo."),
-    h("div", { class: "predict-bar" }, predictBtn, blocker ? h("span", { class: "muted small" }, blocker) : h("span", { class: "muted small" }, "Una chiamata all'API TypeSafe. Il prezzo viene aggiornato prima.")),
+      : h("p", { class: "secondary" }, t("Nessuna previsione per questo mercato. Jev legge le regole del mercato e le notizie collegate e stima la probabilità del SÌ, senza vedere il prezzo.")),
+    h("div", { class: "predict-bar" }, predictBtn, blocker ? h("span", { class: "muted small" }, blocker) : h("span", { class: "muted small" }, t("Una chiamata all'API TypeSafe. Il prezzo viene aggiornato prima."))),
   );
 
   const historyCard = h("section", { class: "card", "aria-labelledby": "h-history" },
-    h("div", { class: "card-head" }, h("h2", { id: "h-history" }, "Storico delle previsioni"), h("span", { class: "muted small" }, `${market.predictions.length} previsioni`)),
-    market.predictions.length ? historyChart(market.predictions) : h("p", { class: "secondary" }, "Lo storico compare dopo la prima previsione."),
+    h("div", { class: "card-head" }, h("h2", { id: "h-history" }, t("Storico delle previsioni")), h("span", { class: "muted small" }, t("{0} previsioni", market.predictions.length))),
+    market.predictions.length ? historyChart(market.predictions) : h("p", { class: "secondary" }, t("Lo storico compare dopo la prima previsione.")),
   );
 
   const sentToJev = status?.market_max_articles ?? 8;
   let searchBtn = null;
   if (isAdmin() && !market.closed && status?.targeted_news_enabled) {
-    searchBtn = h("button", { class: "btn btn-ghost btn-sm", type: "button", title: "Cerca su Google News le notizie delle ultime ore su questo mercato" },
-      h("span", { class: "spinner", "aria-hidden": "true" }), icon("search"), "Cerca notizie");
+    searchBtn = h("button", { class: "btn btn-ghost btn-sm", type: "button", title: t("Cerca su Google News le notizie delle ultime ore su questo mercato") },
+      h("span", { class: "spinner", "aria-hidden": "true" }), icon("search"), t("Cerca notizie"));
     searchBtn.addEventListener("click", async () => {
       setBusy(searchBtn, true);
       try {
         const r = await api(`/markets/${encodeURIComponent(id)}/search-news`, { method: "POST" });
-        toast(r.added ? `${fmt.count(r.added, "notizia nuova", "notizie nuove")} trovate con «${r.query}».` : `Nessuna notizia nuova per «${r.query}».`);
+        toast(r.added ? t("{0} trovate con «{1}».", fmt.count(r.added, t("notizia nuova"), t("notizie nuove")), r.query) : t("Nessuna notizia nuova per «{0}».", r.query));
         route({ quiet: true });
       } catch (e) {
         toast(e.message, { error: true });
@@ -662,11 +692,11 @@ async function viewMarketDetail(id) {
   const evidenceCard = h("section", { class: "card", "aria-labelledby": "h-evidence" },
     h("div", { class: "card-head" },
       h("div", {},
-        h("h2", { id: "h-evidence" }, "Notizie collegate"),
-        h("p", { class: "muted small" }, `Una per storia, dalla più utile. Le prime ${sentToJev} vengono lette da Jev.`),
+        h("h2", { id: "h-evidence" }, t("Notizie collegate")),
+        h("p", { class: "muted small" }, t("Una per storia, dalla più utile. Le prime {0} vengono lette da Jev.", sentToJev)),
       ),
       h("div", { class: "actions" },
-        infoTip("Pertinenza: somiglianza di significato tra notizia e domanda, più la presenza dei termini chiave (nomi, sigle, numeri). Utilità: pertinenza × affidabilità della fonte × freschezza × giudizio di Jev. Rilevanza e impatto: il giudizio di Jev dopo l'ultima previsione.", "Come sono ordinate?"),
+        infoTip(t("Pertinenza: somiglianza di significato tra notizia e domanda, più la presenza dei termini chiave (nomi, sigle, numeri). Utilità: pertinenza × affidabilità della fonte × freschezza × giudizio di Jev. Rilevanza e impatto: il giudizio di Jev dopo l'ultima previsione."), t("Come sono ordinate?")),
         searchBtn),
     ),
     market.evidence.length
@@ -676,33 +706,33 @@ async function viewMarketDetail(id) {
           h("div", { class: "article-meta", style: { margin: "4px 0 0" } },
             h("span", {}, ev.source_name),
             h("span", { title: fmt.dateTime(ev.published_at) }, fmt.ago(ev.published_at)),
-            ev.corroboration > 1 ? h("span", { class: "badge badge-outline", title: "Fonti diverse che hanno riportato la stessa notizia" }, `${ev.corroboration} fonti`) : null,
-            ev.targeted ? h("span", { class: "badge badge-outline", title: "Trovata dalla ricerca mirata per questo mercato" }, icon("search"), "ricerca mirata") : null,
+            ev.corroboration > 1 ? h("span", { class: "badge badge-outline", title: t("Fonti diverse che hanno riportato la stessa notizia") }, t("{0} fonti", ev.corroboration)) : null,
+            ev.targeted ? h("span", { class: "badge badge-outline", title: t("Trovata dalla ricerca mirata per questo mercato") }, icon("search"), t("ricerca mirata")) : null,
           ),
-          ev.matched_terms?.length ? h("div", { class: "terms", "aria-label": "Termini chiave trovati" },
-            ev.matched_terms.map((t) => h("span", { class: "term" }, t))) : null,
+          ev.matched_terms?.length ? h("div", { class: "terms", "aria-label": t("Termini chiave trovati") },
+            ev.matched_terms.map((x) => h("span", { class: "term" }, x))) : null,
         ),
         h("div", { class: "ev-stats" },
-          h("span", {}, "Pertinenza ", h("b", { class: "mono" }, fmt.pct(ev.match_score ?? ev.similarity))),
-          ev.relevance != null ? h("span", {}, "Rilevanza ", h("b", { class: "mono" }, fmt.pct(ev.relevance))) : null,
+          h("span", {}, t("Pertinenza "), h("b", { class: "mono" }, fmt.pct(ev.match_score ?? ev.similarity))),
+          ev.relevance != null ? h("span", {}, t("Rilevanza "), h("b", { class: "mono" }, fmt.pct(ev.relevance))) : null,
           impactBadge(ev.impact),
         ),
       )))
-      : h("p", { class: "secondary" }, "Nessuna notizia recente riguarda questo mercato."),
+      : h("p", { class: "secondary" }, t("Nessuna notizia recente riguarda questo mercato.")),
   );
 
   return h("div", {},
-    h("a", { class: "back", href: "#/mercati" }, icon("back"), "Tutti i mercati"),
+    h("a", { class: "back", href: "#/mercati" }, icon("back"), t("Tutti i mercati")),
     h("div", { class: "card", style: { marginBottom: "16px" } },
-      h("div", { class: "eyebrow" }, "Mercato Polymarket"),
+      h("div", { class: "eyebrow" }, t("Mercato Polymarket")),
       h("h1", { style: { marginTop: "4px" } }, market.question),
       h("div", { class: "meta-row" },
         marketStateBadge(market),
-        h("span", {}, "Prezzo SÌ ", h("b", { class: "mono", style: { color: "var(--text-primary)" } }, fmt.cents(market.yes_price))),
-        h("span", {}, `Scade ${fmt.date(market.end_date)}`),
-        h("span", {}, `Volume ${fmt.usd(market.volume)}`),
-        h("span", {}, `Liquidità ${fmt.usd(market.liquidity)}`),
-        market.url ? externalLink(market.url, "Apri su Polymarket", icon("external")) : null,
+        h("span", {}, t("Prezzo SÌ "), h("b", { class: "mono", style: { color: "var(--text-primary)" } }, fmt.cents(market.yes_price))),
+        h("span", {}, t("Scade {0}", fmt.date(market.end_date))),
+        h("span", {}, t("Volume {0}", fmt.usd(market.volume))),
+        h("span", {}, t("Liquidità {0}", fmt.usd(market.liquidity))),
+        market.url ? externalLink(market.url, t("Apri su Polymarket"), icon("external")) : null,
       ),
     ),
     h("div", { class: "grid-2", style: { marginBottom: "16px" } }, forecastCard, historyCard),
@@ -710,7 +740,7 @@ async function viewMarketDetail(id) {
       latest ? economicsCard(ctx, market) : null,
       latest ? explainCard(latest, market, market.evidence, status) : null,
       evidenceCard,
-      market.description ? h("details", { class: "card rules" }, h("summary", {}, "Regole di risoluzione"), h("p", { class: "rules-text" }, market.description)) : null,
+      market.description ? h("details", { class: "card rules" }, h("summary", {}, t("Regole di risoluzione")), h("p", { class: "rules-text" }, market.description)) : null,
     ),
   );
 }
@@ -718,51 +748,51 @@ async function viewMarketDetail(id) {
 // ---------- Calibrazione ----------
 async function viewCalibration() {
   const cal = await api("/predictions/calibration");
-  const head = pageHead("Calibrazione", "Quanto sono state accurate le previsioni sui mercati già risolti, rispetto al prezzo di mercato.");
+  const head = pageHead(t("Calibrazione"), t("Quanto sono state accurate le previsioni sui mercati già risolti, rispetto al prezzo di mercato."));
   if (!cal.resolved_markets) {
-    return h("div", {}, head, emptyState("Ancora nessun mercato risolto",
-      "Quando un mercato con almeno una previsione si chiude, qui trovi il confronto tra Jev, blended e prezzo. Servono decine di mercati risolti prima di fidarsi dei segnali."));
+    return h("div", {}, head, emptyState(t("Ancora nessun mercato risolto"),
+      t("Quando un mercato con almeno una previsione si chiude, qui trovi il confronto tra Jev, blended e prezzo. Servono decine di mercati risolti prima di fidarsi dei segnali.")));
   }
   const better = cal.brier_blended != null && cal.brier_market != null ? (cal.brier_market - cal.brier_blended) / cal.brier_market : null;
   const small = cal.resolved_markets < 30;
   const g = cal.gain_blended;
   const interval = g && g.lo != null
-    ? (g.lo > 0 ? "Anche nel caso peggiore dell'intervallo al 95% il blended batte il prezzo: il vantaggio non sembra dovuto al caso."
-      : g.hi < 0 ? "Anche nel caso migliore dell'intervallo al 95% il prezzo fa meglio del blended."
-        : "L'intervallo al 95% comprende lo zero: con questi mercati non si può ancora dire chi sia più accurato.")
-      + ` (vantaggio in Brier ${fmt.num3(g.mean)}, da ${fmt.num3(g.lo)} a ${fmt.num3(g.hi)})`
+    ? (g.lo > 0 ? t("Anche nel caso peggiore dell'intervallo al 95% il blended batte il prezzo: il vantaggio non sembra dovuto al caso.")
+      : g.hi < 0 ? t("Anche nel caso migliore dell'intervallo al 95% il prezzo fa meglio del blended.")
+        : t("L'intervallo al 95% comprende lo zero: con questi mercati non si può ancora dire chi sia più accurato."))
+      + t(" (vantaggio in Brier {0}, da {1} a {2})", fmt.num3(g.mean), fmt.num3(g.lo), fmt.num3(g.hi))
     : null;
   const sc = cal.signal_clv;
   return h("div", {}, head,
     h("div", { class: "grid-2" },
       h("section", { class: "card", "aria-labelledby": "h-verdict" },
-        h("h2", { id: "h-verdict", class: "eyebrow" }, "Blended rispetto al mercato"),
+        h("h2", { id: "h-verdict", class: "eyebrow" }, t("Blended rispetto al mercato")),
         h("div", { class: `hero ${better > 0 ? "pos" : better < 0 ? "neg" : ""}`, style: { marginTop: "8px" } }, better == null ? "–" : `${better > 0 ? "−" : "+"}${fmt.pct(Math.abs(better))}`),
         h("p", { class: "secondary", style: { marginTop: "6px" } },
-          better == null ? "Dati insufficienti."
-            : better > 0 ? "di errore rispetto al prezzo di mercato: le previsioni blended sono state più accurate."
-              : "di errore rispetto al prezzo di mercato: il prezzo è stato più accurato delle previsioni."),
-        h("p", { class: "muted small", style: { marginTop: "10px" } }, `Su ${fmt.int(cal.resolved_markets)} mercati risolti, usando l'ultima previsione fatta per ciascuno.`),
+          better == null ? t("Dati insufficienti.")
+            : better > 0 ? t("di errore rispetto al prezzo di mercato: le previsioni blended sono state più accurate.")
+              : t("di errore rispetto al prezzo di mercato: il prezzo è stato più accurato delle previsioni.")),
+        h("p", { class: "muted small", style: { marginTop: "10px" } }, t("Su {0} mercati risolti, usando l'ultima previsione fatta per ciascuno.", fmt.int(cal.resolved_markets))),
         interval ? h("p", { class: "secondary small", style: { marginTop: "6px" } }, interval) : null,
-        small ? h("p", { class: "note", style: { marginTop: "12px" } }, h("span", { class: "badge badge-warning" }, icon("alert"), "Campione piccolo"), " Con meno di 30 mercati il confronto dipende molto dal caso.") : null,
+        small ? h("p", { class: "note", style: { marginTop: "12px" } }, h("span", { class: "badge badge-warning" }, icon("alert"), t("Campione piccolo")), t(" Con meno di 30 mercati il confronto dipende molto dal caso.")) : null,
       ),
       h("section", { class: "card", "aria-labelledby": "h-brier" },
-        h("div", { class: "card-head" }, h("h2", { id: "h-brier" }, "Brier score"), h("span", { class: "muted small" }, "più basso è meglio")),
+        h("div", { class: "card-head" }, h("h2", { id: "h-brier" }, t("Brier score")), h("span", { class: "muted small" }, t("più basso è meglio"))),
         brierBars([
-          { key: "market", label: "Prezzo mercato", value: cal.brier_market, first: true },
-          { key: "jev", label: "Stima Jev", value: cal.brier_model },
-          { key: "blended", label: "Blended", value: cal.brier_blended },
+          { key: "market", label: t("Prezzo mercato"), value: cal.brier_market, first: true },
+          { key: "jev", label: t("Stima Jev"), value: cal.brier_model },
+          { key: "blended", label: t("Blended"), value: cal.brier_blended },
         ]),
-        h("p", { class: "muted small", style: { marginTop: "16px" } }, "Media di (probabilità − esito)², con esito 1 se il mercato si è risolto SÌ e 0 se NO. Chi dice sempre 50% ottiene 0,25."),
+        h("p", { class: "muted small", style: { marginTop: "16px" } }, t("Media di (probabilità − esito)², con esito 1 se il mercato si è risolto SÌ e 0 se NO. Chi dice sempre 50% ottiene 0,25.")),
       ),
     ),
     h("section", { class: "card", "aria-labelledby": "h-clv", style: { marginTop: "16px" } },
-      h("div", { class: "card-head" }, h("h2", { id: "h-clv" }, "Il prezzo è andato verso i segnali?"),
-        infoTip("Closing line value: la differenza tra il prezzo di chiusura (l'ultimo prima che il mercato smettesse di scambiare) e il prezzo al momento del segnale, nella direzione consigliata. Chi compra stabilmente sotto la chiusura ha un vantaggio reale, e lo si vede molto prima che i mercati risolti siano abbastanza per il Brier.")),
+      h("div", { class: "card-head" }, h("h2", { id: "h-clv" }, t("Il prezzo è andato verso i segnali?")),
+        infoTip(t("Closing line value: la differenza tra il prezzo di chiusura (l'ultimo prima che il mercato smettesse di scambiare) e il prezzo al momento del segnale, nella direzione consigliata. Chi compra stabilmente sotto la chiusura ha un vantaggio reale, e lo si vede molto prima che i mercati risolti siano abbastanza per il Brier."))),
       sc?.n ? h("div", { class: "kpis" },
-        statTile("Movimento medio", fmt.pts(sc.avg), sc.interval?.lo != null ? `95%: da ${fmt.pts(sc.interval.lo)} a ${fmt.pts(sc.interval.hi)}` : "intervallo non disponibile"),
-        statTile("Segnali a favore", fmt.pct(sc.share_positive), `su ${fmt.count(sc.n, "segnale", "segnali")} in mercati chiusi`))
-        : h("p", { class: "muted small" }, "Nessun segnale su mercati già chiusi."),
+        statTile(t("Movimento medio"), fmt.pts(sc.avg), sc.interval?.lo != null ? t("95%: da {0} a {1}", fmt.pts(sc.interval.lo), fmt.pts(sc.interval.hi)) : t("intervallo non disponibile")),
+        statTile(t("Segnali a favore"), fmt.pct(sc.share_positive), t("su {0} in mercati chiusi", fmt.count(sc.n, t("segnale"), t("segnali")))))
+        : h("p", { class: "muted small" }, t("Nessun segnale su mercati già chiusi.")),
     ),
   );
 }
@@ -782,11 +812,11 @@ async function viewAccount() {
     f.msg.classList.toggle("field-error", Boolean(text));
     f.input.setAttribute("aria-invalid", text ? "true" : "false");
   };
-  const submit = h("button", { class: "btn btn-primary", type: "submit" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Cambia password");
+  const submit = h("button", { class: "btn btn-primary", type: "submit" }, h("span", { class: "spinner", "aria-hidden": "true" }), t("Cambia password"));
   const form = h("form", { class: "form", novalidate: true },
-    field("pw-current", "Password attuale", "current-password"),
-    field("pw-new", "Nuova password", "new-password", "Almeno 12 caratteri, senza lo username. Una frase lunga è più sicura e più facile da ricordare."),
-    field("pw-confirm", "Ripeti la nuova password", "new-password"),
+    field("pw-current", t("Password attuale"), "current-password"),
+    field("pw-new", t("Nuova password"), "new-password", t("Almeno 12 caratteri, senza lo username. Una frase lunga è più sicura e più facile da ricordare.")),
+    field("pw-confirm", t("Ripeti la nuova password"), "new-password"),
     submit,
   );
   form.addEventListener("submit", async (e) => {
@@ -795,15 +825,15 @@ async function viewAccount() {
     Object.keys(fields).forEach((id) => setError(id, ""));
     let first = null;
     const fail = (id, text) => { setError(id, text); first = first || id; };
-    if (!cur) fail("pw-current", "Inserisci la password attuale.");
-    if (next.length < 12) fail("pw-new", "La nuova password deve avere almeno 12 caratteri.");
-    if (next && confirm !== next) fail("pw-confirm", "Le due password non coincidono.");
+    if (!cur) fail("pw-current", t("Inserisci la password attuale."));
+    if (next.length < 12) fail("pw-new", t("La nuova password deve avere almeno 12 caratteri."));
+    if (next && confirm !== next) fail("pw-confirm", t("Le due password non coincidono."));
     if (first) return fields[first].input.focus();
     setBusy(submit, true);
     try {
       await api("/auth/password", { method: "POST", body: { current_password: cur, new_password: next } });
       form.reset();
-      toast("Password aggiornata. Le sessioni aperte su altri dispositivi sono state chiuse.");
+      toast(t("Password aggiornata. Le sessioni aperte su altri dispositivi sono state chiuse."));
     } catch (err) {
       if (err.status === 400) { setError("pw-current", err.message); fields["pw-current"].input.focus(); }
       else if (err.status === 422) { setError("pw-new", err.message); fields["pw-new"].input.focus(); }
@@ -814,23 +844,23 @@ async function viewAccount() {
   });
 
   return h("div", {},
-    pageHead("Account", "Il tuo profilo e la password di accesso."),
+    pageHead(t("Account"), t("Il tuo profilo e la password di accesso.")),
     h("div", { class: "grid-2" },
       h("section", { class: "card", "aria-labelledby": "h-profile", style: { alignSelf: "start" } },
-        h("h2", { id: "h-profile" }, "Profilo"),
+        h("h2", { id: "h-profile" }, t("Profilo")),
         h("dl", { class: "dl" },
-          h("dt", {}, "Username"), h("dd", { class: "mono" }, me.username),
-          h("dt", {}, "Ruolo"), h("dd", {}, isAdmin()
-            ? h("span", { class: "badge badge-outline" }, "Amministratore")
-            : h("span", { class: "badge badge-outline" }, "Sola lettura")),
-          h("dt", {}, "Permessi"), h("dd", { class: "secondary" }, isAdmin()
-            ? "Consulta i dati, aggiorna notizie e mercati, chiede previsioni a Jev."
-            : "Consulta notizie, mercati, previsioni e calibrazione."),
+          h("dt", {}, t("Username")), h("dd", { class: "mono" }, me.username),
+          h("dt", {}, t("Ruolo")), h("dd", {}, isAdmin()
+            ? h("span", { class: "badge badge-outline" }, t("Amministratore"))
+            : h("span", { class: "badge badge-outline" }, t("Sola lettura"))),
+          h("dt", {}, t("Permessi")), h("dd", { class: "secondary" }, isAdmin()
+            ? t("Consulta i dati, aggiorna notizie e mercati, chiede previsioni a Jev.")
+            : t("Consulta notizie, mercati, previsioni e calibrazione.")),
         ),
-        h("button", { class: "btn btn-ghost", type: "button", style: { marginTop: "16px" }, on: { click: logout } }, icon("logout"), "Esci"),
+        h("button", { class: "btn btn-ghost", type: "button", style: { marginTop: "16px" }, on: { click: logout } }, icon("logout"), t("Esci")),
       ),
       h("section", { class: "card", "aria-labelledby": "h-password" },
-        h("h2", { id: "h-password", style: { marginBottom: "12px" } }, "Cambia password"),
+        h("h2", { id: "h-password", style: { marginBottom: "12px" } }, t("Cambia password")),
         form,
       ),
     ),

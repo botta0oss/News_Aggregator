@@ -1,4 +1,5 @@
 // Plain-language explanations of how a forecast becomes a signal, using the real numbers.
+import { t } from "./i18n.js";
 import { h, fmt, icon, infoTip, GLOSSARY } from "./ui.js";
 
 const pct = (v) => fmt.pct(v);
@@ -31,13 +32,13 @@ export function pool(pModel, price, w, method) {
 export function explainSentence(p, status) {
   const w = weightOf(p, status);
   const gap = Math.abs(p.edge) * 100;
-  const side = p.edge > 0 ? "sopra" : "sotto";
-  const verdict = p.signal === "BUY_YES" ? "Il SÌ sembra sottovalutato."
-    : p.signal === "BUY_NO" ? "Il NO sembra sottovalutato."
-      : "Differenza troppo piccola o evidenze troppo deboli per un segnale.";
-  return `Jev stima ${pct(p.model_probability)} contro un prezzo di ${fmt.cents(p.market_probability)}. `
-    + `Con evidenze al ${pct(p.evidence_strength)} la stima pesa per il ${pct(w)}: `
-    + `probabilità finale ${pct(p.blended_probability)}, ${gap.toFixed(1).replace(".", ",")} punti ${side} il prezzo. ${verdict}`;
+  const side = p.edge > 0 ? t("sopra") : t("sotto");
+  const verdict = p.signal === "BUY_YES" ? t("Il SÌ sembra sottovalutato.")
+    : p.signal === "BUY_NO" ? t("Il NO sembra sottovalutato.")
+      : t("Differenza troppo piccola o evidenze troppo deboli per un segnale.");
+  return t("Jev stima {0} contro un prezzo di {1}. ", pct(p.model_probability), fmt.cents(p.market_probability))
+    + t("Con evidenze al {0} la stima pesa per il {1}: ", pct(p.evidence_strength), pct(w))
+    + t("probabilità finale {0}, {1} punti {2} il prezzo. {3}", pct(p.blended_probability), fmt.dec(gap, 1), side, verdict);
 }
 
 function check(ok, text) {
@@ -77,54 +78,54 @@ export function explainCard(p, market, evidence, status) {
 
   return h("section", { class: "card explain", "aria-labelledby": "h-explain" },
     h("div", { class: "card-head" },
-      h("h2", { id: "h-explain" }, "Perché questo segnale"),
-      h("a", { href: "#/metodo", class: "small" }, "Come funziona il metodo"),
+      h("h2", { id: "h-explain" }, t("Perché questo segnale")),
+      h("a", { href: "#/metodo", class: "small" }, t("Come funziona il metodo")),
     ),
     h("p", { class: "secondary", style: { marginBottom: "14px" } }, explainSentence(p, status)),
     h("ol", { class: "xsteps" },
-      step(1, "Stima indipendente di Jev", GLOSSARY.jev,
-        h("p", {}, `Jev ha letto le regole del mercato e ${p.article_count} notizie collegate, senza vedere il prezzo: `,
-          h("b", { class: "mono" }, pct(p.model_probability)), " di probabilità che si risolva SÌ."),
+      step(1, t("Stima indipendente di Jev"), GLOSSARY.jev,
+        h("p", {}, t("Jev ha letto le regole del mercato e {0} notizie collegate, senza vedere il prezzo: ", p.article_count),
+          h("b", { class: "mono" }, pct(p.model_probability)), t(" di probabilità che si risolva SÌ.")),
         judged ? h("p", { class: "muted small" },
-          `Delle notizie valutate: ${tally.raises_yes} favoriscono il SÌ, ${tally.lowers_yes} il NO, ${tally.neutral} sono neutre.`) : null,
+          t("Delle notizie valutate: {0} favoriscono il SÌ, {1} il NO, {2} sono neutre.", tally.raises_yes, tally.lowers_yes, tally.neutral)) : null,
       ),
-      step(2, "Quanto contano le notizie", GLOSSARY.weight,
-        h("p", {}, "Forza delle evidenze ", h("b", { class: "mono" }, pct(p.evidence_strength)),
-          ". Il peso di Jev è il peso massimo per la forza delle evidenze:"),
-        formula(`w = ${pct(maxW)} × ${pct(p.evidence_strength)} = `, h("b", {}, pct(w))),
+      step(2, t("Quanto contano le notizie"), GLOSSARY.weight,
+        h("p", {}, t("Forza delle evidenze "), h("b", { class: "mono" }, pct(p.evidence_strength)),
+          t(". Il peso di Jev è il peso massimo per la forza delle evidenze:")),
+        formula(t("w = {0} × {1} = ", pct(maxW), pct(p.evidence_strength)), h("b", {}, pct(w))),
       ),
-      step(3, "Probabilità finale (blended)", GLOSSARY.blended,
+      step(3, t("Probabilità finale (blended)"), GLOSSARY.blended,
         cal != null && Math.abs(cal - p.model_probability) >= 0.0005
-          ? h("p", {}, "Prima la stima di Jev viene corretta con la calibrazione stimata dal backtest: ",
+          ? h("p", {}, t("Prima la stima di Jev viene corretta con la calibrazione stimata dal backtest: "),
             h("b", { class: "mono" }, `${pct(p.model_probability)} → ${pct(cal)}`), ".") : null,
-        h("p", {}, `Il resto del peso (${pct(1 - w)}) va al prezzo di mercato, che di solito è già ben informato. `,
-          linear ? "Media pesata delle due probabilità:" : "Le due probabilità si uniscono in log-odds (le quote logaritmiche): una stima netta e ben motivata non viene diluita come in una media semplice."),
+        h("p", {}, t("Il resto del peso ({0}) va al prezzo di mercato, che di solito è già ben informato. ", pct(1 - w)),
+          linear ? t("Media pesata delle due probabilità:") : t("Le due probabilità si uniscono in log-odds (le quote logaritmiche): una stima netta e ben motivata non viene diluita come in una media semplice.")),
         linear
-          ? formula(`${pct(w)} × ${pct(cal ?? p.model_probability)} + ${pct(1 - w)} × ${pct(q)} = `, h("b", {}, pct(b)))
-          : formula(`logit(blended) = ${pct(w)} × logit(${pct(cal ?? p.model_probability)}) + ${pct(1 - w)} × logit(${pct(q)}) → `, h("b", {}, pct(b))),
+          ? formula(t("{0} × {1} + {2} × {3} = ", pct(w), pct(cal ?? p.model_probability), pct(1 - w), pct(q)), h("b", {}, pct(b)))
+          : formula(t("logit(blended) = {0} × logit({1}) + {2} × logit({3}) → ", pct(w), pct(cal ?? p.model_probability), pct(1 - w), pct(q)), h("b", {}, pct(b))),
       ),
-      step(4, "Edge rispetto al prezzo", GLOSSARY.edge,
+      step(4, t("Edge rispetto al prezzo"), GLOSSARY.edge,
         formula(`${pct(b)} − ${pct(q)} = `, h("b", { class: p.edge > 0 ? "pos" : p.edge < 0 ? "neg" : "" }, pts(p.edge))),
       ),
-      step(5, "Controlli per emettere un segnale", null,
+      step(5, t("Controlli per emettere un segnale"), null,
         h("ul", { class: "checks" },
-          check(edgeOk, `Edge di almeno ${Math.round(minEdge * 100)} punti (qui ${pts(Math.abs(p.edge)).replace("+", "")})`),
-          check(evOk, `Forza delle evidenze di almeno ${pct(minEvidence)} (qui ${pct(p.evidence_strength)})`),
+          check(edgeOk, t("Edge di almeno {0} punti (qui {1})", Math.round(minEdge * 100), pts(Math.abs(p.edge)).replace("+", ""))),
+          check(evOk, t("Forza delle evidenze di almeno {0} (qui {1})", pct(minEvidence), pct(p.evidence_strength))),
         ),
-        h("p", {}, "Risultato: ", h("b", {}, p.signal === "BUY_YES" ? "Compra SÌ" : p.signal === "BUY_NO" ? "Compra NO" : "Attendi"),
-          p.signal === "HOLD" ? " (almeno un controllo non è superato)." : "."),
+        h("p", {}, t("Risultato: "), h("b", {}, p.signal === "BUY_YES" ? t("Compra SÌ") : p.signal === "BUY_NO" ? t("Compra NO") : t("Attendi")),
+          p.signal === "HOLD" ? t(" (almeno un controllo non è superato).") : "."),
       ),
-      p.signal !== "HOLD" ? step(6, "Puntata suggerita", GLOSSARY.kelly,
+      p.signal !== "HOLD" ? step(6, t("Puntata suggerita"), GLOSSARY.kelly,
         buyYes
-          ? formula(`Kelly = (${pct(b)} − ${pct(q)}) / (100% − ${pct(q)}) = ${pct(fullKelly)}`)
-          : formula(`Kelly = (${pct(q)} − ${pct(b)}) / ${pct(q)} = ${pct(fullKelly)}`),
-        formula(`× ${String(kellyScale).replace(".", ",")} (Kelly frazionario) = `, h("b", {}, `${pct(p.kelly_fraction)} del capitale`)),
+          ? formula(t("Kelly = ({0} − {1}) / (100% − {2}) = {3}", pct(b), pct(q), pct(q), pct(fullKelly)))
+          : formula(t("Kelly = ({0} − {1}) / {2} = {3}", pct(q), pct(b), pct(q), pct(fullKelly))),
+        formula(t("× {0} (Kelly frazionario) = ", fmt.dec(kellyScale)), h("b", {}, t("{0} del capitale", pct(p.kelly_fraction)))),
         h("p", { class: "muted small" }, buyYes
-          ? `Compri quote SÌ a ${fmt.cents(q)}: se il mercato si risolve SÌ ogni quota vale 1 $.`
-          : `Compri quote NO a ${fmt.cents(1 - q)}: se il mercato si risolve NO ogni quota vale 1 $.`),
+          ? t("Compri quote SÌ a {0}: se il mercato si risolve SÌ ogni quota vale 1 $.", fmt.cents(q))
+          : t("Compri quote NO a {0}: se il mercato si risolve NO ogni quota vale 1 $.", fmt.cents(1 - q))),
       ) : null,
     ),
     h("p", { class: "note", style: { marginTop: "14px" } }, icon("alert"),
-      "Il prezzo usato è quello al momento della previsione. Prima di agire controlla il prezzo attuale su Polymarket e le commissioni: l'edge le deve coprire."),
+      t("Il prezzo usato è quello al momento della previsione. Prima di agire controlla il prezzo attuale su Polymarket e le commissioni: l'edge le deve coprire.")),
   );
 }

@@ -9,6 +9,7 @@ from backend.auth.deps import require_admin
 from backend.db.database import get_db
 from backend.db.models import MultiArticleLink, MultiEvent, MultiOutcome, MultiPrediction
 from backend.multi import service
+from backend.i18n import tr
 
 router = APIRouter(prefix="/multi", tags=["multi"])
 
@@ -116,7 +117,7 @@ async def opportunities(
 async def get_event(event_id: str, db: AsyncSession = Depends(get_db)):
     event = await db.get(MultiEvent, event_id)
     if event is None:
-        raise HTTPException(status_code=404, detail="Evento non trovato")
+        raise HTTPException(status_code=404, detail=tr("Evento non trovato", "Event not found"))
     outcomes = await service.outcomes_of(db, event_id)
     preds = (await db.execute(select(MultiPrediction).where(MultiPrediction.event_id == event_id)
                               .order_by(MultiPrediction.created_at.desc()).limit(30))).scalars().all()
@@ -139,18 +140,19 @@ async def get_event(event_id: str, db: AsyncSession = Depends(get_db)):
 async def predict(event_id: str, db: AsyncSession = Depends(get_db)):
     event = await db.get(MultiEvent, event_id)
     if event is None:
-        raise HTTPException(status_code=404, detail="Evento non trovato")
+        raise HTTPException(status_code=404, detail=tr("Evento non trovato", "Event not found"))
     if not jev.is_enabled():
-        raise HTTPException(status_code=503, detail="TYPESAFE_API_KEY non è configurata")
+        raise HTTPException(status_code=503, detail=tr("TYPESAFE_API_KEY non è configurata", "TYPESAFE_API_KEY is not configured"))
     if event.closed:
-        raise HTTPException(status_code=409, detail="L'evento è chiuso")
+        raise HTTPException(status_code=409, detail=tr("L'evento è chiuso", "The event is closed"))
     try:
         with feature("piu_esiti"):
             return _prediction_out(await service.predict_event(db, event, max_wait=10))
     except BudgetExceeded as e:
         raise HTTPException(status_code=429, detail=str(e))
     except RateLimited as e:
-        raise HTTPException(status_code=429, detail=f"Jev ha raggiunto il limite di richieste: riprova tra {max(1, round(e.retry_in))} secondi.")
+        raise HTTPException(status_code=429, detail=tr(f"Jev ha raggiunto il limite di richieste: riprova tra {max(1, round(e.retry_in))} secondi.",
+                                                      f"Jev has hit its request limit: try again in {max(1, round(e.retry_in))} seconds."))
     except LookupError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:

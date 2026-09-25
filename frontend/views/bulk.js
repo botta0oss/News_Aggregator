@@ -1,4 +1,5 @@
 // "Valuta tutti con Jev": starts a Jev forecast on every market with recent news and shows its progress.
+import { t } from "../i18n.js";
 import { h, api, fmt, toast, icon } from "../ui.js";
 
 const POLL_MS = 3000;
@@ -7,7 +8,7 @@ const POLL_MS = 3000;
 export function bulkPredict(ctx) {
   const panel = h("div", { class: "bulk-panel", hidden: true, "aria-live": "polite" });
   const button = h("button", { class: "btn btn-ghost", type: "button", disabled: true },
-    h("span", { class: "spinner", "aria-hidden": "true" }), icon("play"), "Valuta tutti con Jev");
+    h("span", { class: "spinner", "aria-hidden": "true" }), icon("play"), t("Valuta tutti con Jev"));
   if (!ctx.isAdmin()) return { button: null, panel: null };
 
   let state = null;
@@ -30,12 +31,12 @@ export function bulkPredict(ctx) {
 
   function paint() {
     const running = state.running;
-    const blocker = !state.jev_enabled ? "Serve TYPESAFE_API_KEY nel file .env."
-      : state.eligible.all === 0 ? "Nessun mercato aperto ha notizie recenti collegate. Aggiorna notizie e mercati."
+    const blocker = !state.jev_enabled ? t("Serve TYPESAFE_API_KEY nel file .env.")
+      : state.eligible.all === 0 ? t("Nessun mercato aperto ha notizie recenti collegate. Aggiorna notizie e mercati.")
       : null;
     button.disabled = running || Boolean(blocker);
     button.classList.toggle("loading", running);
-    button.title = running ? "Valutazione in corso" : blocker || `Chiede una previsione a Jev per ${fmt.count(state.eligible.all, "mercato", "mercati")} con notizie recenti`;
+    button.title = running ? t("Valutazione in corso") : blocker || t("Chiede una previsione a Jev per {0} con notizie recenti", fmt.count(state.eligible.all, t("mercato"), t("mercati")));
     if (running) {
       wasRunning = true;
       paintProgress();
@@ -50,7 +51,7 @@ export function bulkPredict(ctx) {
 
   function minutes(n) {
     const m = Math.ceil(n / Math.max(1, state.jev_rpm));
-    return m <= 1 ? "circa un minuto" : `circa ${fmt.int(m)} minuti`;
+    return m <= 1 ? t("circa un minuto") : t("circa {0} minuti", fmt.int(m));
   }
 
   function askConfirm() {
@@ -59,9 +60,9 @@ export function bulkPredict(ctx) {
     const cost = h("p", { class: "small" });
     const paintCost = () => {
       const n = onlyNew ? fresh : all;
-      cost.textContent = `${fmt.count(n, "chiamata", "chiamate")} a pagamento a TypeSafe, una per mercato. `
-        + `Con il limite di ${fmt.int(state.jev_rpm)} richieste al minuto servono ${minutes(n)}. `
-        + "Prima vengono aggiornati prezzi e collegamenti; le scommesse simulate seguono le regole del portafoglio.";
+      cost.textContent = t("{0} a pagamento a TypeSafe, una per mercato. ", fmt.count(n, t("chiamata"), t("chiamate")))
+        + t("Con il limite di {0} richieste al minuto servono {1}. ", fmt.int(state.jev_rpm), minutes(n))
+        + t("Prima vengono aggiornati prezzi e collegamenti; le scommesse simulate seguono le regole del portafoglio.");
       go.disabled = n === 0;
     };
     const radio = (value, label, checked) => {
@@ -69,12 +70,12 @@ export function bulkPredict(ctx) {
       input.addEventListener("change", () => { onlyNew = value === "new"; paintCost(); });
       return h("label", { class: "field" }, input, label);
     };
-    const go = h("button", { class: "btn btn-primary btn-sm", type: "button" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Avvia valutazione");
+    const go = h("button", { class: "btn btn-primary btn-sm", type: "button" }, h("span", { class: "spinner", "aria-hidden": "true" }), t("Avvia valutazione"));
     go.addEventListener("click", async () => {
       ctx.setBusy(go, true);
       try {
         state = await api("/markets/predict-all", { method: "POST", params: { only_new: onlyNew } });
-        toast("Valutazione avviata: puoi continuare a usare la dashboard.");
+        toast(t("Valutazione avviata: puoi continuare a usare la dashboard."));
         delete panel.dataset.open;
         wasRunning = true;
         paintProgress();
@@ -87,14 +88,14 @@ export function bulkPredict(ctx) {
     panel.dataset.open = "1";
     panel.hidden = false;
     panel.replaceChildren(h("div", { class: "card bulk-card", role: "group", "aria-labelledby": "h-bulk" },
-      h("h2", { id: "h-bulk" }, "Valutare tutti i mercati con Jev?"),
-      h("div", { class: "bulk-scope", role: "radiogroup", "aria-label": "Quali mercati" },
-        radio("all", `Tutti quelli con notizie recenti (${fmt.int(all)})`, true),
-        radio("new", `Solo mai valutati o con notizie nuove (${fmt.int(fresh)})`, false),
+      h("h2", { id: "h-bulk" }, t("Valutare tutti i mercati con Jev?")),
+      h("div", { class: "bulk-scope", role: "radiogroup", "aria-label": t("Quali mercati") },
+        radio("all", t("Tutti quelli con notizie recenti ({0})", fmt.int(all)), true),
+        radio("new", t("Solo mai valutati o con notizie nuove ({0})", fmt.int(fresh)), false),
       ),
       cost,
       h("div", { class: "confirm-actions" }, go,
-        h("button", { class: "btn btn-ghost btn-sm", type: "button", on: { click: close } }, "Annulla")),
+        h("button", { class: "btn btn-ghost btn-sm", type: "button", on: { click: close } }, t("Annulla"))),
     ));
     paintCost();
     go.focus();
@@ -108,15 +109,15 @@ export function bulkPredict(ctx) {
   }
 
   function counters() {
-    const parts = [`${fmt.int(state.done)} di ${fmt.int(state.total)} valutati`];
-    if (state.skipped) parts.push(`${fmt.int(state.skipped)} saltati`);
-    if (state.failed) parts.push(`${fmt.int(state.failed)} con errore`);
+    const parts = [t("{0} di {1} valutati", fmt.int(state.done), fmt.int(state.total))];
+    if (state.skipped) parts.push(t("{0} saltati", fmt.int(state.skipped)));
+    if (state.failed) parts.push(t("{0} con errore", fmt.int(state.failed)));
     return parts.join(" · ");
   }
 
   function paintProgress() {
     const processed = state.done + state.skipped + state.failed;
-    const stopBtn = h("button", { class: "btn btn-ghost btn-sm", type: "button" }, icon("pause"), "Interrompi");
+    const stopBtn = h("button", { class: "btn btn-ghost btn-sm", type: "button" }, icon("pause"), t("Interrompi"));
     stopBtn.addEventListener("click", async () => {
       stopBtn.disabled = true;
       try { state = await api("/markets/predict-all/stop", { method: "POST" }); paint(); }
@@ -124,10 +125,10 @@ export function bulkPredict(ctx) {
     });
     panel.hidden = false;
     panel.replaceChildren(h("div", { class: "card bulk-card" },
-      h("div", { class: "card-head" }, h("h2", {}, "Valutazione Jev in corso"), stopBtn),
-      h("progress", { max: String(Math.max(1, state.total)), value: String(processed), "aria-label": "Avanzamento" }),
+      h("div", { class: "card-head" }, h("h2", {}, t("Valutazione Jev in corso")), stopBtn),
+      h("progress", { max: String(Math.max(1, state.total)), value: String(processed), "aria-label": t("Avanzamento") }),
       state.total ? h("p", { class: "small mono" }, counters()) : null,
-      state.current ? h("p", { class: "small muted bulk-current" }, "Ora: ", state.current) : null,
+      state.current ? h("p", { class: "small muted bulk-current" }, t("Ora: "), state.current) : null,
       state.message ? h("p", { class: "small" }, state.message) : null,
     ));
   }
@@ -136,9 +137,9 @@ export function bulkPredict(ctx) {
     panel.hidden = false;
     panel.replaceChildren(h("div", { class: "card bulk-card" },
       h("div", { class: "card-head" },
-        h("h2", {}, "Valutazione di tutti i mercati"),
-        h("button", { class: "btn btn-ghost btn-sm btn-square", type: "button", "aria-label": "Chiudi", on: { click: dismiss } }, icon("x"))),
-      h("p", { class: "small" }, state.message || "Completata"),
+        h("h2", {}, t("Valutazione di tutti i mercati")),
+        h("button", { class: "btn btn-ghost btn-sm btn-square", type: "button", "aria-label": t("Chiudi"), on: { click: dismiss } }, icon("x"))),
+      h("p", { class: "small" }, state.message || t("Completata")),
       h("p", { class: "small mono" }, `${counters()} · ${fmt.ago(state.finished_at)}`),
       ...state.errors.map((e) => h("p", { class: "small muted" }, e)),
     ));

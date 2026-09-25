@@ -18,6 +18,7 @@ from backend.db.database import SessionLocal
 from backend.db.models import Article, Market, MarketArticleLink
 from backend.markets import service
 from backend.markets.targeted import run_targeted_search
+from backend.i18n import tr
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ def stop() -> bool:
     if not job.running:
         return False
     _cancel.set()
-    job.message = "Interruzione in corso…"
+    job.message = tr("Interruzione in corso…", "Stopping…")
     return True
 
 
@@ -114,16 +115,16 @@ async def wait() -> None:
 
 async def _refresh_markets(session: AsyncSession) -> None:
     """Fresh prices and links, so every edge is computed against the current price."""
-    job.message = "Aggiornamento prezzi e collegamenti…"
+    job.message = tr("Aggiornamento prezzi e collegamenti…", "Updating prices and links…")
     async with service._market_lock:  # waits if the scheduled pipeline is syncing
         try:
             await service.sync_markets(session)
         except Exception as e:
             await session.rollback()
             logger.warning(f"Bulk prediction: market sync failed, using last prices: {e}")
-        job.message = "Ricerca di notizie mirate…"
+        job.message = tr("Ricerca di notizie mirate…", "Targeted news search…")
         await run_targeted_search(session)
-        job.message = "Collegamento delle notizie ai mercati…"
+        job.message = tr("Collegamento delle notizie ai mercati…", "Linking news to markets…")
         await service.refresh_links(session)
 
 
@@ -154,7 +155,7 @@ async def _run_tagged(refresh_first: bool) -> None:
                     break
     except Exception as e:  # pragma: no cover - unexpected failure (DB down...)
         logger.exception("Bulk prediction failed")
-        job.message = f"Errore: {e}"
+        job.message = tr(f"Errore: {e}", f"Error: {e}")
     finally:
         job.running = False
         job.current = None
@@ -178,15 +179,15 @@ async def _predict_one(session: AsyncSession, market: Market) -> bool:
             return True
         except BudgetExceeded as e:
             await session.rollback()
-            job.message = f"Fermata: {e}"
+            job.message = tr(f"Fermata: {e}", f"Stopped: {e}")
             return False
         except RateLimited as e:
             await session.rollback()
             waits += 1
             if waits > MAX_RATE_LIMIT_WAITS:
-                job.message = "Fermata: Jev continua a rifiutare le richieste per limite di frequenza. Riprova più tardi."
+                job.message = tr("Fermata: Jev continua a rifiutare le richieste per limite di frequenza. Riprova più tardi.", "Stopped: Jev keeps refusing requests because of the rate limit. Try again later.")
                 return False
-            job.message = f"Limite di richieste Jev: riprendo tra {max(1, round(e.retry_in))} s"
+            job.message = tr(f"Limite di richieste Jev: riprendo tra {max(1, round(e.retry_in))} s", f"Jev request limit: resuming in {max(1, round(e.retry_in))} s")
             try:
                 await asyncio.wait_for(_cancel.wait(), timeout=max(1.0, e.retry_in))
                 job.stopped, job.message = True, None
@@ -210,6 +211,7 @@ async def _predict_one(session: AsyncSession, market: Market) -> bool:
                 job.errors.append(f"{question[:80]}: {e}")
             logger.error(f"Bulk prediction failed for {question!r}: {e}")
             if job.consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                job.message = f"Fermata dopo {MAX_CONSECUTIVE_FAILURES} errori consecutivi: controlla la connessione e TYPESAFE_API_KEY."
+                job.message = tr(f"Fermata dopo {MAX_CONSECUTIVE_FAILURES} errori consecutivi: controlla la connessione e TYPESAFE_API_KEY.",
+                             f"Stopped after {MAX_CONSECUTIVE_FAILURES} consecutive errors: check the connection and TYPESAFE_API_KEY.")
                 return False
             return True

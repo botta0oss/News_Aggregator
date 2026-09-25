@@ -1,3 +1,4 @@
+import { t, lang, locale } from "./i18n.js";
 // Small DOM, formatting and API helpers shared by every view.
 
 // ---------- DOM ----------
@@ -121,28 +122,36 @@ export function hydrateIcons(root = document) {
 }
 
 // ---------- Formatting ----------
-const pctFmt = new Intl.NumberFormat("it-IT", { style: "percent", maximumFractionDigits: 1 });
-const centFmt = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 1 });
-const usdFmt = new Intl.NumberFormat("it-IT", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 });
-const intFmt = new Intl.NumberFormat("it-IT");
-const moneyFmt = new Intl.NumberFormat("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const sharesFmt = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 1 });
-const numFmt = new Intl.NumberFormat("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-const rtf = new Intl.RelativeTimeFormat("it", { numeric: "auto" });
+const pctFmt = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
+const centFmt = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+const usdFmt = new Intl.NumberFormat(locale, { style: "currency", currency: "USD", currencyDisplay: "narrowSymbol", notation: "compact", maximumFractionDigits: 1 });
+const intFmt = new Intl.NumberFormat(locale);
+const moneyFmt = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const sharesFmt = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+const numFmt = new Intl.NumberFormat(locale, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const dec1Fmt = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+// Dollar amounts: "41,02 $" in Italian, "$41.02" in English
+const dollars = (text) => (lang === "it" ? `${text} $` : `$${text}`);
+const rtf = new Intl.RelativeTimeFormat(lang, { numeric: "auto" });
 
 export const fmt = {
   pct: (p) => (p == null ? "–" : pctFmt.format(p)),
   // Polymarket quotes a YES share in cents: price 0.35 = 35¢ = 35% implied probability
   cents: (p) => (p == null ? "–" : `${centFmt.format(p * 100)}¢`),
-  pts: (edge) => (edge == null ? "–" : `${edge > 0 ? "+" : edge < 0 ? "−" : ""}${Math.abs(edge * 100).toFixed(1).replace(".", ",")} pt`),
+  pts: (edge) => (edge == null ? "–" : `${edge > 0 ? "+" : edge < 0 ? "−" : ""}${dec1Fmt.format(Math.abs(edge * 100))} ${t("pt")}`),
+  /** Plain decimal in the interface language: 0.25 → "0,25" in Italian, "0.25" in English. */
+  dec: (v, digits) => (v == null ? "–" : new Intl.NumberFormat(locale, digits == null
+    ? { maximumFractionDigits: 4 } : { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(v)),
   usd: (v) => (v == null ? "–" : usdFmt.format(v)),
-  money: (v) => (v == null ? "–" : `${moneyFmt.format(v)} $`),
-  signedMoney: (v) => (v == null ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${moneyFmt.format(Math.abs(v))} $`),
+  /** "41,02 $" in Italian, "$41.02" in English, for an already formatted number */
+  dollars: (text) => dollars(text),
+  money: (v) => (v == null ? "–" : dollars(moneyFmt.format(v))),
+  signedMoney: (v) => (v == null ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${dollars(moneyFmt.format(Math.abs(v)))}`),
   shares: (v) => (v == null ? "–" : sharesFmt.format(v)),
   int: (v) => (v == null ? "–" : intFmt.format(v)),
   num3: (v) => (v == null ? "–" : numFmt.format(v)),
-  date: (d) => (d ? new Date(d).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" }) : "–"),
-  dateTime: (d) => (d ? new Date(d).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "–"),
+  date: (d) => (d ? new Date(d).toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric" }) : "–"),
+  dateTime: (d) => (d ? new Date(d).toLocaleString(locale, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "–"),
   /** "1 notizia" / "3 notizie" */
   count: (n, one, many) => `${intFmt.format(n)} ${n === 1 ? one : many}`,
   ago(d) {
@@ -150,7 +159,7 @@ export const fmt = {
     const diff = (new Date(d).getTime() - Date.now()) / 1000;
     const units = [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]];
     for (const [unit, secs] of units) if (Math.abs(diff) >= secs) return rtf.format(Math.round(diff / secs), unit);
-    return "adesso";
+    return t("adesso");
   },
 };
 
@@ -178,7 +187,8 @@ export async function api(path, { method = "GET", params, body, handle401 = true
   for (const [k, v] of Object.entries(params || {})) {
     if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
   }
-  const headers = { Accept: "application/json" };
+  // X-Lang: texts the server writes (plans, reasons, errors) come back in the interface language
+  const headers = { Accept: "application/json", "X-Lang": lang };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET" && csrfToken) headers["X-CSRF-Token"] = csrfToken;
   let res;
@@ -188,12 +198,12 @@ export async function api(path, { method = "GET", params, body, handle401 = true
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new ApiError(0, "Impossibile contattare il server. Controlla la connessione e riprova.");
+    throw new ApiError(0, t("Impossibile contattare il server. Controlla la connessione e riprova."));
   }
   const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
     const detail = data && data.detail;
-    const message = typeof detail === "string" ? detail : Array.isArray(detail) ? detail.map((d) => d.msg).join("; ") : `Errore ${res.status}`;
+    const message = typeof detail === "string" ? detail : Array.isArray(detail) ? detail.map((d) => d.msg).join("; ") : t("Errore {0}", res.status);
     if (res.status === 401 && handle401) window.dispatchEvent(new CustomEvent("auth:required"));
     throw new ApiError(res.status, message);
   }
@@ -250,9 +260,9 @@ export function ttRows(title, rows) {
 
 // ---------- Shared components ----------
 const SIGNALS = {
-  BUY_YES: { cls: "badge-good", icon: "up", label: "Compra SÌ" },
-  BUY_NO: { cls: "badge-critical", icon: "down", label: "Compra NO" },
-  HOLD: { cls: "", icon: "pause", label: "Attendi" },
+  BUY_YES: { cls: "badge-good", icon: "up", label: t("Compra SÌ") },
+  BUY_NO: { cls: "badge-critical", icon: "down", label: t("Compra NO") },
+  HOLD: { cls: "", icon: "pause", label: t("Attendi") },
 };
 
 export function signalBadge(signal) {
@@ -261,27 +271,27 @@ export function signalBadge(signal) {
 }
 
 const IMPACTS = {
-  raises_yes: { cls: "badge-good", icon: "arrowUp", label: "Favorisce SÌ" },
-  lowers_yes: { cls: "badge-critical", icon: "arrowDown", label: "Favorisce NO" },
-  neutral: { cls: "", icon: "minus", label: "Neutra" },
+  raises_yes: { cls: "badge-good", icon: "arrowUp", label: t("Favorisce SÌ") },
+  lowers_yes: { cls: "badge-critical", icon: "arrowDown", label: t("Favorisce NO") },
+  neutral: { cls: "", icon: "minus", label: t("Neutra") },
 };
 
 export function impactBadge(impact) {
-  if (!impact) return h("span", { class: "badge badge-outline" }, "Non ancora valutata");
+  if (!impact) return h("span", { class: "badge badge-outline" }, t("Non ancora valutata"));
   const s = IMPACTS[impact] || IMPACTS.neutral;
   return h("span", { class: `badge ${s.cls}` }, icon(s.icon), s.label);
 }
 
 export function marketStateBadge(market) {
-  if (market.resolved_yes === true) return h("span", { class: "badge badge-good" }, icon("check"), "Risolto SÌ");
-  if (market.resolved_yes === false) return h("span", { class: "badge badge-critical" }, icon("x"), "Risolto NO");
-  if (market.closed) return h("span", { class: "badge" }, "Chiuso");
-  return h("span", { class: "badge badge-outline" }, "Aperto");
+  if (market.resolved_yes === true) return h("span", { class: "badge badge-good" }, icon("check"), t("Risolto SÌ"));
+  if (market.resolved_yes === false) return h("span", { class: "badge badge-critical" }, icon("x"), t("Risolto NO"));
+  if (market.closed) return h("span", { class: "badge" }, t("Chiuso"));
+  return h("span", { class: "badge badge-outline" }, t("Aperto"));
 }
 
 export function meter(value, label) {
   const v = Math.max(0, Math.min(1, value ?? 0));
-  return h("div", { class: "meter", role: "meter", "aria-valuemin": "0", "aria-valuemax": "1", "aria-valuenow": v.toFixed(2), "aria-label": label || "valore" },
+  return h("div", { class: "meter", role: "meter", "aria-valuemin": "0", "aria-valuemax": "1", "aria-valuenow": v.toFixed(2), "aria-label": label || t("valore") },
     h("div", { class: "meter-track" }, h("div", { class: "meter-fill", style: { width: `${v * 100}%` } })),
     h("span", { class: "meter-value" }, fmt.pct(v)),
   );
@@ -305,29 +315,29 @@ export function skeleton(n = 3) {
 
 // ---------- Labels ----------
 export const CATEGORY_LABELS = {
-  Politics: "Politica", Economy: "Economia", Crypto: "Crypto", Technology: "Tecnologia",
-  "Foreign Affairs": "Esteri", Science: "Scienza e salute", Sports: "Sport", Culture: "Cultura",
+  Politics: t("Politica"), Economy: t("Economia"), Crypto: t("Crypto"), Technology: t("Tecnologia"),
+  "Foreign Affairs": t("Esteri"), Science: t("Scienza e salute"), Sports: t("Sport"), Culture: t("Cultura"),
 };
 export const REGION_LABELS = {
-  "North America": "Nord America", Europe: "Europa", "Middle East & Africa": "Medio Oriente e Africa",
-  "Asia-Pacific": "Asia-Pacifico", "Latin America": "America Latina", Global: "Globale",
+  "North America": t("Nord America"), Europe: t("Europa"), "Middle East & Africa": t("Medio Oriente e Africa"),
+  "Asia-Pacific": "Asia-Pacifico", "Latin America": t("America Latina"), Global: t("Globale"),
 };
 
 // ---------- Glossary ----------
 export const GLOSSARY = {
-  price: "Prezzo di una quota SÌ su Polymarket, in centesimi. Una quota paga 1 $ se l'evento accade: 35¢ equivale a una probabilità implicita del 35%.",
-  jev: "Probabilità che il mercato si risolva SÌ secondo Jev, calcolata leggendo le regole del mercato e le notizie collegate. Jev non vede il prezzo.",
-  evidence: "Quanto le notizie collegate dicono qualcosa di concreto sull'esito, da 0% (nulla di rilevante) a 100% (informazione decisiva). Stabilisce quanto pesa la stima di Jev.",
-  weight: "Peso della stima di Jev nella probabilità finale: peso massimo × forza delle evidenze. Il resto del peso va al prezzo di mercato.",
-  blended: "Probabilità finale usata per il segnale: una media pesata tra la stima di Jev e il prezzo di mercato.",
-  edge: "Differenza tra la probabilità blended e il prezzo, in punti percentuali. Positivo: il SÌ sembra sottovalutato. Negativo: il NO sembra sottovalutato.",
-  kelly: "Quota del capitale da puntare secondo il criterio di Kelly, ridotta per prudenza (Kelly frazionario). È un'indicazione, non un obbligo.",
-  brier: "Errore quadratico medio tra probabilità prevista ed esito reale (1 se SÌ, 0 se NO). Più basso è meglio; dire sempre 50% vale 0,25.",
-  relevance: "Quanto la notizia può cambiare la probabilità di un evento futuro verificabile su cui si scommette (elezioni, tassi, conflitti, sentenze, prezzi, partite).",
+  price: t("Prezzo di una quota SÌ su Polymarket, in centesimi. Una quota paga 1 $ se l'evento accade: 35¢ equivale a una probabilità implicita del 35%."),
+  jev: t("Probabilità che il mercato si risolva SÌ secondo Jev, calcolata leggendo le regole del mercato e le notizie collegate. Jev non vede il prezzo."),
+  evidence: t("Quanto le notizie collegate dicono qualcosa di concreto sull'esito, da 0% (nulla di rilevante) a 100% (informazione decisiva). Stabilisce quanto pesa la stima di Jev."),
+  weight: t("Peso della stima di Jev nella probabilità finale: peso massimo × forza delle evidenze. Il resto del peso va al prezzo di mercato."),
+  blended: t("Probabilità finale usata per il segnale: una media pesata tra la stima di Jev e il prezzo di mercato."),
+  edge: t("Differenza tra la probabilità blended e il prezzo, in punti percentuali. Positivo: il SÌ sembra sottovalutato. Negativo: il NO sembra sottovalutato."),
+  kelly: t("Quota del capitale da puntare secondo il criterio di Kelly, ridotta per prudenza (Kelly frazionario). È un'indicazione, non un obbligo."),
+  brier: t("Errore quadratico medio tra probabilità prevista ed esito reale (1 se SÌ, 0 se NO). Più basso è meglio; dire sempre 50% vale 0,25."),
+  relevance: t("Quanto la notizia può cambiare la probabilità di un evento futuro verificabile su cui si scommette (elezioni, tassi, conflitti, sentenze, prezzi, partite)."),
 };
 
 /** Small focusable (i) button showing a definition on hover and focus. */
-export function infoTip(text, label = "Che cos'è?") {
+export function infoTip(text, label = t("Che cos'è?")) {
   const btn = h("button", { class: "info-tip", type: "button", "aria-label": `${label} ${text}` }, "i");
   withTooltip(btn, () => text);
   btn.addEventListener("click", (e) => e.preventDefault());

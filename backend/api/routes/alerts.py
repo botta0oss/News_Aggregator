@@ -9,6 +9,7 @@ from backend.auth.deps import require_admin
 from backend.config import settings
 from backend.db.database import get_db
 from backend.db.models import Alert, Article, Market, Source
+from backend.i18n import tr
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 admin = [Depends(require_admin)]
@@ -58,7 +59,7 @@ async def put_settings(body: SettingsIn, db: AsyncSession = Depends(get_db)):
 @router.post("/test-telegram", dependencies=admin)
 async def test_telegram():
     try:
-        await telegram.send_message("✅ <b>News × Markets</b>: le notifiche delle allerte arrivano qui.")
+        await telegram.send_message(tr("✅ <b>News × Markets</b>: le notifiche delle allerte arrivano qui.", "✅ <b>News × Markets</b>: alert notifications arrive here."))
     except telegram.TelegramError as e:
         raise HTTPException(status_code=502 if telegram.is_configured() else 503, detail=str(e))
     return {"ok": True}

@@ -1,468 +1,554 @@
-# Catalogo delle fonti.
-# Al primo avvio (tabella fonti vuota) vengono aggiunte le voci con `active: true`.
-# Dopo, le fonti si gestiscono dalla dashboard (Impostazioni → Fonti), dove questo
-# catalogo compare come elenco di "fonti consigliate" da aggiungere con un clic.
+# Source catalogue.
+# On the first start (empty sources table) the entries with `active: true` are added.
+# After that, sources are managed from the dashboard (Settings → Sources), where this
+# catalogue shows up as a list of "recommended sources" to add with one click.
 #
-# category: argomento prevalente, usato come indizio dal classificatore
+# category: main topic, used as a hint by the classifier
 #   Politics | Economy | Crypto | Technology | Foreign Affairs | Science | Sports | Culture
+# description / description_it: shown in the dashboard in English / Italian
 feeds:
-  # --- Notizie generali e geopolitica
+  # --- General news and geopolitics
   - name: "BBC News - World"
     url: "https://feeds.bbci.co.uk/news/world/rss.xml"
     category: "Foreign Affairs"
-    description: "Esteri e geopolitica, copertura globale"
+    description: "World and geopolitics, global coverage"
+    description_it: "Esteri e geopolitica, copertura globale"
     active: true
   - name: "The Guardian - World"
     url: "https://www.theguardian.com/world/rss"
     category: "Foreign Affairs"
-    description: "Esteri, conflitti e diplomazia"
+    description: "World, conflicts and diplomacy"
+    description_it: "Esteri, conflitti e diplomazia"
     active: true
   - name: "Al Jazeera"
     url: "https://www.aljazeera.com/xml/rss/all.xml"
     category: "Foreign Affairs"
-    description: "Medio Oriente, Africa, Asia"
+    description: "Middle East, Africa, Asia"
+    description_it: "Medio Oriente, Africa, Asia"
     active: true
   - name: "France 24 - English"
     url: "https://www.france24.com/en/rss"
     category: "Foreign Affairs"
-    description: "Europa e Africa francofona"
+    description: "Europe and French-speaking Africa"
+    description_it: "Europa e Africa francofona"
     active: false
   - name: "Deutsche Welle"
     url: "https://rss.dw.com/rdf/rss-en-all"
     category: "Foreign Affairs"
-    description: "Germania, Europa centrale e orientale"
+    description: "Germany, Central and Eastern Europe"
+    description_it: "Germania, Europa centrale e orientale"
     active: false
   - name: "NPR News"
     url: "https://feeds.npr.org/1001/rss.xml"
     category: null
-    description: "Notizie generali USA"
+    description: "US general news"
+    description_it: "Notizie generali USA"
     active: true
 
-  # --- Politica ed elezioni
+  # --- Politics and elections
   - name: "NPR Politics"
     url: "https://feeds.npr.org/1014/rss.xml"
     category: "Politics"
-    description: "Congresso, Casa Bianca, elezioni USA"
+    description: "Congress, White House, US elections"
+    description_it: "Congresso, Casa Bianca, elezioni USA"
     active: true
   - name: "Politico"
     url: "https://rss.politico.com/politics-news.xml"
     category: "Politics"
-    description: "Politica USA, sondaggi e campagne"
+    description: "US politics, polls and campaigns"
+    description_it: "Politica USA, sondaggi e campagne"
     active: true
   - name: "The Hill"
     url: "https://thehill.com/news/feed/"
     category: "Politics"
-    description: "Congresso e amministrazione USA"
+    description: "US Congress and administration"
+    description_it: "Congresso e amministrazione USA"
     active: false
   - name: "The Guardian - US Politics"
     url: "https://www.theguardian.com/us-news/us-politics/rss"
     category: "Politics"
-    description: "Politica USA"
+    description: "US politics"
+    description_it: "Politica USA"
     active: false
 
-  # --- Economia, mercati e banche centrali
+  # --- Economy, markets and central banks
   - name: "BBC News - Business"
     url: "https://feeds.bbci.co.uk/news/business/rss.xml"
     category: "Economy"
-    description: "Economia e aziende"
+    description: "Economy and business"
+    description_it: "Economia e aziende"
     active: true
   - name: "CNBC Top News"
     url: "https://www.cnbc.com/id/100003114/device/rss/rss.html"
     category: "Economy"
-    description: "Mercati USA e aziende"
+    description: "US markets and business"
+    description_it: "Mercati USA e aziende"
     active: true
   - name: "CNBC Economy"
     url: "https://www.cnbc.com/id/20910258/device/rss/rss.html"
     category: "Economy"
-    description: "Inflazione, lavoro, Fed"
+    description: "Inflation, jobs, Fed"
+    description_it: "Inflazione, lavoro, Fed"
     active: true
   - name: "MarketWatch - Top Stories"
     url: "https://feeds.content.dowjones.io/public/rss/mw_topstories"
     category: "Economy"
-    description: "Mercati finanziari"
+    description: "Financial markets"
+    description_it: "Mercati finanziari"
     active: false
   - name: "Federal Reserve - Comunicati"
     url: "https://www.federalreserve.gov/feeds/press_all.xml"
     category: "Economy"
-    description: "Fonte primaria: decisioni e comunicati della Fed"
+    description: "Primary source: Fed decisions and statements"
+    description_it: "Fonte primaria: decisioni e comunicati della Fed"
     active: true
   - name: "BCE - Comunicati stampa"
     url: "https://www.ecb.europa.eu/rss/press.html"
     category: "Economy"
-    description: "Fonte primaria: decisioni della Banca centrale europea"
+    description: "Primary source: European Central Bank decisions"
+    description_it: "Fonte primaria: decisioni della Banca centrale europea"
     active: true
 
   # --- Crypto
   - name: "CoinDesk"
     url: "https://www.coindesk.com/arc/outboundfeeds/rss/"
     category: "Crypto"
-    description: "Bitcoin, Ethereum, ETF, regolamentazione"
+    description: "Bitcoin, Ethereum, ETFs, regulation"
+    description_it: "Bitcoin, Ethereum, ETF, regolamentazione"
     active: true
   - name: "Cointelegraph"
     url: "https://cointelegraph.com/rss"
     category: "Crypto"
-    description: "Mercato crypto"
+    description: "Crypto market"
+    description_it: "Mercato crypto"
     active: true
   - name: "Decrypt"
     url: "https://decrypt.co/feed"
     category: "Crypto"
-    description: "Crypto e Web3"
+    description: "Crypto and Web3"
+    description_it: "Crypto e Web3"
     active: false
 
-  # --- Tecnologia e AI
+  # --- Technology and AI
   - name: "BBC News - Technology"
     url: "https://feeds.bbci.co.uk/news/technology/rss.xml"
     category: "Technology"
-    description: "Tecnologia"
+    description: "Technology"
+    description_it: "Tecnologia"
     active: true
   - name: "TechCrunch"
     url: "https://techcrunch.com/feed/"
     category: "Technology"
-    description: "Startup, AI, big tech"
+    description: "Startups, AI, big tech"
+    description_it: "Startup, AI, big tech"
     active: true
   - name: "The Verge"
     url: "https://www.theverge.com/rss/index.xml"
     category: "Technology"
-    description: "Prodotti, big tech, AI"
+    description: "Products, big tech, AI"
+    description_it: "Prodotti, big tech, AI"
     active: false
   - name: "Ars Technica"
     url: "https://feeds.arstechnica.com/arstechnica/index"
     category: "Technology"
-    description: "Tecnologia e scienza, analisi approfondite"
+    description: "Technology and science, in-depth analysis"
+    description_it: "Tecnologia e scienza, analisi approfondite"
     active: false
 
-  # --- Scienza e salute
+  # --- Science and health
   - name: "Nature - News"
     url: "https://www.nature.com/nature.rss"
     category: "Science"
-    description: "Ricerca scientifica"
+    description: "Scientific research"
+    description_it: "Ricerca scientifica"
     active: false
   - name: "BBC News - Science"
     url: "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"
     category: "Science"
-    description: "Scienza, clima, ambiente"
+    description: "Science, climate, environment"
+    description_it: "Scienza, clima, ambiente"
     active: false
 
   # --- Sport
   - name: "BBC Sport"
     url: "https://feeds.bbci.co.uk/sport/rss.xml"
     category: "Sports"
-    description: "Calcio, tennis, F1 e altri sport"
+    description: "Football, tennis, F1 and other sports"
+    description_it: "Calcio, tennis, F1 e altri sport"
     active: true
   - name: "ESPN"
     url: "https://www.espn.com/espn/rss/news"
     category: "Sports"
-    description: "NFL, NBA, MLB e sport USA"
+    description: "NFL, NBA, MLB and US sports"
+    description_it: "NFL, NBA, MLB e sport USA"
     active: true
 
-  # --- Italia
+  # --- Italy
   - name: "ANSA"
     url: "https://www.ansa.it/sito/ansait_rss.xml"
     category: null
-    description: "Agenzia di stampa italiana"
+    description: "Italian news agency"
+    description_it: "Agenzia di stampa italiana"
     active: false
   - name: "Il Post"
     url: "https://www.ilpost.it/feed/"
     category: null
-    description: "Notizie italiane e internazionali"
+    description: "Italian and international news"
+    description_it: "Notizie italiane e internazionali"
     active: false
 
-  # --- Altre fonti di esteri e geopolitica
+  # --- More world and geopolitics sources
   - name: "New York Times - World"
     url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"
     category: "Foreign Affairs"
-    description: "Esteri, conflitti e diplomazia"
+    description: "World, conflicts and diplomacy"
+    description_it: "Esteri, conflitti e diplomazia"
     active: true
   - name: "Washington Post - World"
     url: "https://feeds.washingtonpost.com/rss/world"
     category: "Foreign Affairs"
-    description: "Esteri e sicurezza internazionale"
+    description: "World and international security"
+    description_it: "Esteri e sicurezza internazionale"
     active: false
   - name: "Sky News - World"
     url: "https://feeds.skynews.com/feeds/rss/world.xml"
     category: "Foreign Affairs"
-    description: "Esteri, aggiornamenti rapidi"
+    description: "World, quick updates"
+    description_it: "Esteri, aggiornamenti rapidi"
     active: false
   - name: "Euronews"
     url: "https://www.euronews.com/rss?format=mrss&level=theme&name=news"
     category: "Foreign Affairs"
-    description: "Unione europea e paesi europei"
+    description: "European Union and European countries"
+    description_it: "Unione europea e paesi europei"
     active: false
   - name: "Politico Europe"
     url: "https://www.politico.eu/feed/"
     category: "Foreign Affairs"
-    description: "Politica UE, elezioni europee"
+    description: "EU politics, European elections"
+    description_it: "Politica UE, elezioni europee"
     active: true
   - name: "Kyiv Independent"
     url: "https://kyivindependent.com/feed/"
     category: "Foreign Affairs"
-    description: "Guerra in Ucraina, negoziati"
+    description: "War in Ukraine, negotiations"
+    description_it: "Guerra in Ucraina, negoziati"
     active: true
   - name: "Times of Israel"
     url: "https://www.timesofisrael.com/feed/"
     category: "Foreign Affairs"
-    description: "Israele, Gaza, Medio Oriente"
+    description: "Israel, Gaza, Middle East"
+    description_it: "Israele, Gaza, Medio Oriente"
     active: true
   - name: "South China Morning Post - China"
     url: "https://www.scmp.com/rss/4/feed"
     category: "Foreign Affairs"
-    description: "Cina, Taiwan, Hong Kong"
+    description: "China, Taiwan, Hong Kong"
+    description_it: "Cina, Taiwan, Hong Kong"
     active: false
   - name: "Nikkei Asia"
     url: "https://asia.nikkei.com/rss/feed/nar"
     category: "Foreign Affairs"
-    description: "Asia: politica ed economia"
+    description: "Asia: politics and economy"
+    description_it: "Asia: politica ed economia"
     active: false
   - name: "The Hindu - International"
     url: "https://www.thehindu.com/news/international/feeder/default.rss"
     category: "Foreign Affairs"
-    description: "India e Asia meridionale"
+    description: "India and South Asia"
+    description_it: "India e Asia meridionale"
     active: false
   - name: "Foreign Policy"
     url: "https://foreignpolicy.com/feed/"
     category: "Foreign Affairs"
-    description: "Analisi geopolitiche"
+    description: "Geopolitical analysis"
+    description_it: "Analisi geopolitiche"
     active: false
   - name: "UN News"
     url: "https://news.un.org/feed/subscribe/en/news/all/rss.xml"
     category: "Foreign Affairs"
-    description: "Fonte primaria: Nazioni Unite, risoluzioni, crisi umanitarie"
+    description: "Primary source: United Nations, resolutions, humanitarian crises"
+    description_it: "Fonte primaria: Nazioni Unite, risoluzioni, crisi umanitarie"
     active: false
 
-  # --- Altre fonti di politica, elezioni e sondaggi
+  # --- More politics, elections and polling sources
   - name: "New York Times - Politics"
     url: "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml"
     category: "Politics"
-    description: "Politica USA, Casa Bianca, Congresso"
+    description: "US politics, White House, Congress"
+    description_it: "Politica USA, Casa Bianca, Congresso"
     active: true
   - name: "Axios"
     url: "https://api.axios.com/feed/"
     category: "Politics"
-    description: "Politica e policy USA, notizie brevi"
+    description: "US politics and policy, short news"
+    description_it: "Politica e policy USA, notizie brevi"
     active: false
   - name: "Fox News - Politics"
     url: "https://moxie.foxnews.com/google-publisher/politics.xml"
     category: "Politics"
-    description: "Politica USA, area conservatrice"
+    description: "US politics, conservative outlet"
+    description_it: "Politica USA, area conservatrice"
     active: false
   - name: "RealClearPolitics"
     url: "https://www.realclearpolitics.com/index.xml"
     category: "Politics"
-    description: "Sondaggi e medie dei sondaggi USA"
+    description: "US polls and polling averages"
+    description_it: "Sondaggi e medie dei sondaggi USA"
     active: true
   - name: "SCOTUSblog"
     url: "https://www.scotusblog.com/feed/"
     category: "Politics"
-    description: "Corte suprema USA: cause e sentenze"
+    description: "US Supreme Court: cases and rulings"
+    description_it: "Corte suprema USA: cause e sentenze"
     active: false
   - name: "Ballotpedia News"
     url: "https://news.ballotpedia.org/feed/"
     category: "Politics"
-    description: "Elezioni USA, candidati, referendum"
+    description: "US elections, candidates, ballot measures"
+    description_it: "Elezioni USA, candidati, referendum"
     active: false
   - name: "Roll Call"
     url: "https://rollcall.com/feed/"
     category: "Politics"
-    description: "Congresso USA, voti e leggi"
+    description: "US Congress, votes and bills"
+    description_it: "Congresso USA, voti e leggi"
     active: false
 
-  # --- Altre fonti di economia e fonti primarie
+  # --- More economy sources and primary sources
   - name: "New York Times - Business"
     url: "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml"
     category: "Economy"
-    description: "Economia e aziende"
+    description: "Economy and business"
+    description_it: "Economia e aziende"
     active: false
   - name: "Bloomberg - Markets"
     url: "https://feeds.bloomberg.com/markets/news.rss"
     category: "Economy"
-    description: "Mercati, tassi, materie prime"
+    description: "Markets, rates, commodities"
+    description_it: "Mercati, tassi, materie prime"
     active: true
   - name: "Wall Street Journal - Markets"
     url: "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"
     category: "Economy"
-    description: "Mercati finanziari"
+    description: "Financial markets"
+    description_it: "Mercati finanziari"
     active: false
   - name: "Yahoo Finance"
     url: "https://finance.yahoo.com/news/rssindex"
     category: "Economy"
-    description: "Borsa, trimestrali, aziende"
+    description: "Stocks, earnings, companies"
+    description_it: "Borsa, trimestrali, aziende"
     active: false
   - name: "Bureau of Labor Statistics"
     url: "https://www.bls.gov/feed/bls_latest.rss"
     category: "Economy"
-    description: "Fonte primaria: inflazione (CPI), lavoro, disoccupazione"
+    description: "Primary source: inflation (CPI), jobs, unemployment"
+    description_it: "Fonte primaria: inflazione (CPI), lavoro, disoccupazione"
     active: true
   - name: "Bureau of Economic Analysis"
     url: "https://apps.bea.gov/rss/rss.xml"
     category: "Economy"
-    description: "Fonte primaria: PIL e reddito USA"
+    description: "Primary source: US GDP and income"
+    description_it: "Fonte primaria: PIL e reddito USA"
     active: false
   - name: "Bank of England"
     url: "https://www.bankofengland.co.uk/rss/news"
     category: "Economy"
-    description: "Fonte primaria: decisioni della Banca d'Inghilterra"
+    description: "Primary source: Bank of England decisions"
+    description_it: "Fonte primaria: decisioni della Banca d'Inghilterra"
     active: false
   - name: "SEC - Comunicati"
     url: "https://www.sec.gov/news/pressreleases.rss"
     category: "Economy"
-    description: "Fonte primaria: autorità di borsa USA, ETF, cause"
+    description: "Primary source: US securities regulator, ETFs, lawsuits"
+    description_it: "Fonte primaria: autorità di borsa USA, ETF, cause"
     active: true
 
-  # --- Altre fonti crypto
+  # --- More crypto sources
   - name: "The Block"
     url: "https://www.theblock.co/rss.xml"
     category: "Crypto"
-    description: "Crypto, dati di mercato, regolamentazione"
+    description: "Crypto, market data, regulation"
+    description_it: "Crypto, dati di mercato, regolamentazione"
     active: false
   - name: "Bitcoin Magazine"
     url: "https://bitcoinmagazine.com/.rss/full/"
     category: "Crypto"
     description: "Bitcoin"
+    description_it: "Bitcoin"
     active: false
   - name: "CryptoSlate"
     url: "https://cryptoslate.com/feed/"
     category: "Crypto"
-    description: "Mercato crypto e altcoin"
+    description: "Crypto market and altcoins"
+    description_it: "Mercato crypto e altcoin"
     active: false
 
-  # --- Altre fonti di tecnologia e AI
+  # --- More technology and AI sources
   - name: "New York Times - Technology"
     url: "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml"
     category: "Technology"
-    description: "Big tech, AI, regolamentazione"
+    description: "Big tech, AI, regulation"
+    description_it: "Big tech, AI, regolamentazione"
     active: false
   - name: "Wired"
     url: "https://www.wired.com/feed/rss"
     category: "Technology"
-    description: "Tecnologia e società"
+    description: "Technology and society"
+    description_it: "Tecnologia e società"
     active: false
   - name: "MIT Technology Review"
     url: "https://www.technologyreview.com/feed/"
     category: "Technology"
-    description: "AI e tecnologie emergenti"
+    description: "AI and emerging technologies"
+    description_it: "AI e tecnologie emergenti"
     active: false
   - name: "OpenAI - News"
     url: "https://openai.com/news/rss.xml"
     category: "Technology"
-    description: "Fonte primaria: annunci e nuovi modelli OpenAI"
+    description: "Primary source: OpenAI announcements and new models"
+    description_it: "Fonte primaria: annunci e nuovi modelli OpenAI"
     active: true
   - name: "Google - AI"
     url: "https://blog.google/technology/ai/rss/"
     category: "Technology"
-    description: "Fonte primaria: annunci AI di Google"
+    description: "Primary source: Google AI announcements"
+    description_it: "Fonte primaria: annunci AI di Google"
     active: false
   - name: "Hacker News - Prima pagina"
     url: "https://hnrss.org/frontpage"
     category: "Technology"
-    description: "Tech e startup, segnalazioni rapide"
+    description: "Tech and startups, quick links"
+    description_it: "Tech e startup, segnalazioni rapide"
     active: false
   - name: "Engadget"
     url: "https://www.engadget.com/rss.xml"
     category: "Technology"
-    description: "Prodotti e lanci"
+    description: "Products and launches"
+    description_it: "Prodotti e lanci"
     active: false
 
-  # --- Scienza, spazio, salute e meteo
+  # --- Science, space, health and weather
   - name: "NASA - Comunicati"
     url: "https://www.nasa.gov/news-release/feed/"
     category: "Science"
-    description: "Fonte primaria: missioni spaziali e lanci"
+    description: "Primary source: space missions and launches"
+    description_it: "Fonte primaria: missioni spaziali e lanci"
     active: false
   - name: "SpaceNews"
     url: "https://spacenews.com/feed/"
     category: "Science"
-    description: "Lanci, SpaceX, industria spaziale"
+    description: "Launches, SpaceX, space industry"
+    description_it: "Lanci, SpaceX, industria spaziale"
     active: false
   - name: "OMS - Notizie"
     url: "https://www.who.int/rss-feeds/news-english.xml"
     category: "Science"
-    description: "Fonte primaria: epidemie ed emergenze sanitarie"
+    description: "Primary source: outbreaks and health emergencies"
+    description_it: "Fonte primaria: epidemie ed emergenze sanitarie"
     active: true
   - name: "NOAA - Uragani (Atlantico)"
     url: "https://www.nhc.noaa.gov/index-at.xml"
     category: "Science"
-    description: "Fonte primaria: allerte uragani, per i mercati meteo"
+    description: "Primary source: hurricane alerts, for weather markets"
+    description_it: "Fonte primaria: allerte uragani, per i mercati meteo"
     active: false
   - name: "ScienceDaily"
     url: "https://www.sciencedaily.com/rss/all.xml"
     category: "Science"
-    description: "Ricerca scientifica"
+    description: "Scientific research"
+    description_it: "Ricerca scientifica"
     active: false
 
-  # --- Altre fonti sportive
+  # --- More sports sources
   - name: "BBC Sport - Calcio"
     url: "https://feeds.bbci.co.uk/sport/football/rss.xml"
     category: "Sports"
     description: "Premier League, Champions League"
+    description_it: "Premier League, Champions League"
     active: false
   - name: "ESPN - NFL"
     url: "https://www.espn.com/espn/rss/nfl/news"
     category: "Sports"
-    description: "Football americano"
+    description: "American football"
+    description_it: "Football americano"
     active: false
   - name: "ESPN - NBA"
     url: "https://www.espn.com/espn/rss/nba/news"
     category: "Sports"
-    description: "Basket NBA"
+    description: "NBA basketball"
+    description_it: "Basket NBA"
     active: false
   - name: "ESPN - Calcio"
     url: "https://www.espn.com/espn/rss/soccer/news"
     category: "Sports"
-    description: "Calcio internazionale"
+    description: "International football"
+    description_it: "Calcio internazionale"
     active: false
   - name: "CBS Sports"
     url: "https://www.cbssports.com/rss/headlines/"
     category: "Sports"
-    description: "Sport USA"
+    description: "US sports"
+    description_it: "Sport USA"
     active: false
   - name: "Autosport - F1"
     url: "https://www.autosport.com/rss/f1/news/"
     category: "Sports"
     description: "Formula 1"
+    description_it: "Formula 1"
     active: false
   - name: "Gazzetta dello Sport"
     url: "https://www.gazzetta.it/rss/home.xml"
     category: "Sports"
-    description: "Sport italiano, Serie A"
+    description: "Italian sport, Serie A"
+    description_it: "Sport italiano, Serie A"
     active: false
 
-  # --- Cultura e spettacolo (premi, box office, musica)
+  # --- Culture and entertainment (awards, box office, music)
   - name: "Variety"
     url: "https://variety.com/feed/"
     category: "Culture"
-    description: "Cinema, TV, premi (Oscar, Emmy)"
+    description: "Film, TV, awards (Oscars, Emmys)"
+    description_it: "Cinema, TV, premi (Oscar, Emmy)"
     active: true
   - name: "The Hollywood Reporter"
     url: "https://www.hollywoodreporter.com/feed/"
     category: "Culture"
-    description: "Cinema, TV, box office"
+    description: "Film, TV, box office"
+    description_it: "Cinema, TV, box office"
     active: false
   - name: "Deadline"
     url: "https://deadline.com/feed/"
     category: "Culture"
-    description: "Box office e industria dello spettacolo"
+    description: "Box office and the entertainment industry"
+    description_it: "Box office e industria dello spettacolo"
     active: false
   - name: "Billboard"
     url: "https://www.billboard.com/feed/"
     category: "Culture"
-    description: "Musica, classifiche, Grammy"
+    description: "Music, charts, Grammys"
+    description_it: "Musica, classifiche, Grammy"
     active: false
 
-  # --- Altre fonti italiane
+  # --- More Italian sources
   - name: "Corriere della Sera"
     url: "https://xml2.corriereobjects.it/rss/homepage.xml"
     category: null
-    description: "Notizie italiane e internazionali"
+    description: "Italian and international news"
+    description_it: "Notizie italiane e internazionali"
     active: false
   - name: "la Repubblica"
     url: "https://www.repubblica.it/rss/homepage/rss2.0.xml"
     category: null
-    description: "Notizie italiane e internazionali"
+    description: "Italian and international news"
+    description_it: "Notizie italiane e internazionali"
     active: false
   - name: "Rai News"
     url: "https://www.rainews.it/rss/tutti"
     category: null
-    description: "Servizio pubblico, notizie italiane"
+    description: "Public broadcaster, Italian news"
+    description_it: "Servizio pubblico, notizie italiane"
     active: false
 
-  # feeds.reuters.com è stato chiuso nel 2020 e non restituisce più notizie
+  # feeds.reuters.com was shut down in 2020 and no longer returns news

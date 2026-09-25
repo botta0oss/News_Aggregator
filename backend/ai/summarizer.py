@@ -4,10 +4,17 @@ from typing import Optional
 from backend.ai import usage
 from backend.ai.ratelimit import RateLimited, get_limiter, retry_after_seconds
 from backend.config import settings
+from backend.i18n import lang
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = "You are an objective news editor. Write a concise 3-sentence factual summary in Italian. Return only the summary."
+def _language() -> str:
+    """Summaries are stored once, in APP_LANGUAGE (or the language of the request that asks for them)."""
+    return "Italian" if lang() == "it" else "English"
+
+
+def system_prompt() -> str:
+    return f"You are an objective news editor. Write a concise 3-sentence factual summary in {_language()}. Return only the summary."
 
 # Shared clients: one connection pool per provider instead of one client per article
 _groq_client = None
@@ -45,7 +52,7 @@ async def summarize_with_gemini(title: str, content: str) -> Optional[str]:
         await usage.check("gemini")
         async with limiter.slot():
             prompt = (
-                "You are an objective news editor. Write a concise, 3-sentence factual summary in Italian "
+                f"You are an objective news editor. Write a concise, 3-sentence factual summary in {_language()} "
                 "highlighting the key facts and significance of the event. "
                 "Return only the summary text without introduction.\n\n"
                 f"Title: {title}\nContent: {content[:3000]}"
@@ -78,7 +85,7 @@ async def summarize_with_groq(title: str, content: str) -> Optional[str]:
         return None
     limiter = get_limiter("groq")
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt()},
         {"role": "user", "content": f"Title: {title}\nContent: {content[:3000]}"},
     ]
     try:
@@ -119,6 +126,9 @@ async def summarize_with_ollama(title: str, content: str) -> Optional[str]:
                     "prompt": (
                         f"Sei un giornalista di precisione. Riassumi questa notizia in 3 frasi concise in italiano.\n\n"
                         f"Titolo: {title}\nContenuto: {content[:2000]}\n\nRiassunto:"
+                        if lang() == "it" else
+                        f"You are a precise journalist. Summarise this news item in 3 concise sentences in English.\n\n"
+                        f"Title: {title}\nContent: {content[:2000]}\n\nSummary:"
                     ),
                     "stream": False
                 }

@@ -10,6 +10,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import Source
+from backend.i18n import tr
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ def load_catalog() -> tuple[dict, ...]:
             "url": str(feed["url"]).strip(),
             "category_hint": category if category in CATEGORIES else None,
             "description": feed.get("description"),
+            "description_it": feed.get("description_it"),
             "active": bool(feed.get("active", True)),
         })
     return tuple(catalog)
@@ -44,16 +46,16 @@ def normalize_feed_url(url: str) -> str:
     url = (url or "").strip()
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        raise ValueError("Inserisci un indirizzo completo, che inizi con http:// o https://")
+        raise ValueError(tr("Inserisci un indirizzo completo, che inizi con http:// o https://", "Enter a full address, starting with http:// or https://"))
     if len(url) > 2000:
-        raise ValueError("L'indirizzo è troppo lungo")
+        raise ValueError(tr("L'indirizzo è troppo lungo", "The address is too long"))
     return url
 
 
 def validate_name(name: str) -> str:
     name = (name or "").strip()
     if not 2 <= len(name) <= 80:
-        raise ValueError("Il nome deve avere tra 2 e 80 caratteri")
+        raise ValueError(tr("Il nome deve avere tra 2 e 80 caratteri", "The name must have between 2 and 80 characters"))
     return name
 
 
@@ -61,7 +63,7 @@ def validate_category(category: Optional[str]) -> Optional[str]:
     if category in (None, ""):
         return None
     if category not in CATEGORIES:
-        raise ValueError("Categoria non valida")
+        raise ValueError(tr("Categoria non valida", "Invalid category"))
     return category
 
 

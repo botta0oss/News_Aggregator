@@ -7,6 +7,7 @@ from backend.auth.ratelimit import LoginRateLimiter
 from backend.auth.service import ActiveSession, resolve_session
 from backend.config import settings
 from backend.db.database import get_db
+from backend.i18n import tr
 
 COOKIE_NAME = "nm_session"
 CSRF_HEADER = "X-CSRF-Token"
@@ -60,16 +61,16 @@ async def require_user(request: Request, db: AsyncSession = Depends(get_db)) -> 
     """Any signed-in user. Unsafe methods must also carry the session's CSRF token."""
     active = await resolve_session(db, session_token(request))
     if active is None:
-        raise HTTPException(status_code=401, detail="Accesso richiesto")
+        raise HTTPException(status_code=401, detail=tr("Accesso richiesto", "Sign-in required"))
     if request.method not in SAFE_METHODS:
         sent = request.headers.get(CSRF_HEADER, "")
         if not sent or not hmac.compare_digest(sent, active.session.csrf_token):
-            raise HTTPException(status_code=403, detail="Token CSRF mancante o non valido. Ricarica la pagina.")
+            raise HTTPException(status_code=403, detail=tr("Token CSRF mancante o non valido. Ricarica la pagina.", "Missing or invalid CSRF token. Reload the page."))
     request.state.auth = active
     return active
 
 
 async def require_admin(active: ActiveSession = Depends(require_user)) -> ActiveSession:
     if active.user.role != "admin":
-        raise HTTPException(status_code=403, detail="Serve un account amministratore per questa operazione.")
+        raise HTTPException(status_code=403, detail=tr("Serve un account amministratore per questa operazione.", "An administrator account is needed for this operation."))
     return active

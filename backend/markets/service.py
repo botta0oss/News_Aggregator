@@ -17,6 +17,7 @@ from backend.markets.forecast import compute_signal
 from backend.markets.targeted import run_targeted_search
 from backend.alerts.service import run_alerts
 from backend.markets.matching import EvidenceItem, extract_terms, match_score, outlet_priors, rank_evidence, term_overlap
+from backend.i18n import tr
 
 logger = logging.getLogger(__name__)
 
@@ -308,13 +309,13 @@ async def ask_jev(state, questions, max_wait: Optional[float] = None, samples: O
 async def predict_market(session: AsyncSession, market: Market, max_wait: Optional[float] = None) -> MarketPrediction:
     """Runs a Jev forecast for one market and stores it together with the betting signal."""
     if not jev.is_enabled():
-        raise jev.JevUnavailableError("TYPESAFE_API_KEY is not configured")
+        raise jev.JevUnavailableError(tr("TYPESAFE_API_KEY non è configurata", "TYPESAFE_API_KEY is not configured"))
     if market.yes_price is None:
-        raise ValueError("Market has no current price")
+        raise ValueError(tr("Il mercato non ha un prezzo attuale", "Market has no current price"))
 
     evidence = await get_market_evidence(session, market.id)
     if not evidence:
-        raise LookupError("No related news found for this market")
+        raise LookupError(tr("Nessuna notizia collegata a questo mercato", "No related news found for this market"))
 
     state, questions = build_jev_request(market, evidence)
     response, model_p, evidence_strength, samples = await ask_jev(state, questions, max_wait=max_wait)

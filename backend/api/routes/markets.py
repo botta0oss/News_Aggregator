@@ -17,6 +17,7 @@ from backend.config import settings
 from backend.markets import bulk, polymarket, targeted
 from backend.markets.forecast import brier_score
 from backend.markets.service import get_market_evidence, predict_market, refresh_links, run_market_pipeline
+from backend.i18n import tr
 
 router = APIRouter(prefix="/markets", tags=["markets"])
 predictions_router = APIRouter(prefix="/predictions", tags=["predictions"])
@@ -89,13 +90,13 @@ async def predict_all_status(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/predict-all", status_code=202, dependencies=[Depends(require_admin)])
-async def predict_all_start(only_new: bool = Query(False, description="Solo mercati mai valutati o con notizie nuove dall'ultima previsione"),
-                            refresh_first: bool = Query(True, description="Aggiorna prezzi e collegamenti prima di valutare")):
+async def predict_all_start(only_new: bool = Query(False, description="Only markets never assessed or with news newer than the latest forecast"),
+                            refresh_first: bool = Query(True, description="Refresh prices and links before assessing")):
     """Starts a Jev forecast on every open market with recent news (one paid API call per market)."""
     if not jev.is_enabled():
-        raise HTTPException(status_code=503, detail="TYPESAFE_API_KEY non è configurata")
+        raise HTTPException(status_code=503, detail=tr("TYPESAFE_API_KEY non è configurata", "TYPESAFE_API_KEY is not configured"))
     if not bulk.start(only_new=only_new, refresh_first=refresh_first):
-        raise HTTPException(status_code=409, detail="Una valutazione di tutti i mercati è già in corso")
+        raise HTTPException(status_code=409, detail=tr("Una valutazione di tutti i mercati è già in corso", "An assessment of all markets is already running"))
     return bulk.snapshot()
 
 
@@ -108,12 +109,12 @@ async def predict_all_stop():
 
 @router.get("", response_model=MarketListResponse)
 async def list_markets(
-    q: Optional[str] = Query(None, description="Filtra per testo nella domanda del mercato"),
-    only_linked: bool = Query(False, description="Solo mercati con notizie collegate"),
+    q: Optional[str] = Query(None, description="Filter by text in the market question"),
+    only_linked: bool = Query(False, description="Only markets with linked news"),
     include_closed: bool = Query(False),
     sort: Literal["volume", "end_date", "price", "signal", "edge", "news", "liquidity", "question"] = Query(
-        "volume", description="Ordinamento: volume, scadenza, prezzo SÌ, ultimo segnale, edge, notizie collegate, liquidità, domanda"),
-    order: Optional[Literal["asc", "desc"]] = Query(None, description="Direzione; default sensato per ogni campo"),
+        "volume", description="Sorting: volume, end date, YES price, latest signal, edge, linked news, liquidity, question"),
+    order: Optional[Literal["asc", "desc"]] = Query(None, description="Direction; a sensible default for each field"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -165,7 +166,7 @@ async def list_markets(
 async def get_market(market_id: str, db: AsyncSession = Depends(get_db)):
     market = await db.get(Market, market_id)
     if not market:
-        raise HTTPException(status_code=404, detail="Market not found")
+        raise HTTPException(status_code=404, detail=tr("Mercato non trovato", "Market not found"))
     evidence = await get_market_evidence(db, market_id, limit=50)
     predictions = (await db.execute(
         select(MarketPrediction).where(MarketPrediction.market_id == market_id)
@@ -204,9 +205,9 @@ async def predict(market_id: str, refresh_price: bool = Query(True), db: AsyncSe
     """Runs a Jev forecast now (costs one TypeSafe API call)."""
     market = await db.get(Market, market_id)
     if not market:
-        raise HTTPException(status_code=404, detail="Market not found")
+        raise HTTPException(status_code=404, detail=tr("Mercato non trovato", "Market not found"))
     if not jev.is_enabled():
-        raise HTTPException(status_code=503, detail="TYPESAFE_API_KEY is not configured")
+        raise HTTPException(status_code=503, detail=tr("TYPESAFE_API_KEY non è configurata", "TYPESAFE_API_KEY is not configured"))
     if refresh_price:
         # Edge is only meaningful against the current price
         try:
@@ -217,7 +218,7 @@ async def predict(market_id: str, refresh_price: bool = Query(True), db: AsyncSe
         except Exception:
             pass  # fall back to the last synced price
     if market.closed:
-        raise HTTPException(status_code=409, detail="Market is closed")
+        raise HTTPException(status_code=409, detail=tr("Il mercato è chiuso", "Market is closed"))
     try:
         # Interactive request: do not keep the user waiting behind the background queue
         with feature("previsioni"):
@@ -225,7 +226,8 @@ async def predict(market_id: str, refresh_price: bool = Query(True), db: AsyncSe
     except BudgetExceeded as e:
         raise HTTPException(status_code=429, detail=str(e))
     except RateLimited as e:
-        raise HTTPException(status_code=429, detail=f"Jev ha raggiunto il limite di richieste: riprova tra {max(1, round(e.retry_in))} secondi.",
+        raise HTTPException(status_code=429, detail=tr(f"Jev ha raggiunto il limite di richieste: riprova tra {max(1, round(e.retry_in))} secondi.",
+                                                      f"Jev has hit its request limit: try again in {max(1, round(e.retry_in))} seconds."),
                             headers={"Retry-After": str(max(1, round(e.retry_in)))})
     except LookupError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -239,14 +241,14 @@ async def search_news(market_id: str, db: AsyncSession = Depends(get_db)):
     """Searches news about this market now (Google News) and links what matches."""
     market = await db.get(Market, market_id)
     if not market:
-        raise HTTPException(status_code=404, detail="Market not found")
+        raise HTTPException(status_code=404, detail=tr("Mercato non trovato", "Market not found"))
     if not settings.TARGETED_NEWS_ENABLED:
-        raise HTTPException(status_code=503, detail="La ricerca mirata è disattivata (TARGETED_NEWS_ENABLED=false)")
+        raise HTTPException(status_code=503, detail=tr("La ricerca mirata è disattivata (TARGETED_NEWS_ENABLED=false)", "Targeted search is disabled (TARGETED_NEWS_ENABLED=false)"))
     try:
         added = await targeted.search_market(db, market)
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=502, detail=f"Ricerca non riuscita: {e}")
+        raise HTTPException(status_code=502, detail=tr(f"Ricerca non riuscita: {e}", f"Search failed: {e}"))
     await refresh_links(db, market_ids=[market_id])
     linked = (await db.execute(
         select(func.count()).select_from(MarketArticleLink).where(MarketArticleLink.market_id == market_id)

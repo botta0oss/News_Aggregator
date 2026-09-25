@@ -5,6 +5,7 @@ import logging
 import httpx
 
 from backend.config import settings
+from backend.i18n import tr
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ def escape(text) -> str:
 async def send_message(text: str, silent: bool = False) -> None:
     """Sends an HTML message to TELEGRAM_CHAT_ID. Raises TelegramError with a readable reason."""
     if not is_configured():
-        raise TelegramError("Telegram non è configurato: servono TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID")
+        raise TelegramError(tr("Telegram non è configurato: servono TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID", "Telegram is not configured: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are needed"))
     url = f"{settings.TELEGRAM_API_URL}/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": settings.TELEGRAM_CHAT_ID,
@@ -39,11 +40,12 @@ async def send_message(text: str, silent: bool = False) -> None:
         async with httpx.AsyncClient(timeout=15, transport=_transport) as client:
             r = await client.post(url, json=payload)
     except httpx.HTTPError as e:
-        raise TelegramError(f"Telegram non raggiungibile: {e.__class__.__name__}") from None
+        raise TelegramError(tr(f"Telegram non raggiungibile: {e.__class__.__name__}", f"Telegram unreachable: {e.__class__.__name__}")) from None
     if r.status_code != 200:
         try:
             reason = r.json().get("description") or r.text
         except ValueError:
             reason = r.text
         # Never log or return the URL: it contains the bot token
-        raise TelegramError(f"Telegram ha rifiutato il messaggio ({r.status_code}): {reason[:200]}")
+        raise TelegramError(tr(f"Telegram ha rifiutato il messaggio ({r.status_code}): {reason[:200]}",
+                              f"Telegram refused the message ({r.status_code}): {reason[:200]}"))

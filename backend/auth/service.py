@@ -13,6 +13,7 @@ from backend.auth.passwords import (
 )
 from backend.config import settings
 from backend.db.models import User, UserSession
+from backend.i18n import tr
 
 logger = logging.getLogger("backend.auth")
 
@@ -42,10 +43,10 @@ async def get_user(db: AsyncSession, username: str) -> Optional[User]:
 async def create_user(db: AsyncSession, username: str, password: str, role: str = "viewer") -> User:
     username = validate_username(username)
     if role not in ROLES:
-        raise ValueError(f"Ruolo non valido: usa {' o '.join(ROLES)}.")
+        raise ValueError(tr(f"Ruolo non valido: usa {' o '.join(ROLES)}.", f"Invalid role: use {' or '.join(ROLES)}."))
     validate_password(password, username)
     if await get_user(db, username):
-        raise ValueError(f"L'utente {username} esiste già.")
+        raise ValueError(tr(f"L'utente {username} esiste già.", f"User {username} already exists."))
     user = User(username=username, password_hash=hash_password(password), role=role)
     db.add(user)
     await db.commit()
@@ -125,9 +126,9 @@ async def revoke_user_sessions(db: AsyncSession, user: User, keep_token_hash: Op
 
 async def change_password(db: AsyncSession, user: User, current: str, new: str, keep_token_hash: Optional[str] = None) -> None:
     if not verify_password(user.password_hash, current):
-        raise PermissionError("La password attuale non è corretta.")
+        raise PermissionError(tr("La password attuale non è corretta.", "The current password is not correct."))
     if current == new:
-        raise ValueError("La nuova password deve essere diversa da quella attuale.")
+        raise ValueError(tr("La nuova password deve essere diversa da quella attuale.", "The new password must be different from the current one."))
     await set_password(db, user, new, keep_token_hash=keep_token_hash)
 
 

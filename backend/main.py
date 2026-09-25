@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from backend.config import settings
 from backend import overrides
+from backend.i18n import reset_lang, set_lang
 from backend.ingestor import reembed
 from backend.backtest import engine as backtest_engine
 from backend.db.database import init_db, SessionLocal
@@ -45,7 +46,7 @@ cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()
 if cors_origins:
     app.add_middleware(
         CORSMiddleware, allow_origins=cors_origins, allow_credentials=True,
-        allow_methods=["GET", "POST"], allow_headers=["Content-Type", "X-CSRF-Token"],
+        allow_methods=["GET", "POST"], allow_headers=["Content-Type", "X-CSRF-Token", "X-Lang"],
     )
 
 CSP = (
@@ -54,6 +55,15 @@ CSP = (
     "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
     "base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 )
+
+@app.middleware("http")
+async def request_language(request: Request, call_next):
+    # The dashboard sends its language (IT/EN button): plans, reasons and errors follow it
+    token = set_lang(request.headers.get("X-Lang"))
+    try:
+        return await call_next(request)
+    finally:
+        reset_lang(token)
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
