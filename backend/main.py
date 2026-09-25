@@ -59,7 +59,8 @@ CSP = (
 @app.middleware("http")
 async def request_language(request: Request, call_next):
     # The dashboard sends its language (IT/EN button): plans, reasons and errors follow it
-    token = set_lang(request.headers.get("X-Lang"))
+    # Download links cannot send headers: they pass ?lang= instead
+    token = set_lang(request.headers.get("X-Lang") or request.query_params.get("lang"))
     try:
         return await call_next(request)
     finally:

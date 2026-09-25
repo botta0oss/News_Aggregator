@@ -383,6 +383,20 @@ async def latest_prediction(db: AsyncSession, market: Market):
                              .order_by(MarketPrediction.created_at.desc()).limit(1))).scalar_one_or_none()
 
 
+async def open_bet_plan(db: AsyncSession, bet: PaperBet, market: Market, profile) -> Optional[dict]:
+    """Exit plan of an open bet (sale target, or sell now) with the latest forecast; None if it
+    is not open, its market is closed or there is no forecast."""
+    if bet.status != "open" or market.closed:
+        return None
+    prediction = await latest_prediction(db, market)
+    if prediction is None:
+        return None
+    from backend.betting import plans
+    sigma = model_sigma(prediction.model_probability, prediction.evidence_strength,
+                        plans.forecast_of(prediction, 0).weight, settings.MODEL_PSEUDO_COUNT)
+    return plans.exit_plan(prediction, market, bet.side, profile, days_to_end(market), sigma)
+
+
 def bet_clv(bet: PaperBet, market: Market) -> Optional[float]:
     """Closing line value of a bet once its market stopped trading; None before."""
     if not market.closed or market.last_trading_price is None:

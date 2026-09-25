@@ -445,3 +445,65 @@ async def test_readmitting_a_sold_bet_excluded_by_the_old_code(db, book):
         assert (await api.post(f"/portfolio/bets/{bet.id}/include")).json()["status"] == "sold"
         summ = (await api.get("/portfolio")).json()
     assert summ["realized_pnl"] == pytest.approx(pnl) and len(summ["equity_curve"]) == 2
+
+
+async def test_export_workbook_and_csv(db, book):
+    """The export has every bet (open, sold, excluded) with its entry forecast and current value,
+    the summary, the equity curve and the exclusions; readable by a viewer; in the chosen language."""
+    import csv
+    import io
+    from openpyxl import load_workbook
+    async with SessionLocal() as s:
+        m = await make_market(s)
+        p = await make_prediction(s, m)
+        await portfolio.apply_economics(s, m, p)
+        sold = (await s.execute(select(PaperBet))).scalar_one()
+        assert await portfolio.sell_bet(s, sold, m, "Venduta a mano")
+        m2 = await make_market(s, mid="m-btc", event="btc")
+        await portfolio.apply_economics(s, m2, await make_prediction(s, m2))
+        await portfolio.add_exclusion(s, "category", "Crypto", "Crypto")
+        await s.refresh(sold)
+    async with login_client("viewer") as api:
+        r = await api.get("/portfolio/export", params={"format": "xlsx", "lang": "en"})
+        summ = (await api.get("/portfolio")).json()
+        r_csv = await api.get("/portfolio/export", params={"format": "csv"})
+    assert r.status_code == 200 and r.headers["content-type"].startswith("application/vnd.openxmlformats")
+    assert 'attachment; filename="news-markets-portfolio-' in r.headers["content-disposition"]
+    wb = load_workbook(io.BytesIO(r.content))
+    assert wb.sheetnames == ["Summary", "Bets", "Equity", "Exclusions", "Columns"]
+
+    summary = {row[0]: row[2] for row in wb["Summary"].iter_rows(min_row=2, values_only=True)}
+    assert summary["bankroll"] == 1000 and summary["count_sold"] == 1 and summary["count_open"] == 1
+    assert summary["realized_pnl"] == pytest.approx(summ["realized_pnl"])
+    assert summary["total_value"] == pytest.approx(summ["total_value"])
+
+    rows = list(wb["Bets"].iter_rows(values_only=True))
+    bets = [dict(zip(rows[0], r)) for r in rows[1:]]
+    assert len(bets) == 2
+    s_row = next(b for b in bets if b["status"] == "sold")
+    o_row = next(b for b in bets if b["status"] == "open")
+    assert s_row["bet_id"] == str(sold.id) and s_row["pnl"] == pytest.approx(sold.pnl)
+    assert s_row["exit_price"] == pytest.approx(sold.exit_price) and s_row["exit_reason"] == "Venduta a mano"
+    assert s_row["jev_probability"] == pytest.approx(0.8) and s_row["signal"] == "BUY_YES" and s_row["verdict"] in ("GO", "SMALL")
+    # UTC without time zone (Excel has none), to the millisecond
+    assert abs(s_row["settled_at"] - sold.settled_at.astimezone(timezone.utc).replace(tzinfo=None)) < timedelta(milliseconds=1)
+    assert o_row["market_id"] == "m-btc" and o_row["current_value"] > 0 and o_row["plan_action"] in ("HOLD", "SELL")
+    assert o_row["unrealized_pnl"] == pytest.approx(o_row["current_value"] - o_row["outlay"])
+    assert len(list(wb["Equity"].iter_rows(min_row=2))) == 2          # start + the sale
+    assert [c.value for c in wb["Exclusions"][2]][:2] == ["category", "Crypto"]
+    columns = {r[1]: r[2] for r in wb["Columns"].iter_rows(min_row=2, values_only=True) if r and r[1]}
+    assert columns["clv"].startswith("Closing line value") and set(rows[0]) <= set(columns)
+
+    assert r_csv.status_code == 200 and r_csv.headers["content-type"].startswith("text/csv")
+    text = r_csv.content.decode("utf-8-sig")
+    lines = list(csv.DictReader(io.StringIO(text)))
+    assert len(lines) == 2 and {l["status"] for l in lines} == {"open", "sold"}
+    assert float(next(l for l in lines if l["status"] == "sold")["pnl"]) == pytest.approx(sold.pnl)
+
+
+async def test_export_sheet_names_follow_the_language(db):
+    from openpyxl import load_workbook
+    import io
+    async with login_client("viewer") as api:
+        r = await api.get("/portfolio/export", params={"format": "xlsx"}, headers={"X-Lang": "it"})
+    assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Riepilogo", "Scommesse", "Capitale", "Esclusioni", "Colonne"]

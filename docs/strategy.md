@@ -62,6 +62,18 @@ every forecast and, live, in the **Worth it?** card of the market detail page.
     as they were: same result and closing date; a sold bet comes back sold);
   - markets, events or categories, which automatic bets skip.
 - **Settings:** you can choose the preset, turn automatic bets and sales on or off, or start over with a new capital.
+- **Export:** «Export Excel» downloads the whole portfolio as it is at that moment, to analyse
+  it in Excel, Google Sheets or LibreOffice:
+  - *Summary*: capital, value, realised and unrealised profits (at the bid and at the market
+    price), counts, win rate, CLV, preset parameters;
+  - *Bets*: every bet, excluded ones too, with purchase, sale or resolution, result, current
+    value and plan of the open ones, the forecast that led to it (Jev, blend, evidence, edge,
+    signal) and its economic assessment;
+  - *Equity*, *Exclusions*, and *Columns*, which explains every column.
+
+  Column names are stable keys (the same as the API); prices and probabilities are fractions
+  0–1, amounts in dollars, times in UTC. «CSV» downloads only the bets (comma separator,
+  decimal point).
 
 ## Buy and sell strategy
 

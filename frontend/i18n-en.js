@@ -1185,4 +1185,9 @@ export default {
   "Quota del capitale secondo il criterio di Kelly sulla probabilità blended e sul prezzo, ridotta per prudenza (Kelly frazionario). È indicativa: non tiene conto di book, commissioni, incertezza e limiti del preset. La puntata effettiva è quella della scheda «Conviene?».": "Share of capital according to the Kelly criterion on the blended probability and the price, reduced for prudence (fractional Kelly). It is indicative: it ignores the book, fees, uncertainty and the preset limits. The actual stake is the one in the «Worth it?» card.",
   "È un'indicazione sul prezzo di mercato. Con prezzo reale del book, commissioni, incertezza e limiti del preset la puntata era {0} al momento della previsione: è quella che conta (scheda «Conviene?»).": "It is an indication on the market price. With the real book price, fees, uncertainty and the preset limits the stake was {0} at the time of the forecast: that is the one that counts («Worth it?» card).",
   "È un'indicazione sul prezzo di mercato: la puntata effettiva, con prezzo reale del book, commissioni, incertezza e limiti del preset, è nella scheda «Conviene?».": "It is an indication on the market price: the actual stake, with the real book price, fees, uncertainty and the preset limits, is in the «Worth it?» card.",
+  "Esporta il portafoglio": "Export the portfolio",
+  "Esporta Excel": "Export Excel",
+  "CSV": "CSV",
+  "Riepilogo, scommesse con tutti i dettagli, curva del capitale ed esclusioni, in un file Excel (si apre anche con Google Sheets e LibreOffice)": "Summary, bets with every detail, equity curve and exclusions, in an Excel file (it also opens in Google Sheets and LibreOffice)",
+  "Solo le scommesse, in CSV (separatore virgola, decimali con il punto)": "Bets only, as CSV (comma separator, decimal point)",
 };
