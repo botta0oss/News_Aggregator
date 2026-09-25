@@ -82,6 +82,7 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 | Metodo | Path | Descrizione |
 |---|---|---|
 | GET | `/portfolio` | Riepilogo, curva del capitale, preset disponibili |
+| GET | `/portfolio/export` | Tutto il portafoglio adesso: `format=xlsx` (riepilogo, scommesse, capitale, esclusioni, colonne) o `format=csv` (scommesse); `lang=it/en` per le descrizioni |
 | PUT | `/portfolio/settings` | `{preset, auto_paper, auto_sell}` (admin) |
 | POST | `/portfolio/reset` | `{bankroll, preset}`: cancella le scommesse simulate e ricomincia (admin) |
 | GET | `/portfolio/bets` | Scommesse: `status` = `open`, `settled`, `excluded`, `all`; quelle aperte hanno il piano d'uscita (`plan`) |

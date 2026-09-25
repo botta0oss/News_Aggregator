@@ -65,6 +65,18 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
     com'erano: stesso risultato e stessa data di chiusura; una scommessa venduta torna venduta);
   - mercati, eventi o categorie, che le scommesse automatiche saltano.
 - **Impostazioni:** si possono scegliere il preset, attivare o disattivare le scommesse e le vendite automatiche, oppure ricominciare con un nuovo capitale.
+- **Export:** «Esporta Excel» scarica tutto il portafoglio così com'è in quel momento, per
+  analizzarlo con Excel, Google Sheets o LibreOffice:
+  - *Riepilogo*: capitale, valore, profitti realizzati e latenti (al bid e al prezzo di
+    mercato), conteggi, percentuale di vittorie, CLV, parametri del preset;
+  - *Scommesse*: tutte, anche quelle escluse, con acquisto, vendita o risoluzione, risultato,
+    valore attuale e piano delle aperte, la previsione che le ha generate (Jev, blended,
+    evidenze, edge, segnale) e la valutazione economica;
+  - *Capitale*, *Esclusioni* e *Colonne*, che spiega ogni colonna.
+
+  I nomi delle colonne sono chiavi fisse (le stesse dell'API); prezzi e probabilità sono
+  frazioni tra 0 e 1, gli importi in dollari, le ore in UTC. «CSV» scarica solo le scommesse
+  (separatore virgola, decimali con il punto).
 
 ## Strategia di acquisto e vendita
 

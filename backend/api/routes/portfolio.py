@@ -1,13 +1,12 @@
 import uuid
 from datetime import datetime
 from typing import Literal, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.auth.deps import require_admin
-from backend.betting import plans, portfolio
-from backend.betting.economics import model_sigma
+from backend.betting import export, plans, portfolio
 from backend.betting.profiles import PROFILES, get_profile
 from backend.markets.calibration import summary as calibration_summary
 from backend.config import settings
@@ -74,6 +73,20 @@ async def get_portfolio(db: AsyncSession = Depends(get_db)):
     return data
 
 
+@router.get("/export")
+async def export_portfolio(format: Literal["xlsx", "csv"] = Query("xlsx"), db: AsyncSession = Depends(get_db)):
+    """The whole simulated portfolio as it is now: an Excel workbook (summary, bets, equity curve,
+    exclusions, column descriptions) or a CSV of the bets."""
+    data = await export.build(db)
+    if format == "csv":
+        body, media = export.to_csv(data), "text/csv; charset=utf-8"
+    else:
+        body, media = export.to_xlsx(data), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    name = export.filename(data["now"], format)
+    return Response(content=body, media_type=media, headers={
+        "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
 @router.put("/settings", dependencies=admin)
 async def update_settings(body: SettingsIn, db: AsyncSession = Depends(get_db)):
     s = await portfolio.update_settings(db, preset=body.preset, auto_paper=body.auto_paper, auto_sell=body.auto_sell)
@@ -116,14 +129,9 @@ async def list_bets(status: Literal["open", "settled", "excluded", "all"] = Quer
     # Open bets: the exit plan (sale target, or sell now) with the latest forecast
     profile = get_profile((await portfolio.get_settings(db)).preset)
     for item, (bet, market) in zip(out, rows):
-        if bet.status != "open" or market.closed:
-            continue
-        prediction = await portfolio.latest_prediction(db, market)
-        if prediction is None:
-            continue
-        sigma = model_sigma(prediction.model_probability, prediction.evidence_strength,
-                            plans.forecast_of(prediction, 0).weight, settings.MODEL_PSEUDO_COUNT)
-        item["plan"] = plans.exit_plan(prediction, market, bet.side, profile, portfolio.days_to_end(market), sigma)
+        plan = await portfolio.open_bet_plan(db, bet, market, profile)
+        if plan is not None:
+            item["plan"] = plan
     return out
 
 

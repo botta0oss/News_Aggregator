@@ -880,3 +880,4 @@ th.num .th-sort { flex-direction: row-reverse; }
 }
 /* Too narrow for the name next to the buttons: the logo alone (the link keeps its aria-label) */
 @media (max-width: 400px) { .brand-mobile .brand-text { display: none; } }
+.export-links { display: flex; gap: 8px; flex-wrap: wrap; }

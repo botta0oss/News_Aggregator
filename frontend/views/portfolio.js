@@ -1,5 +1,5 @@
 // Portafoglio simulato: results, equity curve, positions, preset and exclusions.
-import { t } from "../i18n.js";
+import { t, lang } from "../i18n.js";
 import { h, api, fmt, toast, icon, statTile, emptyState, infoTip, CATEGORY_LABELS } from "../ui.js";
 import { equityChart } from "../charts.js";
 
@@ -143,6 +143,7 @@ export async function viewPortfolio(ctx) {
   return h("div", {},
     ctx.pageHead(t("Portafoglio simulato"),
       t("Ogni segnale che conviene diventa una scommessa virtuale al prezzo reale del momento, venduta quando il piano lo dice o chiusa quando il mercato si risolve. Serve a capire se i segnali fanno guadagnare prima di usare soldi veri."),
+      exportLinks(),
       h("a", { class: "btn btn-ghost", href: "#/metodo" }, icon("help"), t("Come funziona"))),
     h("div", { class: "kpis" },
       statTile(t("Valore attuale"), money(data.total_value), data.roi != null ? t("{0} da capitale {1}", fmt.pts(data.roi).replace(` ${t("pt")}`, "%"), money(s.bankroll)) : ""),
@@ -277,4 +278,14 @@ function exclusionsCard(ctx, exclusions, categories, refresh) {
     )),
     list, adder,
   );
+}
+
+/** Download of the whole portfolio as it is now: Excel workbook, or the bets as CSV. */
+function exportLinks() {
+  const url = (format) => new URL(`/portfolio/export?format=${format}&lang=${lang}`, window.location.origin).href;
+  return h("div", { class: "export-links", role: "group", "aria-label": t("Esporta il portafoglio") },
+    h("a", { class: "btn btn-ghost", href: url("xlsx"), download: "",
+      title: t("Riepilogo, scommesse con tutti i dettagli, curva del capitale ed esclusioni, in un file Excel (si apre anche con Google Sheets e LibreOffice)") },
+      icon("download"), t("Esporta Excel")),
+    h("a", { class: "btn btn-ghost", href: url("csv"), download: "", title: t("Solo le scommesse, in CSV (separatore virgola, decimali con il punto)") }, t("CSV")));
 }
