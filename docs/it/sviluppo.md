@@ -1,6 +1,6 @@
 # Sviluppo e test
 
-<sub>[← Torna al README](../README.md) · [Tutta la documentazione](README.md)</sub>
+<sub>[← Torna al README](../../README.it.md) · [Tutta la documentazione](README.md) · [English](../development.md)</sub>
 
 Test, CI e struttura del codice.
 
@@ -50,6 +50,7 @@ In CI un database non raggiungibile fa fallire i test invece di saltarli.
 | `tests/test_backtest.py` | Pianificazione, notizie senza senno di poi (anche d'archivio), metriche, bootstrap, parametri verificati sui mercati recenti |
 | `tests/test_bulk_predict.py` | «Valuta tutti con Jev»: flusso completo, attesa sui limiti di frequenza, stop dopo errori ripetuti |
 | `tests/test_usage.py` | Registro delle chiamate, costi stimati, limiti giornalieri e avvisi |
+| `tests/test_i18n.py` | Testi in inglese e italiano: lingua della richiesta (`X-Lang`), `APP_LANGUAGE`, piani in inglese, ogni testo della dashboard tradotto |
 
 ## Struttura del progetto
 
@@ -57,6 +58,7 @@ In CI un database non raggiungibile fa fallire i test invece di saltarli.
 backend/
 ├── main.py                 # app FastAPI, avvio e chiusura
 ├── config.py               # impostazioni da .env
+├── i18n.py                 # lingua dei testi (X-Lang, APP_LANGUAGE), tr(it, en)
 ├── overrides.py            # parametri cambiati dalla dashboard (es. dopo un backtest)
 ├── auth/                   # password, sessioni, ruoli, limite tentativi, CLI utenti
 ├── ai/
@@ -99,8 +101,8 @@ backend/
 ├── db/                     # modelli SQLAlchemy, query e migrazioni idempotenti
 └── api/                    # schemi e route FastAPI
 frontend/                   # dashboard senza build: app.js, ui.js, charts.js, explain.js,
-                            # economics.js, strategy.js, views/ (una per pagina)
-docs/                       # documentazione e screenshot
+                            # economics.js, strategy.js, i18n.js + i18n-en.js, views/ (una per pagina)
+docs/                       # documentazione (inglese; italiano in docs/it) e screenshot
 scripts/
 ├── check_env.py            # verifica chiavi e database
 └── update.sh               # aggiornamento sul server

@@ -10,13 +10,15 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL_16-pgvector-4169E1?logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-CPU_%7C_CUDA-2496ED?logo=docker&logoColor=white)
 
+[English](README.md) · **Italiano**
+
 [Funzionalità](#funzionalità) · [Come funziona](#come-funziona) · [Avvio rapido](#avvio-rapido) · [Messa online](#messa-online) · [Documentazione](#documentazione)
 
 <br>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.png">
-  <img alt="La pagina Opportunità: per ogni mercato il prezzo, la stima di Jev e la probabilità finale sulla stessa scala, con segnale ed edge" src="docs/images/overview-light.png" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/it/overview-dark.png">
+  <img alt="La pagina Opportunità: per ogni mercato il prezzo, la stima di Jev e la probabilità finale sulla stessa scala, con segnale ed edge" src="docs/images/it/overview-light.png" width="100%">
 </picture>
 
 </div>
@@ -24,7 +26,7 @@
 > [!WARNING]
 > **Non è consulenza finanziaria.** L'app non piazza ordini: produce indicazioni da verificare.
 > Prima di usare soldi veri controlla i risultati su molti mercati risolti
-> ([backtest e calibrazione](docs/verifica.md)).
+> ([backtest e calibrazione](docs/it/verifica.md)).
 >
 > **L'umano parla ora:** Questa schifezza è vibecodata al 1000%, ho voluto testare Claude Opus 5.5
 > e Jev di TypeSafe AI per vedere le capacità di queste nuove tecnologie. Non fidatevi
@@ -41,6 +43,8 @@ passati e pesata per la forza delle notizie, viene confrontata con il prezzo.
 Quando c'è un vantaggio, l'app lo traduce in un **piano concreto**: comprare o no, con quale
 ordine limite, quanto puntare, quando vendere e **perché sì o perché no**. Un portafoglio
 simulato, il backtest e la calibrazione misurano se i segnali funzionano davvero.
+
+La dashboard è in **italiano e inglese** (pulsante IT/EN in alto a destra).
 
 ## Funzionalità
 
@@ -97,15 +101,15 @@ simulato, il backtest e la calibrazione misurano se i segnali funzionano davvero
 <tr>
 <td width="50%" align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/strategy-dark.png">
-  <img alt="Scheda Cosa fare: azione, ordini limite, scala dei prezzi, motivi a favore e contro" src="docs/images/strategy-light.png" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/it/strategy-dark.png">
+  <img alt="Scheda Cosa fare: azione, ordini limite, scala dei prezzi, motivi a favore e contro" src="docs/images/it/strategy-light.png" width="100%">
 </picture>
 <br><b>Cosa fare</b>: ordini, prezzi e motivi
 </td>
 <td width="50%" align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/multi-dark.png">
-  <img alt="Evento a più esiti: distribuzione di prezzo, stima di Jev e probabilità finale per ogni candidato" src="docs/images/multi-light.png" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/it/multi-dark.png">
+  <img alt="Evento a più esiti: distribuzione di prezzo, stima di Jev e probabilità finale per ogni candidato" src="docs/images/it/multi-light.png" width="100%">
 </picture>
 <br><b>Più esiti</b>: la distribuzione, esito per esito
 </td>
@@ -113,15 +117,15 @@ simulato, il backtest e la calibrazione misurano se i segnali funzionano davvero
 <tr>
 <td align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/portfolio-dark.png">
-  <img alt="Portafoglio simulato: valore, profitti, prezzo di chiusura, preset di rischio" src="docs/images/portfolio-light.png" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/it/portfolio-dark.png">
+  <img alt="Portafoglio simulato: valore, profitti, prezzo di chiusura, preset di rischio" src="docs/images/it/portfolio-light.png" width="100%">
 </picture>
 <br><b>Portafoglio simulato</b>: risultati prima dei soldi veri
 </td>
 <td align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/backtest-dark.png">
-  <img alt="Backtest: Brier score di Jev e del prezzo, segnali giusti, scommesse simulate, risultati per orizzonte" src="docs/images/backtest-light.png" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/it/backtest-dark.png">
+  <img alt="Backtest: Brier score di Jev e del prezzo, segnali giusti, scommesse simulate, risultati per orizzonte" src="docs/images/it/backtest-light.png" width="100%">
 </picture>
 <br><b>Backtest</b>: come sarebbe andata sul passato
 </td>
@@ -164,7 +168,7 @@ flowchart LR
 5. **Verifica.** Portafoglio simulato, backtest, calibrazione e prezzo di chiusura dicono se
    il vantaggio è reale.
 
-Dettagli e formule: [Il metodo](docs/metodo.md) · [Strategia e portafoglio](docs/strategia.md).
+Dettagli e formule: [Il metodo](docs/it/metodo.md) · [Strategia e portafoglio](docs/it/strategia.md).
 
 ## Avvio rapido
 
@@ -180,13 +184,13 @@ docker compose exec api python -m backend.auth.cli create-user tuonome --role ad
 Apri **http://localhost:8000** e accedi con l'utente appena creato. Il compose avvia anche
 Postgres con pgvector; alla prima partenza la raccolta delle notizie e il sync dei mercati
 iniziano subito. Per aprirla dal telefono o da un altro PC di casa vedi
-[Uso nella rete di casa](docs/deploy.md#uso-in-locale-e-nella-rete-di-casa).
+[Uso nella rete di casa](docs/it/deploy.md#uso-in-locale-e-nella-rete-di-casa).
 
 > [!TIP]
 > Con una GPU NVIDIA in locale:
 > `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build`.
 > Senza GPU l'immagine predefinita usa PyTorch solo CPU, molto più leggera.
-> Vedi [Immagini Docker](docs/deploy.md#immagini-docker-cpu-o-gpu).
+> Vedi [Immagini Docker](docs/it/deploy.md#immagini-docker-cpu-o-gpu).
 
 <details>
 <summary><b>Senza Docker</b></summary>
@@ -220,9 +224,9 @@ del database.
 | VPS 2 vCore, 4 GB RAM (OVH VPS-1, Hetzner…) | circa 4–6 € al mese |
 | Cloudflare Tunnel, HTTPS, dominio gestito da Cloudflare | gratuito (il dominio si paga a parte) |
 | Riassunti con Gemini o Groq, Telegram, Polymarket, Google News | piani gratuiti |
-| Previsioni con Jev (TypeSafe) | a consumo, con [limiti giornalieri](docs/costi.md) |
+| Previsioni con Jev (TypeSafe) | a consumo, con [limiti giornalieri](docs/it/costi.md) |
 
-Guida passo passo: **[Deploy su un VPS con Cloudflare Tunnel](docs/deploy.md#deploy-su-un-vps-con-cloudflare-tunnel)**.
+Guida passo passo: **[Deploy su un VPS con Cloudflare Tunnel](docs/it/deploy.md#deploy-su-un-vps-con-cloudflare-tunnel)**.
 
 ## Configurazione essenziale
 
@@ -237,24 +241,25 @@ Tutto si imposta in `.env` (copia di [`.env.example`](.env.example)). Le più im
 | `PREDICTION_AUTO` | Previsioni automatiche dopo ogni raccolta (di base spente) |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Notifiche delle allerte |
 | `PUBLIC_URL` | Indirizzo della dashboard, per i link nelle notifiche |
+| `APP_LANGUAGE` | Lingua delle allerte Telegram e dei riassunti: `en` (predefinita) o `it` |
 
-Tutte le altre: **[Configurazione](docs/configurazione.md)**.
+Tutte le altre: **[Configurazione](docs/it/configurazione.md)**.
 
 ## Documentazione
 
 | Pagina | Contenuto |
 |---|---|
-| [Guida alla dashboard](docs/guida.md) | Le pagine, il flusso di lavoro consigliato, cosa fare se la dashboard non si apre |
-| [Il metodo](docs/metodo.md) | Raccolta, collegamento notizie–mercati, previsione, mercati a più esiti |
-| [Strategia e portafoglio](docs/strategia.md) | Valutazione economica, cosa fare e quando vendere, portafoglio simulato |
-| [Allerte](docs/allerte.md) | Notifiche Telegram e misura del loro anticipo sul prezzo |
-| [Backtest e calibrazione](docs/verifica.md) | Quanto fidarsi delle previsioni, sul passato e sul presente |
-| [Uso e costi](docs/costi.md) | Chiamate a pagamento, stima dei costi, limiti giornalieri |
-| [Configurazione](docs/configurazione.md) | Tutte le variabili di `.env` |
-| [Accesso e sicurezza](docs/sicurezza.md) | Utenti e ruoli, sessioni, protezioni |
-| [Deploy](docs/deploy.md) | Immagini CPU/GPU, uso in locale e nella rete di casa, VPS con Cloudflare Tunnel, backup |
-| [API](docs/api.md) | Gli endpoint REST |
-| [Sviluppo e test](docs/sviluppo.md) | Test, CI, struttura del codice |
+| [Guida alla dashboard](docs/it/guida.md) | Le pagine, il flusso di lavoro consigliato, cosa fare se la dashboard non si apre |
+| [Il metodo](docs/it/metodo.md) | Raccolta, collegamento notizie–mercati, previsione, mercati a più esiti |
+| [Strategia e portafoglio](docs/it/strategia.md) | Valutazione economica, cosa fare e quando vendere, portafoglio simulato |
+| [Allerte](docs/it/allerte.md) | Notifiche Telegram e misura del loro anticipo sul prezzo |
+| [Backtest e calibrazione](docs/it/verifica.md) | Quanto fidarsi delle previsioni, sul passato e sul presente |
+| [Uso e costi](docs/it/costi.md) | Chiamate a pagamento, stima dei costi, limiti giornalieri |
+| [Configurazione](docs/it/configurazione.md) | Tutte le variabili di `.env` |
+| [Accesso e sicurezza](docs/it/sicurezza.md) | Utenti e ruoli, sessioni, protezioni |
+| [Deploy](docs/it/deploy.md) | Immagini CPU/GPU, uso in locale e nella rete di casa, VPS con Cloudflare Tunnel, backup |
+| [API](docs/it/api.md) | Gli endpoint REST |
+| [Sviluppo e test](docs/it/sviluppo.md) | Test, CI, struttura del codice |
 
 ## Tecnologie
 
@@ -263,7 +268,7 @@ Tutte le altre: **[Configurazione](docs/configurazione.md)**.
 | Backend | FastAPI, SQLAlchemy async + asyncpg, APScheduler |
 | Dati | PostgreSQL 16 con pgvector |
 | Modelli | TypeSafe Jev (previsioni e classificazione), sentence-transformers `paraphrase-multilingual-MiniLM-L12-v2` (embedding), Gemini / Groq / Ollama (riassunti) |
-| Frontend | HTML, CSS e JavaScript senza dipendenze né build, tema chiaro e scuro, accessibile da tastiera |
+| Frontend | HTML, CSS e JavaScript senza dipendenze né build, tema chiaro e scuro, italiano e inglese, accessibile da tastiera |
 | Infrastruttura | Docker (CPU o CUDA), Cloudflare Tunnel, GitHub Actions |
 
 ## Limiti noti

@@ -1,6 +1,6 @@
 # Configurazione
 
-<sub>[← Torna al README](../README.md) · [Tutta la documentazione](README.md)</sub>
+<sub>[← Torna al README](../../README.it.md) · [Tutta la documentazione](README.md) · [English](../configuration.md)</sub>
 
 Tutte le variabili del file `.env`.
 
@@ -79,6 +79,7 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 
 | Variabile | Default | Descrizione |
 |---|---|---|
+| `APP_LANGUAGE` | `en` | Lingua dei testi scritti senza una richiesta della dashboard: allerte Telegram, riassunti delle notizie, note salvate. `en` o `it`. La dashboard ha il suo pulsante IT/EN |
 | `INGEST_INTERVAL_MINUTES` | `60` | Intervallo della pipeline |
 | `ALERT_SCAN_MINUTES` | `10` | Controllo rapido per le allerte: fonti → collegamenti → allerte, senza riassunti (`0` lo disattiva) |
 | `ALERT_FOLLOWUP_MINUTES` | `5` | Ogni quanto registrare il prezzo dopo le allerte |

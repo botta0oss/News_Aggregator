@@ -1,6 +1,6 @@
 # Uso e costi delle API
 
-<sub>[← Torna al README](../README.md) · [Tutta la documentazione](README.md)</sub>
+<sub>[← Torna al README](../../README.it.md) · [Tutta la documentazione](README.md) · [English](../costs.md)</sub>
 
 Registro delle chiamate a pagamento, stima dei costi e limiti giornalieri.
 

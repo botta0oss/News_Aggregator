@@ -1,6 +1,6 @@
 # API
 
-<sub>[← Torna al README](../README.md) · [Tutta la documentazione](README.md)</sub>
+<sub>[← Torna al README](../../README.it.md) · [Tutta la documentazione](README.md) · [English](../api.md)</sub>
 
 Gli endpoint REST dell'app.
 
@@ -9,6 +9,10 @@ Documentazione interattiva completa su `/docs` (se `API_DOCS_ENABLED=true`). Tut
 endpoint richiedono una sessione; quelli `POST` anche l'header `X-CSRF-Token`, e quelli che
 avviano lavori o chiamate a pagamento (`/ingest`, `/markets/sync`, `/markets/{id}/predict`,
 `/markets/predict-all`) il ruolo `admin`.
+
+**Lingua.** Con `X-Lang: it` o `X-Lang: en` i testi scritti dal server (piani, motivi, messaggi
+d'errore, nomi dei preset) arrivano in quella lingua; senza, il server usa `APP_LANGUAGE`. La
+dashboard lo invia a ogni richiesta.
 
 ### Accesso
 

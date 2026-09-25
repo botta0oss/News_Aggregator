@@ -1,6 +1,6 @@
 # Documentazione
 
-<sub>[← Torna al README](../README.md)</sub>
+<sub>[← Torna al README](../../README.it.md) · [English](../README.md)</sub>
 
 | | Pagina | Contenuto |
 |---|---|---|

@@ -1,6 +1,6 @@
 # Accesso e sicurezza
 
-<sub>[← Torna al README](../README.md) · [Tutta la documentazione](README.md)</sub>
+<sub>[← Torna al README](../../README.it.md) · [Tutta la documentazione](README.md) · [English](../security.md)</sub>
 
 Utenti e ruoli, sessioni, protezioni e messa online.
 
