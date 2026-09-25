@@ -28,8 +28,8 @@
 > Before using real money, check the results over many resolved markets
 > ([backtest and calibration](docs/verification.md)).
 >
-> **The human speaking now:** this thing is 1000% vibe-coded; I wanted to test the latest AI
-> models and TypeSafe AI's Jev to see what these new technologies can do. Do not trust this web
+> **The human speaking now:** this crap is 1000% vibe-coded; I wanted to test Claude Opus 5.5
+> and TypeSafe AI's Jev to see what these new technologies can do. Do not trust this web
 > app to make financial decisions or place bets. Use the simulated portfolio inside the app if
 > you want to see how it performs.
 
