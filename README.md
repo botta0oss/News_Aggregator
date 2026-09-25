@@ -25,6 +25,11 @@
 > **Non è consulenza finanziaria.** L'app non piazza ordini: produce indicazioni da verificare.
 > Prima di usare soldi veri controlla i risultati su molti mercati risolti
 > ([backtest e calibrazione](docs/verifica.md)).
+>
+> **L'umano parla ora:** Questa schifezza è vibecodata al 1000%, ho voluto testare Claude Code
+> e Jev di TypeSafe AI per vedere le capacità di queste nuove tecnologie. Non bisogna fidarsi
+> di questa webapp per prendere decisioni finanziarie o fare scommesse. Sfruttate il
+> portafoglio simulato all'interno del programma se vi interessa vedere come performa.
 
 ## In breve
 
