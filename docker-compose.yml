@@ -1,5 +1,5 @@
-# Everything reads its settings from .env (copy .env.example). On a server, see the README
-# section "Deploy su un VPS con Cloudflare Tunnel".
+# Everything reads its settings from .env (copy .env.example). On a server, see
+# docs/deploy.md, "Deploy on a VPS with Cloudflare Tunnel".
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -18,7 +18,7 @@ services:
       retries: 10
 
   api:
-    # CPU-only image; for a local NVIDIA GPU add docker-compose.gpu.yml (see README)
+    # CPU-only image; for a local NVIDIA GPU add docker-compose.gpu.yml (see docs/deploy.md)
     build:
       context: .
       dockerfile: Dockerfile

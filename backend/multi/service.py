@@ -24,6 +24,7 @@ from backend.markets import polymarket
 from backend.markets.forecast import model_weight, pool_distribution
 from backend.markets.matching import extract_terms, match_score, outlet_priors, rank_evidence, term_overlap
 from backend.markets.service import EVIDENCE_CRITERIA, _candidate_distance
+from backend.i18n import tr
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +204,7 @@ def market_distribution(outcomes: list[MultiOutcome], max_outcomes: int) -> list
     other = sum(o.yes_price for o in rest)
     if rest:
         # Not Polymarket's own "Other" outcome (if any): the sum of the outcomes not listed to Jev
-        items.append({"id": OTHER_ID, "label": f"{OTHER_LABEL} ({len(rest)})", "price": other})
+        items.append({"id": OTHER_ID, "label": f"{tr(OTHER_LABEL, 'Other outcomes')} ({len(rest)})", "price": other})
     total = sum(i["price"] for i in items) or 1.0
     for i in items:
         i["market"] = round(i["price"] / total, 4)
@@ -296,13 +297,13 @@ async def ask_jev_distribution(state, questions, max_wait: Optional[float] = Non
 
 async def predict_event(session: AsyncSession, event: MultiEvent, max_wait: Optional[float] = None) -> MultiPrediction:
     if not jev.is_enabled():
-        raise jev.JevUnavailableError("TYPESAFE_API_KEY is not configured")
+        raise jev.JevUnavailableError(tr("TYPESAFE_API_KEY non è configurata", "TYPESAFE_API_KEY is not configured"))
     items = market_distribution(await outcomes_of(session, event.id), settings.MULTI_MAX_OUTCOMES)
     if len(items) < 2:
-        raise ValueError("L'evento non ha abbastanza esiti con un prezzo")
+        raise ValueError(tr("L'evento non ha abbastanza esiti con un prezzo", "The event does not have enough outcomes with a price"))
     evidence = await get_evidence(session, event.id)
     if not evidence:
-        raise LookupError("Nessuna notizia recente collegata a questo evento")
+        raise LookupError(tr("Nessuna notizia recente collegata a questo evento", "No recent news linked to this event"))
     state, questions, keys = build_request(event, items, evidence)
     response, probs, strength = await ask_jev_distribution(state, questions, max_wait=max_wait)
 

@@ -1,17 +1,17 @@
-# Documentazione
+# Documentation
 
-<sub>[← Torna al README](../README.md)</sub>
+<sub>[← Back to the README](../README.md) · [Italiano](it/README.md)</sub>
 
-| | Pagina | Contenuto |
+| | Page | Contents |
 |---|---|---|
-| 🧭 | [Guida alla dashboard](guida.md) | Le pagine, il flusso di lavoro consigliato, cosa fare se la dashboard non si apre |
-| 🎯 | [Il metodo](metodo.md) | Raccolta, collegamento notizie–mercati, previsione, mercati a più esiti |
-| 💶 | [Strategia e portafoglio](strategia.md) | Valutazione economica, cosa fare e quando vendere, portafoglio simulato |
-| 🔔 | [Allerte](allerte.md) | Notifiche Telegram e misura del loro anticipo sul prezzo |
-| 📊 | [Backtest e calibrazione](verifica.md) | Quanto fidarsi delle previsioni, sul passato e sul presente |
-| 💳 | [Uso e costi](costi.md) | Chiamate a pagamento, stima dei costi, limiti giornalieri |
-| ⚙️ | [Configurazione](configurazione.md) | Tutte le variabili di `.env` |
-| 🔒 | [Accesso e sicurezza](sicurezza.md) | Utenti e ruoli, sessioni, protezioni |
-| 🚀 | [Deploy](deploy.md) | Immagini CPU/GPU, uso in locale e nella rete di casa, VPS con Cloudflare Tunnel, backup |
-| 🔌 | [API](api.md) | Gli endpoint REST |
-| 🛠️ | [Sviluppo e test](sviluppo.md) | Test, CI, struttura del codice |
+| 🧭 | [Dashboard guide](guide.md) | The pages, the recommended workflow, what to do if the dashboard does not open |
+| 🎯 | [The method](method.md) | Collection, news–market linking, forecasting, multi-outcome markets |
+| 💶 | [Strategy and portfolio](strategy.md) | Economic assessment, what to do and when to sell, simulated portfolio |
+| 🔔 | [Alerts](alerts.md) | Telegram notifications and how much they get ahead of the price |
+| 📊 | [Backtest and calibration](verification.md) | How much to trust the forecasts, on the past and on the present |
+| 💳 | [Usage and costs](costs.md) | Paid calls, cost estimate, daily limits |
+| ⚙️ | [Configuration](configuration.md) | Every `.env` variable |
+| 🔒 | [Access and security](security.md) | Users and roles, sessions, protections |
+| 🚀 | [Deploy](deploy.md) | CPU/GPU images, local and home-network use, VPS with Cloudflare Tunnel, backups |
+| 🔌 | [API](api.md) | The REST endpoints |
+| 🛠️ | [Development and tests](development.md) | Tests, CI, code structure |

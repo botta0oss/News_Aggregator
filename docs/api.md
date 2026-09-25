@@ -1,133 +1,135 @@
 # API
 
-<sub>[← Torna al README](../README.md) · [Tutta la documentazione](README.md)</sub>
+<sub>[← Back to the README](../README.md) · [All documentation](README.md) · [Italiano](it/api.md)</sub>
 
-Gli endpoint REST dell'app.
+The app's REST endpoints.
 
+Full interactive documentation on `/docs` (if `API_DOCS_ENABLED=true`). Every endpoint requires
+a session; `POST` ones also the `X-CSRF-Token` header, and those that start jobs or paid calls
+(`/ingest`, `/markets/sync`, `/markets/{id}/predict`, `/markets/predict-all`) the `admin` role.
 
-Documentazione interattiva completa su `/docs` (se `API_DOCS_ENABLED=true`). Tutti gli
-endpoint richiedono una sessione; quelli `POST` anche l'header `X-CSRF-Token`, e quelli che
-avviano lavori o chiamate a pagamento (`/ingest`, `/markets/sync`, `/markets/{id}/predict`,
-`/markets/predict-all`) il ruolo `admin`.
+**Language.** Send `X-Lang: en` or `X-Lang: it` to get the texts the server writes (plans,
+reasons, error messages, preset labels) in that language; without it the server uses
+`APP_LANGUAGE`. The dashboard sends it on every request.
 
-### Accesso
+### Access
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |---|---|---|
-| POST | `/auth/login` | `{username, password}` → cookie di sessione, utente e token CSRF |
-| POST | `/auth/logout` | Chiude la sessione corrente |
-| GET | `/auth/me` | Utente corrente e token CSRF |
-| POST | `/auth/password` | `{current_password, new_password}`; chiude le altre sessioni |
+| POST | `/auth/login` | `{username, password}` → session cookie, user and CSRF token |
+| POST | `/auth/logout` | Closes the current session |
+| GET | `/auth/me` | Current user and CSRF token |
+| POST | `/auth/password` | `{current_password, new_password}`; closes the other sessions |
 
-### Notizie
+### News
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |---|---|---|
-| GET | `/articles` | Notizie con ricerca, filtri e ordinamento |
-| GET | `/articles/{id}` | Dettaglio di una notizia |
-| GET | `/categories` | Numero di notizie per categoria |
-| POST | `/ingest` | Avvia subito la pipeline completa (admin) |
-| POST | `/ingest/reclassify` | Riclassifica le notizie salvate (admin, `limit` fino a 1000) |
+| GET | `/articles` | News with search, filters and sorting |
+| GET | `/articles/{id}` | Detail of a news item |
+| GET | `/categories` | Number of news items per category |
+| POST | `/ingest` | Starts the full pipeline right away (admin) |
+| POST | `/ingest/reclassify` | Reclassifies the saved news (admin, `limit` up to 1000) |
 
-`/articles` accetta:
-- **ricerca:** `q` (testo), `scope` (`all` o `title`), `sort` (`relevance`, `score`, `recent`);
-- **filtri:** `category`, `region`, `source_id`, `since_hours`, `min_market_relevance`, `hide_opinion`;
-- **paginazione:** `limit`, `offset`;
-- **pesi del punteggio:** `w_authority`, `w_tech`, `w_urgency`, `w_clickbait`, con le soglie `max_clickbait`, `min_authority`.
+`/articles` accepts:
+- **search:** `q` (text), `scope` (`all` or `title`), `sort` (`relevance`, `score`, `recent`);
+- **filters:** `category`, `region`, `source_id`, `since_hours`, `min_market_relevance`, `hide_opinion`;
+- **pagination:** `limit`, `offset`;
+- **score weights:** `w_authority`, `w_tech`, `w_urgency`, `w_clickbait`, with the thresholds `max_clickbait`, `min_authority`.
 
-Con `q` ogni notizia ha anche `title_highlight` e `snippet`, con le parole trovate racchiuse
-tra i caratteri `\u0002` e `\u0003`.
+With `q` each news item also has `title_highlight` and `snippet`, with the words found wrapped
+in the characters `\u0002` and `\u0003`.
 
 ```bash
 curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&min_market_relevance=0.5"
 ```
 
-### Fonti
+### Sources
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |---|---|---|
-| GET | `/sources` | Fonti con stato dell'ultimo aggiornamento e numero di notizie |
-| POST | `/sources` | Aggiunge una fonte `{name, url, category_hint, active}` (admin) |
-| PATCH | `/sources/{id}` | Modifica nome, indirizzo, argomento o attivazione (admin) |
-| DELETE | `/sources/{id}` | Elimina la fonte; se ha notizie serve `delete_articles=true` (admin) |
-| POST | `/sources/{id}/fetch` | Scarica subito le notizie di questa fonte (admin) |
-| POST | `/sources/test` | Prova un feed senza salvarlo: titolo, numero di notizie, esempi (admin) |
-| GET | `/sources/catalog` | Fonti consigliate da `feeds.yaml`, con quelle già aggiunte |
-| POST | `/sources/catalog` | Aggiunge fonti dal catalogo `{urls: [...]}` (admin) |
+| GET | `/sources` | Sources with the status of the latest update and number of news items |
+| POST | `/sources` | Adds a source `{name, url, category_hint, active}` (admin) |
+| PATCH | `/sources/{id}` | Changes name, address, topic or activation (admin) |
+| DELETE | `/sources/{id}` | Deletes the source; if it has news `delete_articles=true` is needed (admin) |
+| POST | `/sources/{id}/fetch` | Fetches this source's news right away (admin) |
+| POST | `/sources/test` | Tests a feed without saving it: title, number of news items, samples (admin) |
+| GET | `/sources/catalog` | Recommended sources from `feeds.yaml`, marking those already added (description in the request language) |
+| POST | `/sources/catalog` | Adds sources from the catalogue `{urls: [...]}` (admin) |
 
-### Mercati e previsioni
+### Markets and forecasts
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |---|---|---|
-| POST | `/markets/sync` | Sync mercati + collegamento notizie (+ previsioni se `PREDICTION_AUTO`) |
-| GET | `/markets` | Mercati con ultima previsione. Filtri: `q`, `only_linked`, `include_closed`. Ordinamento: `sort` = `volume`, `end_date`, `price`, `signal` (ultima previsione), `edge`, `news`, `liquidity`, `question`; `order` = `asc`/`desc` (default sensato per ogni campo, valori mancanti sempre in fondo) |
-| GET | `/markets/{id}` | Notizie collegate (rilevanza e impatto) e storico previsioni |
-| POST | `/markets/{id}/predict` | Previsione Jev immediata (aggiorna prima il prezzo) |
-| POST | `/markets/{id}/search-news` | Ricerca mirata su Google News per questo mercato; restituisce `{query, added, linked}` (admin) |
-| POST | `/markets/predict-all` | Avvia in background la previsione Jev su tutti i mercati aperti con notizie recenti. `only_new=true`: solo mai valutati o con notizie nuove; `refresh_first=false`: salta l'aggiornamento dei prezzi. `409` se è già in corso (admin) |
-| GET | `/markets/predict-all` | Avanzamento (`total`, `done`, `skipped`, `failed`, `current`, `message`) e mercati valutabili `eligible: {all, new}` (admin) |
-| POST | `/markets/predict-all/stop` | Interrompe dopo il mercato in corso (admin) |
-| GET | `/predictions/opportunities` | Mercati con edge maggiore. Filtri: `min_edge`, `min_evidence`, `include_hold` |
-| GET | `/predictions/calibration` | Brier score sui mercati risolti |
-| GET | `/status` | Configurazione (Jev attivo, soglie) e contatori per la dashboard |
-| GET | `/markets/{id}/economics` | Valutazione economica dal vivo dell'ultima previsione e piano (`strategy`: azione, ordini, prezzi, motivi; `preset` opzionale) |
-| POST | `/markets/{id}/paper-bet` | Aggiunge subito la scommessa simulata, se conviene (admin) |
+| POST | `/markets/sync` | Market sync + news linking (+ forecasts if `PREDICTION_AUTO`) |
+| GET | `/markets` | Markets with their latest forecast. Filters: `q`, `only_linked`, `include_closed`. Sorting: `sort` = `volume`, `end_date`, `price`, `signal` (latest forecast), `edge`, `news`, `liquidity`, `question`; `order` = `asc`/`desc` (a sensible default for each field, missing values always last) |
+| GET | `/markets/{id}` | Linked news (relevance and impact) and forecast history |
+| POST | `/markets/{id}/predict` | Immediate Jev forecast (refreshes the price first) |
+| POST | `/markets/{id}/search-news` | Targeted Google News search for this market; returns `{query, added, linked}` (admin) |
+| POST | `/markets/predict-all` | Starts in the background the Jev forecast on every open market with recent news. `only_new=true`: only never assessed or with new news; `refresh_first=false`: skips the price update. `409` if already running (admin) |
+| GET | `/markets/predict-all` | Progress (`total`, `done`, `skipped`, `failed`, `current`, `message`) and assessable markets `eligible: {all, new}` (admin) |
+| POST | `/markets/predict-all/stop` | Stops after the current market (admin) |
+| GET | `/predictions/opportunities` | Markets with the highest edge. Filters: `min_edge`, `min_evidence`, `include_hold` |
+| GET | `/predictions/calibration` | Brier score on resolved markets |
+| GET | `/status` | Configuration (Jev on, thresholds) and counters for the dashboard |
+| GET | `/markets/{id}/economics` | Live economic assessment of the latest forecast and plan (`strategy`: action, orders, prices, reasons; optional `preset`) |
+| POST | `/markets/{id}/paper-bet` | Adds the simulated bet right away, if it is worth it (admin) |
 
-### Portafoglio simulato
+### Simulated portfolio
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |---|---|---|
-| GET | `/portfolio` | Riepilogo, curva del capitale, preset disponibili |
+| GET | `/portfolio` | Summary, capital curve, available presets |
 | PUT | `/portfolio/settings` | `{preset, auto_paper, auto_sell}` (admin) |
-| POST | `/portfolio/reset` | `{bankroll, preset}`: cancella le scommesse simulate e ricomincia (admin) |
-| GET | `/portfolio/bets` | Scommesse: `status` = `open`, `settled`, `excluded`, `all`; quelle aperte hanno il piano d'uscita (`plan`) |
-| POST | `/portfolio/bets/{id}/exclude` · `/include` | Esclude o riammette una scommessa (admin) |
-| POST | `/portfolio/bets/{id}/sell` | Vende subito una scommessa aperta sul book (admin) |
-| GET · POST | `/portfolio/exclusions` | Esclusioni `{kind: market/event/category, value, label}` (POST admin) |
-| DELETE | `/portfolio/exclusions/{id}` | Rimuove un'esclusione (admin) |
+| POST | `/portfolio/reset` | `{bankroll, preset}`: deletes the simulated bets and starts over (admin) |
+| GET | `/portfolio/bets` | Bets: `status` = `open`, `settled`, `excluded`, `all`; open ones have their exit plan (`plan`) |
+| POST | `/portfolio/bets/{id}/exclude` · `/include` | Excludes or readmits a bet (admin) |
+| POST | `/portfolio/bets/{id}/sell` | Sells an open bet on the book right away (admin) |
+| GET · POST | `/portfolio/exclusions` | Exclusions `{kind: market/event/category, value, label}` (POST admin) |
+| DELETE | `/portfolio/exclusions/{id}` | Removes an exclusion (admin) |
 
 ### Backtest
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |---|---|---|
-| GET · POST | `/backtest/runs` | Elenco dei backtest; avvio `{resolved_after, resolved_before, max_markets, min_volume, horizons, max_calls, exclude_decided, kinds}` (`kinds`: `binary` e/o `multi`) (POST admin, `409` se uno è già in corso) |
-| GET | `/backtest/runs/{id}` | Avanzamento e riepilogo (metriche, calibrazione, suggerimenti) |
-| GET | `/backtest/runs/{id}/cases` | Casi: `status` = `ok`, `skipped`, `all` |
-| POST | `/backtest/runs/{id}/stop` · DELETE `/backtest/runs/{id}` | Ferma o elimina (admin) |
-| GET · PUT | `/backtest/parameters` | `MODEL_WEIGHT_MAX`, `MIN_EDGE`, `JEV_CALIB_A`, `JEV_CALIB_B` in uso; PUT li sostituisce (admin) |
-| POST | `/backtest/parameters/reset` | Torna ai valori del `.env` (admin) |
+| GET · POST | `/backtest/runs` | List of backtests; start `{resolved_after, resolved_before, max_markets, min_volume, horizons, max_calls, exclude_decided, kinds}` (`kinds`: `binary` and/or `multi`) (POST admin, `409` if one is already running) |
+| GET | `/backtest/runs/{id}` | Progress and summary (metrics, calibration, suggestions) |
+| GET | `/backtest/runs/{id}/cases` | Cases: `status` = `ok`, `skipped`, `all` |
+| POST | `/backtest/runs/{id}/stop` · DELETE `/backtest/runs/{id}` | Stops or deletes (admin) |
+| GET · PUT | `/backtest/parameters` | `MODEL_WEIGHT_MAX`, `MIN_EDGE`, `JEV_CALIB_A`, `JEV_CALIB_B` in use; PUT overrides them (admin) |
+| POST | `/backtest/parameters/reset` | Back to the `.env` values (admin) |
 
-### Uso e costi
+### Usage and costs
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |---|---|---|
-| GET | `/usage` | Oggi rispetto ai limiti, storico per giorno, servizio e funzione (`days`, max 90), limiti e prezzi in uso |
-| PUT | `/usage/settings` | Limiti giornalieri e prezzi (admin) |
-| POST | `/usage/settings/reset` | Torna ai valori del `.env` (admin) |
+| GET | `/usage` | Today against the limits, history per day, service and feature (`days`, max 90), limits and prices in use |
+| PUT | `/usage/settings` | Daily limits and prices (admin) |
+| POST | `/usage/settings/reset` | Back to the `.env` values (admin) |
 
-### Mercati a più esiti
+### Multi-outcome markets
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |---|---|---|
-| GET | `/multi/opportunities` | Eventi con un esito sottovalutato (`min_edge`, `min_evidence`, `include_hold`), con la valutazione economica |
-| GET | `/multi` | Eventi con i primi esiti e l'ultima previsione. `q` (titolo o nome di un esito), `sort` = `volume`, `edge`, `signal`, `end_date`, `news` |
-| GET | `/multi/{id}` | Tutti gli esiti, notizie collegate, storico delle previsioni |
-| POST | `/multi/{id}/predict` | Previsione Jev della distribuzione (admin; `422` senza notizie) |
+| GET | `/multi/opportunities` | Events with an undervalued outcome (`min_edge`, `min_evidence`, `include_hold`), with the economic assessment |
+| GET | `/multi` | Events with the top outcomes and the latest forecast. `q` (title or name of an outcome), `sort` = `volume`, `edge`, `signal`, `end_date`, `news` |
+| GET | `/multi/{id}` | All outcomes, linked news, forecast history |
+| POST | `/multi/{id}/predict` | Jev forecast of the distribution (admin; `422` without news) |
 
-### Allerte
+### Alerts
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |---|---|---|
-| GET | `/alerts` | Allerte con notizia, prezzi dopo l'allerta e movimento a favore. `kind` = `opportunities` (default) o `all` |
-| GET | `/alerts/summary` | Risultati degli ultimi `days` giorni: movimento medio e quota a favore per ogni intervallo, esito dei mercati risolti |
-| GET · PUT | `/alerts/settings` | Impostazioni (PUT admin) |
-| POST | `/alerts/test-telegram` | Invia un messaggio di prova (admin) |
-| POST | `/alerts/run` | Controlla subito le notizie nuove (admin) |
+| GET | `/alerts` | Alerts with the news, the prices after the alert and the favourable move. `kind` = `opportunities` (default) or `all` |
+| GET | `/alerts/summary` | Results of the last `days` days: average move and favourable share for each interval, outcome of the resolved markets |
+| GET · PUT | `/alerts/settings` | Settings (PUT admin) |
+| POST | `/alerts/test-telegram` | Sends a test message (admin) |
+| POST | `/alerts/run` | Checks the new news right away (admin) |
 
-Codici di errore di `/markets/{id}/predict`: `503` chiave TypeSafe mancante, `422` nessuna
-notizia collegata, `409` mercato chiuso o senza prezzo, `404` mercato sconosciuto.
+Error codes of `/markets/{id}/predict`: `503` TypeSafe key missing, `422` no linked news,
+`409` market closed or without a price, `404` unknown market.
 
-Esempio di risposta di `/predictions/opportunities` (valori illustrativi):
+Example answer of `/predictions/opportunities` (illustrative values):
 
 ```json
 [

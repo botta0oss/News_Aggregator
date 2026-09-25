@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.db.models import AppSetting
+from backend.i18n import tr
 
 ALLOWED = {
     "MODEL_WEIGHT_MAX": (0.0, 1.0),
@@ -46,11 +47,11 @@ async def load(db: AsyncSession) -> None:
 async def set_values(db: AsyncSession, values: dict, note: str | None = None) -> dict:
     for key, value in values.items():
         if key not in ALLOWED:
-            raise ValueError(f"{key} non si può modificare dalla dashboard")
+            raise ValueError(tr(f"{key} non si può modificare dalla dashboard", f"{key} cannot be changed from the dashboard"))
         lo, hi = ALLOWED[key]
         value = float(value)
         if not lo <= value <= hi:
-            raise ValueError(f"{key} deve essere tra {lo} e {hi}")
+            raise ValueError(tr(f"{key} deve essere tra {lo} e {hi}", f"{key} must be between {lo} and {hi}"))
         row = await db.get(AppSetting, key)
         if row is None:
             row = AppSetting(key=key, value=value)

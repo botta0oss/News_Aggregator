@@ -9,6 +9,7 @@ from backend.auth.deps import require_admin
 from backend.db.database import get_db
 from backend.db.models import Article, ProcessedArticle, Source
 from backend.ingestor import fetcher
+from backend.i18n import lang, tr
 from backend.ingestor.sources import (
     CATEGORIES, get_by_url, load_catalog, normalize_feed_url, validate_category, validate_name,
 )
@@ -94,7 +95,7 @@ async def _stats(db: AsyncSession, ids: list) -> dict:
 async def _get(db: AsyncSession, source_id: uuid.UUID) -> Source:
     source = await db.get(Source, source_id)
     if source is None or source.kind != "feed":  # the targeted-search source is managed automatically
-        raise HTTPException(status_code=404, detail="Fonte non trovata")
+        raise HTTPException(status_code=404, detail=tr("Fonte non trovata", "Source not found"))
     return source
 
 
@@ -113,7 +114,9 @@ async def list_sources(db: AsyncSession = Depends(get_db)):
 async def catalog(db: AsyncSession = Depends(get_db)):
     """Recommended feeds from feeds.yaml, marking those already added."""
     existing = set((await db.execute(select(Source.url))).scalars().all())
-    return [{**{k: f[k] for k in ("name", "url", "category_hint", "description")}, "added": f["url"] in existing}
+    return [{**{k: f[k] for k in ("name", "url", "category_hint")},
+             "description": (f.get("description_it") if lang() == "it" else None) or f["description"],
+             "added": f["url"] in existing}
             for f in load_catalog()]
 
 
@@ -129,7 +132,7 @@ async def add_from_catalog(body: CatalogAddIn, db: AsyncSession = Depends(get_db
     for url in dict.fromkeys(body.urls):
         feed = by_url.get(url)
         if feed is None:
-            raise HTTPException(status_code=422, detail=f"{url} non è nel catalogo")
+            raise HTTPException(status_code=422, detail=tr(f"{url} non è nel catalogo", f"{url} is not in the catalogue"))
         if await get_by_url(db, url):
             continue
         source = Source(name=feed["name"], url=url, category_hint=feed["category_hint"], active=True)
@@ -149,7 +152,7 @@ async def test_feed(body: FeedTestIn):
     except fetcher.FeedError as e:
         return {"ok": False, "error": str(e)}
     if not result.entries:
-        return {"ok": False, "title": result.title, "error": "Il feed è valido ma non contiene notizie"}
+        return {"ok": False, "title": result.title, "error": tr("Il feed è valido ma non contiene notizie", "The feed is valid but contains no news")}
     return {"ok": True, "title": result.title, "item_count": len(result.entries),
             "samples": [e["title"] for e in result.entries[:3]]}
 
@@ -163,7 +166,7 @@ async def create_source(body: SourceIn, db: AsyncSession = Depends(get_db)):
     except ValueError as e:
         raise _bad_request(e)
     if await get_by_url(db, url):
-        raise HTTPException(status_code=409, detail="Questa fonte è già presente")
+        raise HTTPException(status_code=409, detail=tr("Questa fonte è già presente", "This source is already there"))
     source = Source(name=name, url=url, category_hint=category, active=body.active)
     db.add(source)
     await db.commit()
@@ -181,7 +184,7 @@ async def update_source(source_id: uuid.UUID, body: SourcePatch, db: AsyncSessio
             url = normalize_feed_url(fields["url"])
             other = await get_by_url(db, url)
             if other is not None and other.id != source.id:
-                raise HTTPException(status_code=409, detail="Un'altra fonte usa già questo indirizzo")
+                raise HTTPException(status_code=409, detail=tr("Un'altra fonte usa già questo indirizzo", "Another source already uses this address"))
             if url != source.url:
                 source.url = url
                 source.last_status = source.last_error = source.last_fetched_at = source.last_new_items = None
@@ -202,7 +205,8 @@ async def delete_source(source_id: uuid.UUID, delete_articles: bool = Query(Fals
     source = await _get(db, source_id)
     count = (await db.execute(select(func.count(Article.id)).where(Article.source_id == source_id))).scalar() or 0
     if count and not delete_articles:
-        raise HTTPException(status_code=409, detail=f"La fonte ha {count} notizie: conferma per eliminarle insieme alla fonte, oppure disattivala.")
+        raise HTTPException(status_code=409, detail=tr(f"La fonte ha {count} notizie: conferma per eliminarle insieme alla fonte, oppure disattivala.",
+                                                      f"The source has {count} news items: confirm to delete them together with the source, or deactivate it."))
     if count:
         article_ids = select(Article.id).where(Article.source_id == source_id)
         await db.execute(delete(ProcessedArticle).where(ProcessedArticle.article_id.in_(article_ids)))

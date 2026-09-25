@@ -35,6 +35,7 @@ from backend.ai.typesafe_evaluator import _heuristic_evaluation
 from backend.backtest.analysis import summarize
 from backend.betting.fees import category_rate
 from backend.betting.economics import Exposure, estimated_quote, evaluate
+from backend.i18n import tr
 from backend.betting.profiles import get_profile
 from backend.config import settings
 from backend.db.database import SessionLocal
@@ -72,20 +73,20 @@ class Params:
     def validate(self) -> "Params":
         self.kinds = [k for k in dict.fromkeys(self.kinds) if k in ("binary", "multi")]
         if not self.kinds:
-            raise ValueError("Scegli almeno un tipo di mercato")
+            raise ValueError(tr("Scegli almeno un tipo di mercato", "Choose at least one market type"))
         if self.news_source not in NEWS_SOURCES:
-            raise ValueError("Fonte delle notizie non valida")
+            raise ValueError(tr("Fonte delle notizie non valida", "Invalid news source"))
         if self.resolved_after >= self.resolved_before:
-            raise ValueError("La data di inizio deve essere prima della data di fine")
+            raise ValueError(tr("La data di inizio deve essere prima della data di fine", "The start date must be before the end date"))
         if self.resolved_before > datetime.now(timezone.utc) + timedelta(days=1):
-            raise ValueError("La data di fine non può essere nel futuro")
+            raise ValueError(tr("La data di fine non può essere nel futuro", "The end date cannot be in the future"))
         if not 1 <= self.max_markets <= 300:
-            raise ValueError("Il numero di mercati deve essere tra 1 e 300")
+            raise ValueError(tr("Il numero di mercati deve essere tra 1 e 300", "The number of markets must be between 1 and 300"))
         if not 0 < self.max_calls <= 1000:
-            raise ValueError("Il limite di chiamate deve essere tra 1 e 1000")
+            raise ValueError(tr("Il limite di chiamate deve essere tra 1 e 1000", "The call limit must be between 1 and 1000"))
         self.horizons = sorted({int(h) for h in self.horizons})
         if not self.horizons or any(h < 1 or h > 180 for h in self.horizons):
-            raise ValueError("Gli orizzonti vanno da 1 a 180 giorni")
+            raise ValueError(tr("Gli orizzonti vanno da 1 a 180 giorni", "Horizons go from 1 to 180 days"))
         return self
 
     def as_json(self) -> dict:
@@ -107,12 +108,12 @@ def is_running() -> bool:
 async def start(params: Params) -> BacktestRun:
     global _task, _cancel, _run_id
     if is_running():
-        raise RuntimeError("Un backtest è già in corso")
+        raise RuntimeError(tr("Un backtest è già in corso", "A backtest is already running"))
     if not jev.is_enabled():
-        raise jev.JevUnavailableError("TYPESAFE_API_KEY non è configurata")
+        raise jev.JevUnavailableError(tr("TYPESAFE_API_KEY non è configurata", "TYPESAFE_API_KEY is not configured"))
     params.validate()
     async with SessionLocal() as db:
-        run = BacktestRun(params=params.as_json(), status="running", message="Ricerca dei mercati risolti…")
+        run = BacktestRun(params=params.as_json(), status="running", message=tr("Ricerca dei mercati risolti…", "Looking for resolved markets…"))
         db.add(run)
         await db.commit()
         await db.refresh(run)
@@ -138,7 +139,7 @@ async def recover_interrupted() -> None:
     """A restart kills the task: mark runs left 'running' as stopped."""
     async with SessionLocal() as db:
         for run in (await db.execute(select(BacktestRun).where(BacktestRun.status == "running"))).scalars().all():
-            run.status, run.message = "stopped", "Interrotto dal riavvio del server"
+            run.status, run.message = "stopped", tr("Interrotto dal riavvio del server", "Stopped by the server restart")
             run.finished_at = datetime.now(timezone.utc)
         await db.commit()
 
@@ -326,7 +327,7 @@ async def _run_tagged(run_id, params: Params) -> None:
             events = await polymarket.fetch_resolved_events(params.resolved_after, params.resolved_before,
                                                             limit=params.max_markets, min_volume=params.min_volume)
             plan += [("multi", e, h, a) for e, h, a in plan_event_cases(events, params.horizons)]
-        await _update(run_id, total=len(plan), message=None if plan else "Nessun mercato risolto con questi filtri")
+        await _update(run_id, total=len(plan), message=None if plan else tr("Nessun mercato risolto con questi filtri", "No resolved market with these filters"))
         done = skipped = failed = calls = consecutive = 0
         histories: dict = {}
         for kind, item, horizon, as_of in plan:
@@ -334,7 +335,7 @@ async def _run_tagged(run_id, params: Params) -> None:
                 status, message = "stopped", "Interrotto"
                 break
             if calls >= params.max_calls:
-                status, message = "done", f"Raggiunto il limite di {params.max_calls} chiamate a Jev"
+                status, message = "done", tr(f"Raggiunto il limite di {params.max_calls} chiamate a Jev", f"Reached the limit of {params.max_calls} Jev calls")
                 break
             title = item.question if kind == "binary" else item.title
             case = BacktestCase(run_id=run_id, kind=kind, market_id=item.id, question=title, url=item.url,
@@ -350,7 +351,7 @@ async def _run_tagged(run_id, params: Params) -> None:
                 break
             except RateLimited as e:
                 status = "stopped"
-                message = f"Fermato: {e}" if isinstance(e, BudgetExceeded) else "Fermato: Jev continua a rifiutare le richieste per limite di frequenza"
+                message = tr(f"Fermato: {e}", f"Stopped: {e}") if isinstance(e, BudgetExceeded) else tr("Fermato: Jev continua a rifiutare le richieste per limite di frequenza", "Stopped: Jev keeps refusing requests because of the rate limit")
                 break
             except Exception as e:
                 logger.warning(f"Backtest case {item.id} ({horizon} gg) failed: {e}")
@@ -364,7 +365,7 @@ async def _run_tagged(run_id, params: Params) -> None:
             failed += case.status == "error"
             await _update(run_id, done=done, skipped=skipped, failed=failed)
             if consecutive >= MAX_CONSECUTIVE_FAILURES:
-                status, message = "failed", "Fermato dopo errori ripetuti: controlla la connessione a Polymarket, Google News e TypeSafe"
+                status, message = "failed", tr("Fermato dopo errori ripetuti: controlla la connessione a Polymarket, Google News e TypeSafe", "Stopped after repeated errors: check the connection to Polymarket, Google News and TypeSafe")
                 break
     except Exception as e:
         logger.exception("Backtest failed")
@@ -388,17 +389,17 @@ async def _eval_binary(case, market, as_of, params, histories, preset) -> bool:
             market.yes_token_id, as_of - timedelta(days=max(params.horizons) + 2), market.end_date)
     price = polymarket.price_at(histories[market.id], as_of)
     if price is None:
-        case.status, case.note = "skipped", "Prezzo storico non disponibile"
+        case.status, case.note = "skipped", tr("Prezzo storico non disponibile", "Historical price not available")
         return False
     case.price = price
     if params.exclude_decided and not DECIDED_BELOW <= price <= DECIDED_ABOVE:
-        case.status, case.note = "skipped", "Esito già scontato dal prezzo"
+        case.status, case.note = "skipped", tr("Esito già scontato dal prezzo", "Outcome already priced in")
         return False
     evidence, source = await past_evidence(market.question, as_of, params.news_source)
     case.details = {"news_source": source}
     case.news_count = len(evidence)
     if not evidence:
-        case.status, case.note = "skipped", "Nessuna notizia di quei giorni"
+        case.status, case.note = "skipped", tr("Nessuna notizia di quei giorni", "No news from those days")
         return False
     ns_market = SimpleNamespace(question=market.question, description=market.description, end_date=market.end_date)
     state, questions = build_jev_request(ns_market, evidence, now=as_of)
@@ -455,7 +456,7 @@ async def _eval_multi(case, event, as_of, params, histories, preset) -> bool:
         if p is not None:
             priced.append(SimpleNamespace(id=o.id, label=o.group_title, yes_price=p, closed=False))
     if len(priced) < 3:
-        case.status, case.note = "skipped", "Prezzo storico non disponibile"
+        case.status, case.note = "skipped", tr("Prezzo storico non disponibile", "Historical price not available")
         return False
     priced.sort(key=lambda o: -o.yes_price)
     items = multi.market_distribution(priced, settings.MULTI_MAX_OUTCOMES)
@@ -464,13 +465,13 @@ async def _eval_multi(case, event, as_of, params, histories, preset) -> bool:
     # The winner may be outside the outcomes shown to Jev: then "other outcomes" won
     winner = event.winner_id if event.winner_id in listed else multi.OTHER_ID
     if winner == multi.OTHER_ID and not has_other:
-        case.status, case.note = "skipped", "Il vincitore non ha uno storico dei prezzi"
+        case.status, case.note = "skipped", tr("Il vincitore non ha uno storico dei prezzi", "The winner has no price history")
         return False
     evidence, source = await past_evidence(event.title, as_of, params.news_source,
                                            labels=[i["label"] for i in items if i["id"] != multi.OTHER_ID])
     case.news_count = len(evidence)
     if not evidence:
-        case.status, case.note = "skipped", "Nessuna notizia di quei giorni"
+        case.status, case.note = "skipped", tr("Nessuna notizia di quei giorni", "No news from those days")
         return False
     ns_event = SimpleNamespace(title=event.title, description=event.description, end_date=event.end_date)
     state, questions, keys = multi.build_request(ns_event, items, evidence, now=as_of)

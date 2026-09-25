@@ -1,6 +1,6 @@
 # Allerte notizie–prezzo
 
-<sub>[← Torna al README](../README.md) · [Tutta la documentazione](README.md)</sub>
+<sub>[← Torna al README](../../README.it.md) · [Tutta la documentazione](README.md) · [English](../alerts.md)</sub>
 
 Notifiche Telegram quando una notizia fresca muove la stima prima del prezzo.
 
@@ -29,6 +29,7 @@ ultime 3 ore, vengono saltati.
    le regole del portafoglio.
 4. Se conviene arriva un messaggio Telegram con la notizia, il prezzo, la stima, l'edge, la
    puntata e il prezzo massimo. Nelle ore silenziose il messaggio arriva senza suono.
+   I messaggi sono scritti in `APP_LANGUAGE` (inglese di default, `it` per l'italiano).
 5. Ogni `ALERT_FOLLOWUP_MINUTES` minuti viene registrato il prezzo 15 minuti, 1, 6 e 24 ore
    dopo l'allerta.
 

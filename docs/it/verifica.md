@@ -1,6 +1,6 @@
 # Verificare i risultati: backtest e calibrazione
 
-<sub>[← Torna al README](../README.md) · [Tutta la documentazione](README.md)</sub>
+<sub>[← Torna al README](../../README.it.md) · [Tutta la documentazione](README.md) · [English](../verification.md)</sub>
 
 Quanto fidarsi delle previsioni, sul passato e sui mercati che si risolvono.
 

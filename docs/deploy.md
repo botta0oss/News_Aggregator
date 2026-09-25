@@ -1,154 +1,153 @@
 # Deploy
 
-<sub>[← Torna al README](../README.md) · [Tutta la documentazione](README.md)</sub>
+<sub>[← Back to the README](../README.md) · [All documentation](README.md) · [Italiano](it/deploy.md)</sub>
 
-Immagini Docker per CPU e GPU, uso in locale e nella rete di casa, messa online su un VPS
-con Cloudflare Tunnel.
+Docker images for CPU and GPU, local and home-network use, going online on a VPS with
+Cloudflare Tunnel.
 
-## Immagini Docker: CPU o GPU
+## Docker images: CPU or GPU
 
-Ci sono due immagini:
+There are two images:
 
-| File | Per | Note |
+| File | For | Notes |
 |---|---|---|
-| `Dockerfile` (predefinito) | Server, VPS, macchine ARM, PC senza GPU NVIDIA | PyTorch solo CPU: immagine molto più piccola e build più veloce |
-| `Dockerfile.cuda` | PC con GPU NVIDIA | PyTorch con CUDA; gli embedding vengono calcolati sulla GPU |
+| `Dockerfile` (default) | Servers, VPSs, ARM machines, PCs without an NVIDIA GPU | CPU-only PyTorch: a much smaller image and a faster build |
+| `Dockerfile.cuda` | PCs with an NVIDIA GPU | PyTorch with CUDA; embeddings are computed on the GPU |
 
-Per usare la GPU (serve il driver NVIDIA e l'[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) sull'host, solo x86_64):
+To use the GPU (you need the NVIDIA driver and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) on the host, x86_64 only):
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
 
-Nel log all'avvio, `Embedding model ... on cuda:0` conferma che la GPU è in uso (`on cpu`
-altrimenti). Le due immagini hanno nomi diversi (`news-aggregator-api:cpu` e `:cuda`), quindi
-si può passare dall'una all'altra senza ricostruire ogni volta. Per un server la GPU non serve:
-il modello è piccolo e gli articoli arrivano a gruppi.
+In the startup log, `Embedding model ... on cuda:0` confirms the GPU is in use (`on cpu`
+otherwise). The two images have different names (`news-aggregator-api:cpu` and `:cuda`), so you
+can switch between them without rebuilding every time. A server does not need the GPU: the
+model is small and articles arrive in batches.
 
-## Uso in locale e nella rete di casa
+## Local use and home network
 
-Per usarla sul proprio computer non servono tunnel né altro: `tunnel` e `backup` sono
-servizi opzionali, attivi solo se elencati in `COMPOSE_PROFILES`. Senza, il compose avvia
-solo il database e l'app.
+To use it on your own computer you need no tunnel or anything else: `tunnel` and `backup` are
+optional services, active only when listed in `COMPOSE_PROFILES`. Without them, compose starts
+only the database and the app.
 
 ```bash
-cp .env.example .env      # TYPESAFE_API_KEY, POSTGRES_PASSWORD e le altre chiavi
+cp .env.example .env      # TYPESAFE_API_KEY, POSTGRES_PASSWORD and the other keys
 docker compose up -d --build
-docker compose exec api python -m backend.auth.cli create-user tuonome --role admin
+docker compose exec api python -m backend.auth.cli create-user yourname --role admin
 ```
 
-La dashboard è su **http://localhost:8000**. Il login funziona anche in HTTP: con
-`SESSION_COOKIE_SECURE=auto` il cookie di sessione non chiede HTTPS quando l'indirizzo è
-`localhost` (o `127.0.0.1`). Per il backup giornaliero anche in locale:
-`COMPOSE_PROFILES=backup`.
+The dashboard is on **http://localhost:8000**. Sign-in works over HTTP too: with
+`SESSION_COOKIE_SECURE=auto` the session cookie does not require HTTPS when the address is
+`localhost` (or `127.0.0.1`). For the daily backup locally too: `COMPOSE_PROFILES=backup`.
 
-**Da un altro dispositivo di casa** (telefono, tablet, un altro PC), per esempio su
-`http://192.168.1.10:8000`, servono due impostazioni in `.env`:
+**From another device at home** (phone, tablet, another PC), for example on
+`http://192.168.1.10:8000`, you need two settings in `.env`:
 
-| Variabile | Valore | Perché |
+| Variable | Value | Why |
 |---|---|---|
-| `API_BIND` | `0.0.0.0` | Di base la porta 8000 risponde solo alla macchina su cui gira l'app |
-| `SESSION_COOKIE_SECURE` | `false` | Con un indirizzo diverso da `localhost`, `auto` marca il cookie come `Secure`: in HTTP il browser non lo salva e l'accesso non riesce: la pagina di login lo segnala e indica questa impostazione |
+| `API_BIND` | `0.0.0.0` | By default port 8000 only answers the machine the app runs on |
+| `SESSION_COOKIE_SECURE` | `false` | With an address other than `localhost`, `auto` marks the cookie as `Secure`: over HTTP the browser does not save it and sign-in fails; the sign-in page says so and points to this setting |
 
-Poi `docker compose up -d` per applicarle. L'indirizzo del computer si trova con
-`ip addr` (Linux), `ipconfig` (Windows) o nelle impostazioni di rete (macOS); se non
-risponde, controlla che il firewall del computer lasci passare la porta 8000.
+Then `docker compose up -d` to apply them. You find the computer's address with `ip addr`
+(Linux), `ipconfig` (Windows) or in the network settings (macOS); if it does not answer, check
+that the computer's firewall lets port 8000 through.
 
 > [!WARNING]
-> Senza HTTPS password e sessione viaggiano in chiaro: va bene solo su una rete di casa
-> fidata, mai su una rete pubblica. Per accedere da fuori usa
-> [Cloudflare Tunnel](#deploy-su-un-vps-con-cloudflare-tunnel): funziona anche con l'app
-> sul computer di casa, e in quel caso rimetti `SESSION_COOKIE_SECURE=auto` e
-> `API_BIND=127.0.0.1`.
+> Without HTTPS the password and the session travel in clear text: fine only on a trusted home
+> network, never on a public one. To get in from outside use
+> [Cloudflare Tunnel](#deploy-on-a-vps-with-cloudflare-tunnel): it also works with the app on
+> your home computer, and in that case set `SESSION_COOKIE_SECURE=auto` and
+> `API_BIND=127.0.0.1` again.
 
-## Deploy su un VPS con Cloudflare Tunnel
+## Deploy on a VPS with Cloudflare Tunnel
 
-Il modo più economico per tenerla online: un piccolo VPS (per esempio OVH VPS-1 o Hetzner:
-2 vCore, 4 GB di RAM bastano) con Docker, e **Cloudflare Tunnel** per l'HTTPS. Il tunnel
-esce dal server verso Cloudflare: nessuna porta da aprire, nessun certificato da gestire,
-l'indirizzo IP del server resta nascosto. Serve un dominio gestito da Cloudflare (piano
-gratuito); il tunnel è gratuito.
+The cheapest way to keep it online: a small VPS (for example OVH VPS-1 or Hetzner: 2 vCores,
+4 GB of RAM are enough) with Docker, and **Cloudflare Tunnel** for HTTPS. The tunnel goes out
+from the server to Cloudflare: no ports to open, no certificates to manage, the server's IP
+address stays hidden. You need a domain managed by Cloudflare (free plan); the tunnel is free.
 
 ```mermaid
 flowchart LR
     U[Browser] -- HTTPS --> CF[Cloudflare]
-    CF -- tunnel in uscita --> T[cloudflared]
+    CF -- outbound tunnel --> T[cloudflared]
     subgraph VPS
       T --> A[api :8000]
       A --> D[(Postgres)]
-      B[backup giornaliero] --> D
+      B[daily backup] --> D
     end
 ```
 
-**1. Il server.** Ubuntu 24.04, accesso SSH con chiave. Firewall con la sola porta SSH aperta:
+**1. The server.** Ubuntu 24.04, SSH access with a key. A firewall with only the SSH port open:
 
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo ufw allow OpenSSH && sudo ufw enable
 ```
 
-La porta 8000 dell'app ascolta solo su `127.0.0.1` (`API_BIND`): Docker aggira `ufw` per le
-porte pubblicate, per questo non viene pubblicata sulla rete.
+The app's port 8000 only listens on `127.0.0.1` (`API_BIND`): Docker bypasses `ufw` for
+published ports, which is why it is not published on the network.
 
-**2. Docker e il codice.**
+**2. Docker and the code.**
 
 ```bash
 curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER      # poi esci e rientra
+sudo usermod -aG docker $USER      # then log out and back in
 git clone https://github.com/botta0oss/News_Aggregator.git && cd News_Aggregator
 cp .env.example .env
 ```
 
-**3. Il tunnel.** Nella dashboard di Cloudflare: *Zero Trust → Networks → Tunnels → Create a
-tunnel → Cloudflared*, dagli un nome e copia il **token** (la lunga stringa dopo `--token` nel
-comando di installazione proposto: non serve eseguirlo, `cloudflared` gira già nel compose).
-Poi aggiungi un *Public hostname*: sottodominio a scelta (es. `news.tuodominio.it`), tipo
-**HTTP**, URL **`api:8000`**.
+**3. The tunnel.** In the Cloudflare dashboard: *Zero Trust → Networks → Tunnels → Create a
+tunnel → Cloudflared*, give it a name and copy the **token** (the long string after `--token`
+in the suggested install command: you do not need to run it, `cloudflared` already runs in
+compose). Then add a *Public hostname*: a subdomain of your choice (e.g. `news.yourdomain.com`),
+type **HTTP**, URL **`api:8000`**.
 
-**4. Il file `.env`.** Oltre alle chiavi delle API:
+**4. The `.env` file.** Besides the API keys:
 
-| Variabile | Valore |
+| Variable | Value |
 |---|---|
-| `POSTGRES_PASSWORD` | Una password casuale, prima del primo avvio: `openssl rand -hex 24` |
+| `POSTGRES_PASSWORD` | A random password, before the first start: `openssl rand -hex 24` |
 | `COMPOSE_PROFILES` | `tunnel,backup` |
-| `CLOUDFLARE_TUNNEL_TOKEN` | Il token del passo 3 |
-| `CLIENT_IP_HEADER` | `CF-Connecting-IP` (IP reale dei visitatori per i limiti di accesso) |
-| `PUBLIC_URL` | `https://news.tuodominio.it` (link nelle notifiche Telegram) |
+| `CLOUDFLARE_TUNNEL_TOKEN` | The token from step 3 |
+| `CLIENT_IP_HEADER` | `CF-Connecting-IP` (visitors' real IP for the sign-in limits) |
+| `PUBLIC_URL` | `https://news.yourdomain.com` (links in the Telegram notifications) |
 | `API_DOCS_ENABLED` | `false` |
-| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Il primo amministratore; dopo il primo avvio togli la password dal file |
-| `DAILY_JEV_CALL_LIMIT`, `DAILY_AI_BUDGET_USD` | Un tetto alla spesa per le chiamate a pagamento |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | The first administrator; after the first start remove the password from the file |
+| `DAILY_JEV_CALL_LIMIT`, `DAILY_AI_BUDGET_USD` | A cap on the spend for paid calls |
+| `APP_LANGUAGE` | `en` or `it`: language of Telegram alerts and news summaries |
 
-**5. Avvio.**
+**5. Start.**
 
 ```bash
-docker compose up -d --build        # la prima build scarica il modello: qualche minuto
-docker compose logs -f api tunnel   # attendi "Application startup complete" e "Registered tunnel connection"
+docker compose up -d --build        # the first build downloads the model: a few minutes
+docker compose logs -f api tunnel   # wait for "Application startup complete" and "Registered tunnel connection"
 ```
 
-La dashboard è su `https://news.tuodominio.it`. Per un livello di protezione in più, *Zero Trust
-→ Access* può chiedere un codice via email prima ancora della pagina di login (gratuito fino a
-50 utenti).
+The dashboard is on `https://news.yourdomain.com`. For an extra layer of protection,
+*Zero Trust → Access* can ask for an email code even before the sign-in page (free up to 50
+users).
 
-**Aggiornare** all'ultima versione (dati e backup restano):
+**Update** to the latest version (data and backups stay):
 
 ```bash
 ./scripts/update.sh
 ```
 
-**Backup.** Con il profilo `backup` ogni giorno viene salvato un dump in `./backups`, tenuto per
-`BACKUP_KEEP_DAYS` giorni. È sullo stesso disco del database: copialo anche fuori dal server
-(per esempio con `rclone` su Cloudflare R2, o scaricandolo con `scp`), oppure attiva i backup
-del VPS offerti dal provider. Per ripristinarne uno:
+**Backups.** With the `backup` profile a dump is saved every day in `./backups`, kept for
+`BACKUP_KEEP_DAYS` days. It is on the same disk as the database: copy it off the server too
+(for example with `rclone` to Cloudflare R2, or downloading it with `scp`), or turn on the VPS
+backups offered by the provider. To restore one:
 
 ```bash
 docker compose stop api
-docker compose exec -T db pg_restore -U postgres -d postgres --clean --if-exists < backups/newsagg-AAAAMMGG-HHMM.dump
+docker compose exec -T db pg_restore -U postgres -d postgres --clean --if-exists < backups/newsagg-YYYYMMDD-HHMM.dump
 docker compose start api
 ```
 
-**Se qualcosa non va.**
-- *Errore 502 o 1033 da Cloudflare*: l'app non risponde ancora (al primo avvio carica il
-  modello) o il tunnel non è connesso: `docker compose logs api tunnel`.
-- *Il tunnel non si connette*: token sbagliato, o nel *Public hostname* l'URL non è `api:8000`.
-- *Password del database cambiata dopo il primo avvio*: il database tiene quella vecchia.
-  Aggiornala anche lì: `docker compose exec db psql -U postgres -c "ALTER USER postgres PASSWORD 'nuova'"`.
+**If something goes wrong.**
+- *Error 502 or 1033 from Cloudflare*: the app is not answering yet (at the first start it
+  loads the model) or the tunnel is not connected: `docker compose logs api tunnel`.
+- *The tunnel does not connect*: wrong token, or in the *Public hostname* the URL is not `api:8000`.
+- *Database password changed after the first start*: the database keeps the old one. Update
+  it there too: `docker compose exec db psql -U postgres -c "ALTER USER postgres PASSWORD 'new'"`.

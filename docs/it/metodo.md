@@ -1,6 +1,6 @@
 # Il metodo: dalle notizie alla previsione
 
-<sub>[← Torna al README](../README.md) · [Tutta la documentazione](README.md)</sub>
+<sub>[← Torna al README](../../README.it.md) · [Tutta la documentazione](README.md) · [English](../method.md)</sub>
 
 Come le notizie vengono raccolte, collegate ai mercati e trasformate in una stima di probabilità.
 

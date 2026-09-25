@@ -807,8 +807,8 @@ th.num .th-sort { flex-direction: row-reverse; }
 /* ---------- Più esiti ---------- */
 .multi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
 @media (max-width: 420px) { .multi-grid { grid-template-columns: minmax(0, 1fr); } }
-.multi-card { display: grid; gap: 10px; align-content: start; }
-.multi-title { font-size: 1rem; line-height: 1.35; }
+.multi-card { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-content: start; }
+.multi-title { font-size: 1rem; line-height: 1.35; overflow-wrap: anywhere; }
 .multi-title a { color: var(--text-primary); }
 .multi-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 2px; }
 .multi-foot .btn { margin-left: auto; }
@@ -829,7 +829,8 @@ th.num .th-sort { flex-direction: row-reverse; }
 .dist-track .pmark { width: 12px; height: 12px; }
 .dist-track .pmark.jev { width: 9px; height: 9px; }
 .opps-multi { margin-top: 24px; }
-.signal-line { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.signal-line { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; max-width: 100%; }
+.signal-line .badge { white-space: normal; max-width: 100%; }
 
 /* ---------- Strategy ("Cosa fare") ---------- */
 .plan { display: grid; gap: 14px; padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
@@ -867,3 +868,15 @@ th.num .th-sort { flex-direction: row-reverse; }
   .plan-head { grid-template-columns: minmax(0, 1fr); }
 }
 .opp-plan { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+
+/* ---------- Language switch (IT / EN, next to the theme button) ---------- */
+.lang-switch .seg { min-height: 38px; padding: 0 10px; font-weight: 600; font-size: 0.8rem; letter-spacing: 0.02em; }
+@media (pointer: coarse) { .lang-switch .seg { min-height: 44px; } }
+/* Phones: brand, Update, IT/EN and theme must fit in one row */
+@media (max-width: 480px) {
+  .topbar-inner { gap: 8px; }
+  .brand-mobile { min-width: 0; overflow: hidden; }
+  .lang-switch .seg { padding: 0 8px; }
+}
+/* Too narrow for the name next to the buttons: the logo alone (the link keeps its aria-label) */
+@media (max-width: 400px) { .brand-mobile .brand-text { display: none; } }

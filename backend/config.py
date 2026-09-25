@@ -3,6 +3,10 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    # Language of the texts written without a dashboard request: Telegram alerts, news summaries,
+    # stored reasons. The dashboard picks its own (IT/EN button) and sends it with each request.
+    APP_LANGUAGE: str = "en"                  # "en" or "it"
+
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/postgres"
     SIMILARITY_THRESHOLD: float = 0.92        # near-identical titles: same news

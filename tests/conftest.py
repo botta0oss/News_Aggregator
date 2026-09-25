@@ -17,6 +17,8 @@ os.environ["DATABASE_URL"] = os.environ.get(
 for key in ("TYPESAFE_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY"):
     os.environ[key] = ""
 os.environ["OLLAMA_BASE_URL"] = "http://127.0.0.1:9"
+# The existing tests check the Italian texts; tests/test_i18n.py covers English
+os.environ["APP_LANGUAGE"] = "it"
 # Fast client-side rate limits in tests (test_ratelimit.py sets its own)
 os.environ["JEV_RPM"] = "6000"
 os.environ["GROQ_RPM"] = "6000"

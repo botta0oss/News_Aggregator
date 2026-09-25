@@ -17,6 +17,7 @@ from backend.db.models import (
 )
 from backend.markets import polymarket
 from backend.markets.forecast import brier_score
+from backend.i18n import tr
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ async def update_settings(db: AsyncSession, *, preset: Optional[str] = None, aut
 async def reset_portfolio(db: AsyncSession, bankroll: float, preset: Optional[str] = None) -> BettingSettings:
     """Starts over: deletes every simulated bet and sets a new initial capital."""
     if not (10 <= bankroll <= 10_000_000):
-        raise ValueError("Il capitale deve essere tra 10 $ e 10.000.000 $")
+        raise ValueError(tr("Il capitale deve essere tra 10 $ e 10.000.000 $", "Capital must be between $10 and $10,000,000"))
     await db.execute(delete(PaperBet))
     row = await get_settings(db)
     row.bankroll = float(bankroll)
@@ -201,7 +202,7 @@ async def excluded_reason(db: AsyncSession, market: Market) -> Optional[str]:
 
 async def add_exclusion(db: AsyncSession, kind: str, value: str, label: Optional[str] = None) -> PaperExclusion:
     if kind not in EXCLUSION_KINDS or not value:
-        raise ValueError("Esclusione non valida")
+        raise ValueError(tr("Esclusione non valida", "Invalid exclusion"))
     existing = (await db.execute(select(PaperExclusion).where(PaperExclusion.kind == kind, PaperExclusion.value == value))).scalar_one_or_none()
     if existing:
         return existing

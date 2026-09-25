@@ -1,6 +1,8 @@
 """Risk presets for the simulated portfolio."""
 from dataclasses import dataclass, asdict
 
+from backend.i18n import lang
+
 
 @dataclass(frozen=True)
 class RiskProfile:
@@ -20,7 +22,18 @@ class RiskProfile:
     max_days: int             # skip markets resolving further away than this
 
     def as_dict(self) -> dict:
-        return asdict(self)
+        out = asdict(self)
+        if lang() != "it" and self.key in EN:
+            out["label"], out["description"] = EN[self.key]
+        return out
+
+
+# The presets in English (the Italian text is in PROFILES)
+EN = {
+    "prudente": ("Prudent", "Few, small bets, only with a wide margin and liquid markets that close within 4 months."),
+    "bilanciato": ("Balanced", "The default compromise: a quarter of Kelly, a 3-point margin after costs, at most 4% of capital per market."),
+    "aggressivo": ("Aggressive", "More and bigger bets: half Kelly, smaller margins, far-off markets too. Wide capital swings."),
+}
 
 
 PROFILES = {

@@ -13,6 +13,7 @@ from backend.markets.calibration import summary as calibration_summary
 from backend.config import settings
 from backend.db.database import get_db
 from backend.db.models import Market, MarketPrediction, PaperBet, PaperExclusion
+from backend.i18n import tr
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 admin = [Depends(require_admin)]
@@ -87,12 +88,12 @@ async def sell_bet_now(bet_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Sells an open simulated bet now, at the best bids of the order book."""
     bet = await _bet(db, bet_id)
     if bet.status != "open":
-        raise HTTPException(status_code=409, detail="La scommessa non è aperta")
+        raise HTTPException(status_code=409, detail=tr("La scommessa non è aperta", "The bet is not open"))
     market = await db.get(Market, bet.market_id)
     if market.closed:
-        raise HTTPException(status_code=409, detail="Il mercato è chiuso: si attende la risoluzione")
+        raise HTTPException(status_code=409, detail=tr("Il mercato è chiuso: si attende la risoluzione", "The market is closed: waiting for resolution"))
     if not await portfolio.sell_bet(db, bet, market, "Venduta a mano"):
-        raise HTTPException(status_code=409, detail="Il book non ha abbastanza offerte di acquisto per vendere tutte le quote")
+        raise HTTPException(status_code=409, detail=tr("Il book non ha abbastanza offerte di acquisto per vendere tutte le quote", "The book does not have enough bids to sell all the shares"))
     return _bet_dict(bet, market)
 
 
@@ -125,7 +126,7 @@ async def list_bets(status: Literal["open", "settled", "excluded", "all"] = Quer
 async def _bet(db: AsyncSession, bet_id: uuid.UUID) -> PaperBet:
     bet = await db.get(PaperBet, bet_id)
     if bet is None:
-        raise HTTPException(status_code=404, detail="Scommessa non trovata")
+        raise HTTPException(status_code=404, detail=tr("Scommessa non trovata", "Bet not found"))
     return bet
 
 
@@ -146,7 +147,7 @@ async def include_bet(bet_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     other_open = (await db.execute(select(PaperBet.id).where(
         PaperBet.market_id == bet.market_id, PaperBet.status == "open", PaperBet.id != bet.id))).first()
     if other_open:
-        raise HTTPException(status_code=409, detail="C'è già una scommessa aperta su questo mercato")
+        raise HTTPException(status_code=409, detail=tr("C'è già una scommessa aperta su questo mercato", "There is already an open bet on this market"))
     bet.status = "open"
     await db.commit()
     await portfolio.settle_bets(db)  # settles it right away if the market has resolved
@@ -170,7 +171,7 @@ async def add_exclusion(body: ExclusionIn, db: AsyncSession = Depends(get_db)):
 async def remove_exclusion(exclusion_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     row = await db.get(PaperExclusion, exclusion_id)
     if row is None:
-        raise HTTPException(status_code=404, detail="Esclusione non trovata")
+        raise HTTPException(status_code=404, detail=tr("Esclusione non trovata", "Exclusion not found"))
     await db.delete(row)
     await db.commit()
 
@@ -183,7 +184,7 @@ markets_router = APIRouter(prefix="/markets", tags=["portfolio"])
 async def _latest(db: AsyncSession, market_id: str):
     market = await db.get(Market, market_id)
     if market is None:
-        raise HTTPException(status_code=404, detail="Mercato non trovato")
+        raise HTTPException(status_code=404, detail=tr("Mercato non trovato", "Market not found"))
     if market.multi_event_id:
         # Outcome of a multi-outcome event: its share of the latest distribution forecast
         from backend.db.models import MultiPrediction
@@ -192,12 +193,12 @@ async def _latest(db: AsyncSession, market_id: str):
                                    .order_by(MultiPrediction.created_at.desc()).limit(1))).scalar_one_or_none()
         prediction = outcome_prediction(latest, market_id) if latest else None
         if prediction is None:
-            raise HTTPException(status_code=409, detail="L'evento non ha ancora una previsione per questo esito")
+            raise HTTPException(status_code=409, detail=tr("L'evento non ha ancora una previsione per questo esito", "The event has no forecast for this outcome yet"))
         return market, prediction
     prediction = (await db.execute(select(MarketPrediction).where(MarketPrediction.market_id == market_id)
                                    .order_by(MarketPrediction.created_at.desc()).limit(1))).scalar_one_or_none()
     if prediction is None:
-        raise HTTPException(status_code=409, detail="Il mercato non ha ancora una previsione")
+        raise HTTPException(status_code=409, detail=tr("Il mercato non ha ancora una previsione", "The market has no forecast yet"))
     return market, prediction
 
 
@@ -234,8 +235,8 @@ async def place_manual_bet(market_id: str, db: AsyncSession = Depends(get_db)):
     ev = await portfolio.evaluate_prediction(db, market, prediction)
     if ev.verdict not in ("GO", "SMALL"):
         reasons = "; ".join(r["text"] for r in ev.as_dict()["reasons"] if r["blocking"])
-        raise HTTPException(status_code=409, detail=f"Non conviene: {reasons}")
+        raise HTTPException(status_code=409, detail=tr(f"Non conviene: {reasons}", f"Not worth it: {reasons}"))
     bet = await portfolio.maybe_place_bet(db, market, prediction, ev, placed_by="manual")
     if bet is None:
-        raise HTTPException(status_code=409, detail="C'è già una scommessa aperta su questo mercato")
+        raise HTTPException(status_code=409, detail=tr("C'è già una scommessa aperta su questo mercato", "There is already an open bet on this market"))
     return _bet_dict(bet, market)

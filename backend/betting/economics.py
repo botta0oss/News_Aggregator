@@ -9,14 +9,21 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 from backend.betting.fees import fee_per_share
 from backend.betting.profiles import RiskProfile
+from backend.i18n import lang, tr
 
 MIN_ORDER_USD = 1.0
 
 
 def _num(x: float, decimals: int = 0) -> str:
-    """Italian number format: 50.000 / 1,9."""
+    """Number in the format of the language: 50.000 / 1,9 (it), 50,000 / 1.9 (en)."""
     text = f"{x:,.{decimals}f}"
+    if lang() != "it":
+        return text
     return text.replace(",", "\u2009").replace(".", ",").replace("\u2009", ".")
+
+
+def _usd(x: float, decimals: int = 0) -> str:
+    return f"{_num(x, decimals)} $" if lang() == "it" else f"${_num(x, decimals)}"
 MAX_APR = 10.0  # 1000%: very short horizons make the annualized figure meaningless beyond this
 
 
@@ -244,19 +251,24 @@ def evaluate(
     reasons: list[Reason] = []
     notes: list[str] = []
     if quote.source == "estimate":
-        notes.append("Book non disponibile: book stimato a 4 livelli, da prezzo medio + metà spread in su, con la profondità dalla liquidità dichiarata.")
+        notes.append(tr("Book non disponibile: book stimato a 4 livelli, da prezzo medio + metà spread in su, con la profondità dalla liquidità dichiarata.",
+                        "Book not available: book estimated at 4 levels, from mid price + half spread upwards, with depth from the declared liquidity."))
 
     if signal == "HOLD":
-        reasons.append(Reason("no_signal", "Il modello non vede una differenza sufficiente rispetto al prezzo."))
+        reasons.append(Reason("no_signal", tr("Il modello non vede una differenza sufficiente rispetto al prezzo.",
+                                                "The model does not see a large enough difference from the price.")))
     if liquidity < profile.min_liquidity:
-        reasons.append(Reason("illiquid", f"Mercato poco liquido ({_num(liquidity)} $, il preset chiede almeno {_num(profile.min_liquidity)} $)."))
+        reasons.append(Reason("illiquid", tr(f"Mercato poco liquido ({_usd(liquidity)}, il preset chiede almeno {_usd(profile.min_liquidity)}).",
+                                               f"Illiquid market ({_usd(liquidity)}, the preset asks for at least {_usd(profile.min_liquidity)}).")))
     if days > profile.max_days:
-        reasons.append(Reason("too_far", f"Si risolve tra {days:.0f} giorni: il preset accetta al massimo {profile.max_days} giorni."))
+        reasons.append(Reason("too_far", tr(f"Si risolve tra {days:.0f} giorni: il preset accetta al massimo {profile.max_days} giorni.",
+                                              f"It resolves in {days:.0f} days: the preset accepts at most {profile.max_days} days.")))
     if best is None:
-        reasons.append(Reason("no_book", "Nessuna offerta di vendita disponibile per questo lato."))
+        reasons.append(Reason("no_book", tr("Nessuna offerta di vendita disponibile per questo lato.", "No sell offer available for this side.")))
     elif net_edge < profile.min_net_edge:
         reasons.append(Reason("edge_after_costs",
-                              f"Dopo spread, commissioni e incertezza il margine è {_num(net_edge * 100, 1)} punti: ne servono almeno {_num(profile.min_net_edge * 100)}."))
+                              tr(f"Dopo spread, commissioni e incertezza il margine è {_num(net_edge * 100, 1)} punti: ne servono almeno {_num(profile.min_net_edge * 100)}.",
+                                 f"After spread, fees and uncertainty the margin is {_num(net_edge * 100, 1)} points: at least {_num(profile.min_net_edge * 100)} are needed.")))
 
     # Sizing
     caps = {
@@ -276,12 +288,14 @@ def evaluate(
     if caps["market"] <= 0 or caps["event"] <= 0 or caps["category"] <= 0 or caps["total"] <= 0:
         reasons.append(Reason("exposure_cap", _cap_text(caps)))
     elif caps["cash"] <= 0:
-        reasons.append(Reason("no_cash", "Capitale disponibile esaurito: è tutto investito in posizioni aperte."))
+        reasons.append(Reason("no_cash", tr("Capitale disponibile esaurito: è tutto investito in posizioni aperte.",
+                                              "No capital available: it is all invested in open positions.")))
 
     shares, spent, fee = fill(asks, stake, limit_price, quote.fee_bps) if stake > 0 else (0.0, 0.0, 0.0)
     min_order = max(MIN_ORDER_USD, (quote.min_order_shares or 0) * (best or 0))
     if not [r for r in reasons if r.blocking] and spent < min_order:
-        reasons.append(Reason("stake_below_min", f"La puntata calcolata ({_num(spent, 2)} $) è sotto l'ordine minimo ({_num(min_order, 2)} $)."))
+        reasons.append(Reason("stake_below_min", tr(f"La puntata calcolata ({_usd(spent, 2)}) è sotto l'ordine minimo ({_usd(min_order, 2)}).",
+                                                      f"The computed stake ({_usd(spent, 2)}) is below the minimum order ({_usd(min_order, 2)}).")))
 
     outlay = spent + fee
     avg_price = spent / shares if shares > 0 else None
@@ -298,8 +312,10 @@ def evaluate(
         roi = apr = None
     if apr is not None and apr < hurdle and signal != "HOLD" and best is not None:
         reasons.append(Reason("return_too_low",
-                              f"Rendimento annualizzato prudente {_num(apr * 100)}%, sotto la soglia del {_num(hurdle * 100)}% "
-                              f"(tasso senza rischio {_num(risk_free_rate * 100)}% + premio del preset)."))
+                              tr(f"Rendimento annualizzato prudente {_num(apr * 100)}%, sotto la soglia del {_num(hurdle * 100)}% "
+                                 f"(tasso senza rischio {_num(risk_free_rate * 100)}% + premio del preset).",
+                                 f"Prudent annualised return {_num(apr * 100)}%, below the {_num(hurdle * 100)}% threshold "
+                                 f"(risk-free rate {_num(risk_free_rate * 100)}% + preset premium).")))
 
     blocking = [r for r in reasons if r.blocking]
     if blocking:
@@ -325,16 +341,19 @@ def evaluate(
     )
 
 
-CAP_LABELS = {
-    "market": "limite per singolo mercato", "event": "limite per evento", "category": "limite per categoria",
-    "total": "limite di capitale investito", "cash": "capitale disponibile", "book": "profondità del book",
-}
+def cap_label(key: str) -> str:
+    return {
+        "market": tr("limite per singolo mercato", "per-market limit"), "event": tr("limite per evento", "per-event limit"),
+        "category": tr("limite per categoria", "per-category limit"), "total": tr("limite di capitale investito", "invested capital limit"),
+        "cash": tr("capitale disponibile", "available capital"), "book": tr("profondità del book", "book depth"),
+    }[key]
 
 
 def _cap_text(caps: dict) -> str:
-    full = [CAP_LABELS[k] for k in ("market", "event", "category", "total") if caps[k] <= 0]
-    return "Esposizione già al massimo: " + ", ".join(full) + "."
+    full = [cap_label(k) for k in ("market", "event", "category", "total") if caps[k] <= 0]
+    return tr("Esposizione già al massimo: ", "Exposure already at the maximum: ") + ", ".join(full) + "."
 
 
 def _limited_text(key: str) -> str:
-    return f"Puntata ridotta dal {CAP_LABELS[key]}: meno della metà di quella che Kelly suggerirebbe."
+    return tr(f"Puntata ridotta dal {cap_label(key)}: meno della metà di quella che Kelly suggerirebbe.",
+              f"Stake reduced by the {cap_label(key)}: less than half of what Kelly would suggest.")

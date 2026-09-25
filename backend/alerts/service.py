@@ -26,6 +26,7 @@ from backend.ingestor.sources import CATEGORIES
 from backend.markets import polymarket
 from backend.betting.clv import summarize as clv_summary
 from backend.markets.matching import source_quality
+from backend.i18n import side as side_label, tr
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +62,12 @@ def validate_settings(data: dict) -> dict:
     if "categories" in data:
         cats = list(dict.fromkeys(data["categories"] or []))
         if any(c not in CATEGORIES for c in cats):
-            raise ValueError("Categoria non valida")
+            raise ValueError(tr("Categoria non valida", "Invalid category"))
         out["categories"] = cats
-    ranges = {"min_match": (0.3, 1.0, "La pertinenza minima deve essere tra 30% e 100%"),
-              "max_news_age_hours": (0.5, 72, "L'età massima della notizia deve essere tra 0,5 e 72 ore"),
-              "daily_budget": (0, 500, "Il limite giornaliero deve essere tra 0 e 500 chiamate"),
-              "cooldown_hours": (0, 72, "La pausa per mercato deve essere tra 0 e 72 ore")}
+    ranges = {"min_match": (0.3, 1.0, tr("La pertinenza minima deve essere tra 30% e 100%", "The minimum match must be between 30% and 100%")),
+              "max_news_age_hours": (0.5, 72, tr("L'età massima della notizia deve essere tra 0,5 e 72 ore", "The maximum news age must be between 0.5 and 72 hours")),
+              "daily_budget": (0, 500, tr("Il limite giornaliero deve essere tra 0 e 500 chiamate", "The daily limit must be between 0 and 500 calls")),
+              "cooldown_hours": (0, 72, tr("La pausa per mercato deve essere tra 0 e 72 ore", "The pause per market must be between 0 and 72 hours"))}
     for key, (lo, hi, msg) in ranges.items():
         if key in data:
             value = float(data[key])
@@ -75,13 +76,13 @@ def validate_settings(data: dict) -> dict:
             out[key] = int(value) if key == "daily_budget" else value
     if "min_verdict" in data:
         if data["min_verdict"] not in VERDICTS:
-            raise ValueError("Esito minimo non valido")
+            raise ValueError(tr("Esito minimo non valido", "Invalid minimum outcome"))
         out["min_verdict"] = data["min_verdict"]
     for key in ("quiet_start", "quiet_end"):
         if key in data:
             value = data[key]
             if value is not None and not (isinstance(value, int) and 0 <= value <= 23):
-                raise ValueError("Le ore silenziose vanno da 0 a 23")
+                raise ValueError(tr("Le ore silenziose vanno da 0 a 23", "Quiet hours go from 0 to 23"))
             out[key] = value
     return out
 
@@ -357,7 +358,7 @@ async def _record(db: AsyncSession, market: Market, prediction: MarketPrediction
 def _short(x: float) -> str:
     """One decimal, none when it is zero: 34¢, 44,5¢."""
     text = _num(x, 1)
-    return text[:-2] if text.endswith(",0") else text
+    return text[:-2] if text.endswith((",0", ".0")) else text
 
 
 def _pct(p: Optional[float]) -> str:
@@ -371,24 +372,30 @@ def _cents(p: Optional[float]) -> str:
 def format_message(alert: Alert, market: Market, prediction: MarketPrediction, trig: dict,
                    sell_above: Optional[float] = None) -> str:
     e = telegram.escape
-    side = "SÌ" if alert.side == "YES" else "NO"
-    verdict = "conviene" if alert.verdict == "GO" else "conviene, puntata piccola"
+    side = side_label(alert.side)
+    verdict = tr("conviene", "worth it") if alert.verdict == "GO" else tr("conviene, puntata piccola", "worth it, small stake")
     age_min = max(0, int((_now() - trig["published"]).total_seconds() // 60)) if trig.get("published") else None
-    age = "" if age_min is None else (f", {age_min} min fa" if age_min < 120 else f", {age_min // 60} ore fa")
-    head = f"Compra {side} su {e(trig['outcome'])}" if trig.get("outcome") else f"Compra {side}"
+    age = "" if age_min is None else (tr(f", {age_min} min fa", f", {age_min} min ago") if age_min < 120
+                                   else tr(f", {age_min // 60} ore fa", f", {age_min // 60} hours ago"))
+    head = (tr(f"Compra {side} su {e(trig['outcome'])}", f"Buy {side} on {e(trig['outcome'])}") if trig.get("outcome")
+            else tr(f"Compra {side}", f"Buy {side}"))
     lines = [
         f"🔔 <b>{head}</b> · {verdict}",
         f"<b>{e(trig.get('event_title') or market.question)}</b>",
         "",
-        f"Notizia: {e(trig['title'])} ({e(trig['source'])}{age})",
-        f"Prezzo SÌ {_cents(alert.price)} → stima {_pct(prediction.blended_probability)} "
-        f"(Jev {_pct(prediction.model_probability)}, evidenze {_pct(prediction.evidence_strength)})",
-        f"Edge {'+' if (alert.edge or 0) >= 0 else '−'}{_num(abs(alert.edge or 0) * 100, 1)} pt",
+        tr("Notizia", "News") + f": {e(trig['title'])} ({e(trig['source'])}{age})",
+        tr(f"Prezzo SÌ {_cents(alert.price)} → stima {_pct(prediction.blended_probability)} "
+           f"(Jev {_pct(prediction.model_probability)}, evidenze {_pct(prediction.evidence_strength)})",
+           f"YES price {_cents(alert.price)} → estimate {_pct(prediction.blended_probability)} "
+           f"(Jev {_pct(prediction.model_probability)}, evidence {_pct(prediction.evidence_strength)})"),
+        f"Edge {'+' if (alert.edge or 0) >= 0 else '−'}{_num(abs(alert.edge or 0) * 100, 1)} " + tr("pt", "pts"),
     ]
     if alert.outlay:
-        lines += ["", f"<b>Ordine</b>: compra {side} con limite {_cents(alert.limit_price)} (puntata simulata {_num(alert.outlay, 2)} $)"]
+        lines += ["", tr(f"<b>Ordine</b>: compra {side} con limite {_cents(alert.limit_price)} (puntata simulata {_num(alert.outlay, 2)} $)",
+                          f"<b>Order</b>: buy {side} with limit {_cents(alert.limit_price)} (simulated stake ${_num(alert.outlay, 2)})")]
         if sell_above is not None:
-            lines.append(f"<b>Poi</b>: vendita limite a {_cents(sell_above)}, oppure tieni fino alla risoluzione")
+            lines.append(tr(f"<b>Poi</b>: vendita limite a {_cents(sell_above)}, oppure tieni fino alla risoluzione",
+                            f"<b>Then</b>: limit sell at {_cents(sell_above)}, or hold until resolution"))
     if settings.PUBLIC_URL:
         path = f"multi/{market.multi_event_id}" if market.multi_event_id else f"mercati/{market.id}"
         lines += ["", f"{settings.PUBLIC_URL.rstrip('/')}/#/{path}"]

@@ -1,21 +1,22 @@
 // "Cosa fare": the plan built from the latest forecast — action, orders, price levels, reasons.
+import { t } from "./i18n.js";
 import { h, fmt, icon, infoTip } from "./ui.js";
 
 const ACTIONS = {
-  BUY: { cls: "badge-good", icon: "up", label: "Compra" },
-  WAIT: { cls: "badge-warning", icon: "pause", label: "Aspetta" },
-  AVOID: { cls: "badge-critical", icon: "x", label: "Evita" },
-  HOLD: { cls: "badge-accent", icon: "check", label: "Tieni" },
-  SELL: { cls: "badge-warning", icon: "down", label: "Vendi" },
-  NONE: { cls: "", icon: "minus", label: "Nessuna azione" },
+  BUY: { cls: "badge-good", icon: "up", label: t("Compra") },
+  WAIT: { cls: "badge-warning", icon: "pause", label: t("Aspetta") },
+  AVOID: { cls: "badge-critical", icon: "x", label: t("Evita") },
+  HOLD: { cls: "badge-accent", icon: "check", label: t("Tieni") },
+  SELL: { cls: "badge-warning", icon: "down", label: t("Vendi") },
+  NONE: { cls: "", icon: "minus", label: t("Nessuna azione") },
 };
-const SIDE = { YES: "SÌ", NO: "NO" };
+const SIDE = { YES: t("SÌ"), NO: "NO" };
 const CONFIDENCE = { alta: "badge-good", media: "", bassa: "badge-critical" };
 
 export const STRATEGY_HELP = {
-  sell: "Il prezzo a cui incassare subito rende più che aspettare la risoluzione, tenendo conto delle commissioni e del rendimento che il preset chiede al capitale bloccato.",
-  levels: "Prezzi del SÌ a cui la decisione cambierebbe. La stima viene ricalcolata a ogni prezzo con lo stesso metodo della previsione.",
-  stop: "Niente stop-loss fisso: se il prezzo scende ma la stima non cambia, la quota è ancora più conveniente. Si vende quando una nuova previsione gira la stima o il prezzo raggiunge il valore stimato.",
+  sell: t("Il prezzo a cui incassare subito rende più che aspettare la risoluzione, tenendo conto delle commissioni e del rendimento che il preset chiede al capitale bloccato."),
+  levels: t("Prezzi del SÌ a cui la decisione cambierebbe. La stima viene ricalcolata a ogni prezzo con lo stesso metodo della previsione."),
+  stop: t("Niente stop-loss fisso: se il prezzo scende ma la stima non cambia, la quota è ancora più conveniente. Si vende quando una nuova previsione gira la stima o il prezzo raggiunge il valore stimato."),
 };
 
 export function actionBadge(plan, big = false) {
@@ -26,20 +27,21 @@ export function actionBadge(plan, big = false) {
 
 function orderLine(o) {
   const side = SIDE[o.side];
-  const qty = o.shares ? `${fmt.shares(o.shares)} quote ` : "";
+  // "12 quote SÌ" / "12 YES shares", or just the side when the quantity is not known
+  const what = o.shares ? t("{0} quote {1}", fmt.shares(o.shares), side) : side;
   if (o.type === "buy" && o.conditional) {
-    return [icon("pause"), h("span", {}, "Ordine in attesa: ", h("b", {}, `compra ${side} a ${fmt.cents(o.limit)} o meno`),
-      ". Conviene solo se il prezzo arriva lì.")];
+    return [icon("pause"), h("span", {}, t("Ordine in attesa: "), h("b", {}, t("compra {0} a {1} o meno", side, fmt.cents(o.limit))),
+      t(". Conviene solo se il prezzo arriva lì."))];
   }
   if (o.type === "buy") {
-    return [icon("up"), h("span", {}, "Acquisto con ordine limite: ", h("b", {}, `${qty}${side} a non più di ${fmt.cents(o.limit)}`),
-      o.usd != null ? ` · circa ${fmt.money(o.usd)}` : "")];
+    return [icon("up"), h("span", {}, t("Acquisto con ordine limite: "), h("b", {}, t("{0} a non più di {1}", what, fmt.cents(o.limit))),
+      o.usd != null ? t(" · circa {0}", fmt.money(o.usd)) : "")];
   }
   if (o.after_fill) {
-    return [icon("target"), h("span", {}, "Appena comprate: ", h("b", {}, `vendita limite a ${fmt.cents(o.limit)}`),
-      " (resta nel book finché il prezzo non ci arriva)")];
+    return [icon("target"), h("span", {}, t("Appena comprate: "), h("b", {}, t("vendita limite a {0}", fmt.cents(o.limit))),
+      t(" (resta nel book finché il prezzo non ci arriva)"))];
   }
-  return [icon("down"), h("span", {}, "Vendita: ", h("b", {}, o.limit != null ? `${qty}${side} a ${fmt.cents(o.limit)} o più` : `${qty}${side} al meglio`))];
+  return [icon("down"), h("span", {}, t("Vendita: "), h("b", {}, o.limit != null ? t("{0} a {1} o più", what, fmt.cents(o.limit)) : t("{0} al meglio", what)))];
 }
 
 /** Scale of YES prices: where buying YES or NO would pay, where the price is, where to sell. */
@@ -50,26 +52,26 @@ function priceLadder(plan, priceYes) {
   // The sale target is a price of the side held: on the YES scale for a NO position it is 1 − target
   const sellYes = lv.sell_above == null ? null : plan.side === "NO" ? 1 - lv.sell_above : lv.sell_above;
   const labels = [];
-  if (lv.buy_yes_below != null) labels.push(`compra SÌ sotto ${fmt.cents(lv.buy_yes_below)}`);
-  if (lv.buy_no_above != null) labels.push(`compra NO sopra ${fmt.cents(lv.buy_no_above)}`);
-  if (sellYes != null) labels.push(`vendi a ${fmt.cents(sellYes)}`);
+  if (lv.buy_yes_below != null) labels.push(t("compra SÌ sotto {0}", fmt.cents(lv.buy_yes_below)));
+  if (lv.buy_no_above != null) labels.push(t("compra NO sopra {0}", fmt.cents(lv.buy_no_above)));
+  if (sellYes != null) labels.push(t("vendi a {0}", fmt.cents(sellYes)));
   return h("div", { class: "ladder-wrap" },
-    h("div", { class: "ladder", role: "img", "aria-label": `Prezzo del SÌ ${fmt.cents(priceYes)}: ${labels.join(", ")}` },
+    h("div", { class: "ladder", role: "img", "aria-label": t("Prezzo del SÌ {0}: {1}", fmt.cents(priceYes), labels.join(", ")) },
       lv.buy_yes_below != null ? h("span", { class: "zone yes", style: { left: "0", width: pos(lv.buy_yes_below) } }) : null,
       lv.buy_no_above != null ? h("span", { class: "zone no", style: { left: pos(lv.buy_no_above), right: "0" } }) : null,
-      sellYes != null ? h("span", { class: "tick sell", style: { left: pos(sellYes) } }, h("span", { class: "tick-label" }, `vendi ${fmt.cents(sellYes)}`)) : null,
-      h("span", { class: "tick now", style: { left: pos(priceYes) } }, h("span", { class: "tick-label" }, `ora ${fmt.cents(priceYes)}`))),
-    h("div", { class: "ladder-axis mono" }, h("span", {}, "0¢"), h("span", {}, "prezzo del SÌ"), h("span", {}, "100¢")),
+      sellYes != null ? h("span", { class: "tick sell", style: { left: pos(sellYes) } }, h("span", { class: "tick-label" }, t("vendi {0}", fmt.cents(sellYes)))) : null,
+      h("span", { class: "tick now", style: { left: pos(priceYes) } }, h("span", { class: "tick-label" }, t("ora {0}", fmt.cents(priceYes))))),
+    h("div", { class: "ladder-axis mono" }, h("span", {}, "0¢"), h("span", {}, t("prezzo del SÌ")), h("span", {}, "100¢")),
     h("div", { class: "ladder-legend" },
-      lv.buy_yes_below != null ? h("span", {}, h("span", { class: "key zone-yes" }), `Compra SÌ sotto ${fmt.cents(lv.buy_yes_below)}`) : null,
-      lv.buy_no_above != null ? h("span", {}, h("span", { class: "key zone-no" }), `Compra NO se il SÌ sale sopra ${fmt.cents(lv.buy_no_above)}`) : null,
-      sellYes != null ? h("span", {}, h("span", { class: "key tick-sell" }), `Vendi a ${fmt.cents(lv.sell_above)} (${SIDE[plan.side] || "lato comprato"})`) : null,
+      lv.buy_yes_below != null ? h("span", {}, h("span", { class: "key zone-yes" }), t("Compra SÌ sotto {0}", fmt.cents(lv.buy_yes_below))) : null,
+      lv.buy_no_above != null ? h("span", {}, h("span", { class: "key zone-no" }), t("Compra NO se il SÌ sale sopra {0}", fmt.cents(lv.buy_no_above))) : null,
+      sellYes != null ? h("span", {}, h("span", { class: "key tick-sell" }), t("Vendi a {0} ({1})", fmt.cents(lv.sell_above), SIDE[plan.side] || t("lato comprato"))) : null,
       infoTip(STRATEGY_HELP.levels)));
 }
 
 function reasonList(items, good) {
-  if (!items.length) return h("p", { class: "muted small" }, good ? "Nessun motivo forte a favore." : "Nessun motivo contro rilevante.");
-  return h("ul", { class: `plan-reasons ${good ? "pro" : "con"}` }, items.map((t) => h("li", {}, icon(good ? "check" : "x"), h("span", {}, t))));
+  if (!items.length) return h("p", { class: "muted small" }, good ? t("Nessun motivo forte a favore.") : t("Nessun motivo contro rilevante."));
+  return h("ul", { class: `plan-reasons ${good ? "pro" : "con"}` }, items.map((x) => h("li", {}, icon(good ? "check" : "x"), h("span", {}, x))));
 }
 
 /** The whole plan, for the top of the "Cosa fare" card. `priceYes`: current YES price of the market. */
@@ -81,16 +83,16 @@ export function strategySection(plan, priceYes) {
       h("div", { class: "plan-title" }, plan.title !== actionBadge(plan).textContent ? h("b", {}, plan.title) : null,
         h("p", { class: plan.title !== actionBadge(plan).textContent ? "secondary" : "" }, plan.summary)),
       h("span", { class: `badge ${CONFIDENCE[plan.confidence] || ""}`, title: plan.confidence_why.join(" · ") },
-        `fiducia ${plan.confidence}`)),
+        t("fiducia {0}", t(plan.confidence)))),
     plan.orders.length ? h("ul", { class: "plan-orders" }, plan.orders.map((o) => h("li", {}, ...orderLine(o)))) : null,
     priceLadder(plan, priceYes),
     h("div", { class: "plan-why" },
-      h("div", {}, h("h3", {}, "Perché sì"), reasonList(plan.pros, true)),
-      h("div", {}, h("h3", {}, "Perché no"), reasonList(plan.cons, false))),
+      h("div", {}, h("h3", {}, t("Perché sì")), reasonList(plan.pros, true)),
+      h("div", {}, h("h3", {}, t("Perché no")), reasonList(plan.cons, false))),
     plan.exit.length ? h("div", { class: "plan-exit" },
-      h("h3", {}, "Piano d'uscita", infoTip(STRATEGY_HELP.stop)),
-      h("ul", { class: "bullets small" }, plan.exit.map((t) => h("li", {}, t)))) : null,
-    h("p", { class: "muted small" }, `Fiducia ${plan.confidence}: ${plan.confidence_why.join(", ")}.`),
+      h("h3", {}, t("Piano d'uscita"), infoTip(STRATEGY_HELP.stop)),
+      h("ul", { class: "bullets small" }, plan.exit.map((x) => h("li", {}, x)))) : null,
+    h("p", { class: "muted small" }, t("Fiducia {0}: {1}.", t(plan.confidence), plan.confidence_why.join(", "))),
   );
 }
 
@@ -104,13 +106,13 @@ export function planLine(ev) {
   let badge, text;
   if (ev.verdict === "GO" || ev.verdict === "SMALL") {
     badge = actionBadge({ action: "BUY", side: ev.side });
-    text = `${side} a non più di ${fmt.cents(ev.limit_price)} · circa ${fmt.money(ev.outlay)}`;
+    text = t("{0} a non più di {1} · circa {2}", side, fmt.cents(ev.limit_price), fmt.money(ev.outlay));
   } else if (blocking.some((r) => STRUCTURAL.has(r.code))) {
     badge = actionBadge({ action: "AVOID" });
     text = blocking.find((r) => STRUCTURAL.has(r.code)).text;
   } else if (blocking.length) {
     badge = actionBadge({ action: "WAIT" });
-    text = `al prezzo di allora costi e incertezza si mangiavano il vantaggio (limite ${fmt.cents(ev.limit_price)})`;
+    text = t("al prezzo di allora costi e incertezza si mangiavano il vantaggio (limite {0})", fmt.cents(ev.limit_price));
   } else {
     return null;
   }

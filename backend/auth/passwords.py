@@ -1,5 +1,6 @@
 """Argon2id password hashing (argon2-cffi defaults follow the RFC 9106 recommendations)."""
 import re
+from backend.i18n import tr
 from functools import lru_cache
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
@@ -18,17 +19,17 @@ def normalize_username(username: str) -> str:
 def validate_username(username: str) -> str:
     username = normalize_username(username)
     if not USERNAME_RE.match(username):
-        raise ValueError("Lo username deve avere 3-32 caratteri: lettere, numeri, punto, trattino o underscore.")
+        raise ValueError(tr("Lo username deve avere 3-32 caratteri: lettere, numeri, punto, trattino o underscore.", "The username must have 3-32 characters: letters, numbers, dot, hyphen or underscore."))
     return username
 
 
 def validate_password(password: str, username: str = "") -> None:
     if len(password) < MIN_PASSWORD_LENGTH:
-        raise ValueError(f"La password deve avere almeno {MIN_PASSWORD_LENGTH} caratteri.")
+        raise ValueError(tr(f"La password deve avere almeno {MIN_PASSWORD_LENGTH} caratteri.", f"The password must have at least {MIN_PASSWORD_LENGTH} characters."))
     if len(password) > MAX_PASSWORD_LENGTH:
-        raise ValueError(f"La password può avere al massimo {MAX_PASSWORD_LENGTH} caratteri.")
+        raise ValueError(tr(f"La password può avere al massimo {MAX_PASSWORD_LENGTH} caratteri.", f"The password can have at most {MAX_PASSWORD_LENGTH} characters."))
     if username and username.lower() in password.lower():
-        raise ValueError("La password non può contenere lo username.")
+        raise ValueError(tr("La password non può contenere lo username.", "The password cannot contain the username."))
 
 
 def hash_password(password: str) -> str:

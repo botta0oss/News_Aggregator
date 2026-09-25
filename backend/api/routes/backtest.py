@@ -12,6 +12,7 @@ from backend.backtest import engine
 from backend.config import settings
 from backend.db.database import get_db
 from backend.db.models import BacktestCase, BacktestRun
+from backend.i18n import tr
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
 admin = [Depends(require_admin)]
@@ -78,7 +79,7 @@ async def start_run(body: RunIn):
 async def get_run(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     run = await db.get(BacktestRun, run_id)
     if run is None:
-        raise HTTPException(status_code=404, detail="Backtest non trovato")
+        raise HTTPException(status_code=404, detail=tr("Backtest non trovato", "Backtest not found"))
     return _run_out(run)
 
 
@@ -94,14 +95,14 @@ async def get_cases(run_id: uuid.UUID, status: Literal["ok", "skipped", "all"] =
 @router.post("/runs/{run_id}/stop", dependencies=admin)
 async def stop_run(run_id: uuid.UUID):
     if engine._run_id != run_id or not engine.stop():
-        raise HTTPException(status_code=409, detail="Questo backtest non è in corso")
+        raise HTTPException(status_code=409, detail=tr("Questo backtest non è in corso", "This backtest is not running"))
     return {"status": "stopping"}
 
 
 @router.delete("/runs/{run_id}", status_code=204, dependencies=admin)
 async def delete_run(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     if engine.is_running() and engine._run_id == run_id:
-        raise HTTPException(status_code=409, detail="Ferma prima il backtest in corso")
+        raise HTTPException(status_code=409, detail=tr("Ferma prima il backtest in corso", "Stop the running backtest first"))
     await db.execute(delete(BacktestRun).where(BacktestRun.id == run_id))
     await db.commit()
 

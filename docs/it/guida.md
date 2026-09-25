@@ -1,6 +1,6 @@
 # Guida alla dashboard
 
-<sub>[← Torna al README](../README.md) · [Tutta la documentazione](README.md)</sub>
+<sub>[← Torna al README](../../README.it.md) · [Tutta la documentazione](README.md) · [English](../guide.md)</sub>
 
 Le pagine della dashboard, il flusso di lavoro consigliato e cosa fare se non si apre.
 
@@ -19,6 +19,12 @@ Impostazioni, Uso e costi, «Come funziona» e account stanno in fondo.
   tutte le altre.
 - Il numero su «Allerte» indica le opportunità delle ultime 24 ore.
 
+**Lingua.** Il pulsante **IT / EN** in alto a destra, accanto a quello del tema, passa tutta la
+dashboard dall'italiano all'inglese. La scelta viene ricordata nel browser; alla prima visita
+la dashboard segue la lingua del browser. Numeri, date e importi seguono la lingua
+(`1,5 $` / `$1.5`), e così i testi che il server scrive per la dashboard (piani, motivi,
+messaggi d'errore).
+
 | Sezione | Cosa mostra |
 |---|---|
 | **Opportunità** | Mercati con segnale attivo ordinati per edge: prezzo, stima Jev e probabilità blended sulla stessa scala 0–100 %, puntata suggerita e forza delle evidenze. Filtri per edge ed evidenze minime. |
@@ -36,8 +42,8 @@ Impostazioni, Uso e costi, «Come funziona» e account stanno in fondo.
 
 <p align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/strategy-dark.png">
-  <img alt="La scheda Cosa fare nel dettaglio di un mercato" src="images/strategy-light.png" width="85%">
+  <source media="(prefers-color-scheme: dark)" srcset="../images/it/strategy-dark.png">
+  <img alt="La scheda Cosa fare nel dettaglio di un mercato" src="../images/it/strategy-light.png" width="85%">
 </picture>
 </p>
 
@@ -69,7 +75,7 @@ Scelte di design:
 - **Palette verificata** per il daltonismo su entrambi i temi.
 - **Forme distinte:** cerchio e rombo, linea continua e tratteggiata. Ogni grafico ha legenda con valori e tabella alternativa.
 - **Numeri in carattere monospazio** (Fira Code) e prezzi in centesimi, come su Polymarket.
-- **Accessibilità:** navigabile da tastiera, target touch di 44 px, rispetta la riduzione del movimento, nessuno scroll orizzontale da 375 px in su.
+- **Accessibilità:** navigabile da tastiera, target touch di 44 px, rispetta la riduzione del movimento, nessuno scroll orizzontale da 320 px in su.
 
 ## Flusso di lavoro consigliato
 

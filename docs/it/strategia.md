@@ -1,6 +1,6 @@
 # Valutazione economica, strategia e portafoglio
 
-<sub>[← Torna al README](../README.md) · [Tutta la documentazione](README.md)</sub>
+<sub>[← Torna al README](../../README.it.md) · [Tutta la documentazione](README.md) · [English](../strategy.md)</sub>
 
 Se una previsione conviene davvero, cosa fare (comprare, aspettare, vendere) e come il portafoglio simulato misura i risultati.
 

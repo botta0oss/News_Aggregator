@@ -1,30 +1,31 @@
 // Navigation: one definition for the desktop sidebar, the mobile bottom bar and the "Altro" sheet.
+import { t } from "./i18n.js";
 import { h, icon } from "./ui.js";
 
 // Sections grouped by what the user is doing: find signals, browse markets, read news, check results
 export const NAV = [
-  { group: "Segnali", items: [
-    { id: "opportunita", href: "#/opportunita", label: "Opportunità", icon: "up" },
-    { id: "allerte", href: "#/allerte", label: "Allerte", icon: "bell" },
+  { group: t("Segnali"), items: [
+    { id: "opportunita", href: "#/opportunita", label: t("Opportunità"), icon: "up" },
+    { id: "allerte", href: "#/allerte", label: t("Allerte"), icon: "bell" },
   ] },
-  { group: "Mercati", items: [
-    { id: "mercati", href: "#/mercati", label: "Sì / No", icon: "toggle", short: "Mercati" },
-    { id: "multi", href: "#/multi", label: "Più esiti", icon: "list" },
+  { group: t("Mercati"), items: [
+    { id: "mercati", href: "#/mercati", label: t("Sì / No"), icon: "toggle", short: t("Mercati") },
+    { id: "multi", href: "#/multi", label: t("Più esiti"), icon: "list" },
   ] },
-  { group: "Notizie", items: [
-    { id: "notizie", href: "#/notizie", label: "Notizie", icon: "news" },
+  { group: t("Notizie"), items: [
+    { id: "notizie", href: "#/notizie", label: t("Notizie"), icon: "news" },
   ] },
-  { group: "Risultati", items: [
-    { id: "portafoglio", href: "#/portafoglio", label: "Portafoglio", icon: "wallet" },
-    { id: "backtest", href: "#/backtest", label: "Backtest", icon: "history" },
-    { id: "calibrazione", href: "#/calibrazione", label: "Calibrazione", icon: "target" },
+  { group: t("Risultati"), items: [
+    { id: "portafoglio", href: "#/portafoglio", label: t("Portafoglio"), icon: "wallet" },
+    { id: "backtest", href: "#/backtest", label: t("Backtest"), icon: "history" },
+    { id: "calibrazione", href: "#/calibrazione", label: t("Calibrazione"), icon: "target" },
   ] },
 ];
 
 export const FOOTER_NAV = [
-  { id: "impostazioni", href: "#/impostazioni", label: "Impostazioni", icon: "settings" },
-  { id: "uso", href: "#/uso", label: "Uso e costi", icon: "gauge" },
-  { id: "metodo", href: "#/metodo", label: "Come funziona", icon: "help" },
+  { id: "impostazioni", href: "#/impostazioni", label: t("Impostazioni"), icon: "settings" },
+  { id: "uso", href: "#/uso", label: t("Uso e costi"), icon: "gauge" },
+  { id: "metodo", href: "#/metodo", label: t("Come funziona"), icon: "help" },
 ];
 
 // Mobile bottom bar: the destinations used most (at most 4, plus "Altro")
@@ -48,7 +49,7 @@ export function renderNav({ user, onLogout }) {
 
   const userItem = { id: "account", href: "#/account", label: user.username, icon: "user" };
   const logoutBtn = (cls) => {
-    const b = h("button", { class: cls, type: "button", title: "Esci" }, icon("logout"), h("span", { class: "nav-label" }, "Esci"));
+    const b = h("button", { class: cls, type: "button", title: t("Esci") }, icon("logout"), h("span", { class: "nav-label" }, t("Esci")));
     b.addEventListener("click", onLogout);
     return b;
   };
@@ -63,7 +64,7 @@ export function renderNav({ user, onLogout }) {
   const bottom = document.getElementById("bottom-nav");
   const items = allItems();
   const moreBtn = h("button", { class: "bottom-item", type: "button", id: "btn-more", "aria-haspopup": "dialog", "aria-expanded": "false" },
-    icon("more"), h("span", { class: "nav-label" }, "Altro"));
+    icon("more"), h("span", { class: "nav-label" }, t("Altro")));
   bottom.replaceChildren(...BOTTOM.map((id) => link(items.find((i) => i.id === id), "bottom-item")), moreBtn);
 
   document.getElementById("sheet-nav").replaceChildren(
@@ -71,7 +72,7 @@ export function renderNav({ user, onLogout }) {
       h("p", { class: "nav-group-label" }, g.group),
       h("ul", { role: "list" }, g.items.map((it) => h("li", {}, link(it, "nav-item")))))),
     h("div", { class: "nav-group" },
-      h("p", { class: "nav-group-label" }, "Altro"),
+      h("p", { class: "nav-group-label" }, t("Altro")),
       h("ul", { role: "list" }, FOOTER_NAV.map((it) => h("li", {}, link(it, "nav-item"))),
         h("li", {}, link(userItem, "nav-item")), h("li", {}, logoutBtn("nav-item")))),
   );
@@ -92,7 +93,7 @@ export function setBadge(sectionId, count) {
   document.querySelectorAll(`[data-badge="${sectionId}"]`).forEach((el) => {
     el.hidden = !count;
     el.textContent = count > 99 ? "99+" : String(count || "");
-    el.setAttribute("aria-label", count ? `${count} nuove` : "");
+    el.setAttribute("aria-label", count ? t("{0} nuove", count) : "");
   });
 }
 
@@ -138,7 +139,7 @@ export function setupCollapse() {
   const apply = (collapsed) => {
     document.documentElement.classList.toggle("nav-collapsed", collapsed);
     btn.setAttribute("aria-expanded", String(!collapsed));
-    btn.setAttribute("aria-label", collapsed ? "Espandi il menu" : "Riduci il menu");
+    btn.setAttribute("aria-label", collapsed ? t("Espandi il menu") : t("Riduci il menu"));
     btn.title = btn.getAttribute("aria-label");
   };
   let collapsed = false;
