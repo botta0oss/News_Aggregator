@@ -53,7 +53,7 @@ export async function viewNews(ctx, query = {}) {
     offset += data.articles.length;
     summary.textContent = !data.total ? ""
       : state.q ? t("{0} per «{1}»{2}", fmt.count(data.total, t("risultato"), t("risultati")), state.q, offset < data.total ? t(", mostrati {0}", fmt.int(offset)) : "")
-        : `${fmt.int(offset)} di ${fmt.count(data.total, t("notizia"), t("notizie"))}`;
+        : t("{0} di {1}", fmt.int(offset), fmt.count(data.total, t("notizia"), t("notizie")));
     if (!data.total) {
       list.replaceChildren(state.q || filtersActive()
         ? emptyState(t("Nessuna notizia trovata"), t("Prova con meno parole, un periodo più lungo o meno filtri."),

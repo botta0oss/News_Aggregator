@@ -72,7 +72,7 @@ export async function viewMultiList(ctx) {
   const load = async () => {
     try {
       const data = localizeOther(await api("/multi", { params: { q: filters.q || undefined, sort: filters.sort, limit: 60 } }));
-      summary.textContent = `${fmt.count(data.events.length, t("evento"), t("eventi"))}${data.total > data.events.length ? ` su ${fmt.int(data.total)}` : ""}`;
+      summary.textContent = `${fmt.count(data.events.length, t("evento"), t("eventi"))}${data.total > data.events.length ? t(" su {0}", fmt.int(data.total)) : ""}`;
       list.replaceChildren(...(data.events.length ? data.events.map(eventCard) : [emptyState(t("Nessun evento"),
         filters.q ? t("Nessun evento o esito corrisponde alla ricerca.") : t("Gli eventi a più esiti arrivano con l'aggiornamento dei mercati."))]));
     } catch (e) {

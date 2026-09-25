@@ -81,7 +81,7 @@ function sourceRow(ctx, s, { admin, onEdit, onChange }) {
     toggle.disabled = true;
     try {
       await api(`/sources/${s.id}`, { method: "PATCH", body: { active: toggle.checked } });
-      toast(toggle.checked ? `${s.name} attivata` : t("{0} disattivata: le sue notizie restano nell'archivio", s.name));
+      toast(toggle.checked ? t("{0} attivata", s.name) : t("{0} disattivata: le sue notizie restano nell'archivio", s.name));
       onChange();
     } catch (e) {
       toggle.checked = !toggle.checked;
@@ -104,7 +104,7 @@ function sourceRow(ctx, s, { admin, onEdit, onChange }) {
       confirmBtn.classList.add("loading");
       try {
         await api(`/sources/${s.id}`, { method: "DELETE", params: { delete_articles: s.article_count > 0 || null } });
-        toast(`${s.name} eliminata${s.article_count ? ` con ${fmt.count(s.article_count, t("notizia"), t("notizie"))}` : ""}`);
+        toast(s.article_count ? t("{0} eliminata con {1}", s.name, fmt.count(s.article_count, t("notizia"), t("notizie"))) : t("{0} eliminata", s.name));
         onChange();
       } catch (e) {
         toast(e.message, { error: true });
@@ -219,7 +219,7 @@ function sourceForm(ctx, source, onClose, onSaved) {
     try {
       if (editing) await api(`/sources/${source.id}`, { method: "PATCH", body });
       else await api("/sources", { method: "POST", body });
-      toast(editing ? `${body.name} aggiornata` : t("{0} aggiunta. Le notizie arrivano al prossimo aggiornamento.", body.name));
+      toast(editing ? t("{0} aggiornata", body.name) : t("{0} aggiunta. Le notizie arrivano al prossimo aggiornamento.", body.name));
       onSaved();
     } catch (err) {
       if (err.status === 409 || /indirizzo|http/i.test(err.message)) { setMsg("s-url", err.message); url.focus(); }
@@ -251,7 +251,7 @@ function catalogCard(ctx, catalog, onAdded) {
     addBtn.classList.add("loading");
     try {
       const added = await api("/sources/catalog", { method: "POST", body: { urls: [...selected] } });
-      toast(`${added.length === 1 ? t("1 fonte aggiunta") : t("{0} fonti aggiunte", added.length)}. Le notizie arrivano al prossimo aggiornamento.`);
+      toast(`${added.length === 1 ? t("1 fonte aggiunta") : t("{0} fonti aggiunte", added.length)}. ${t("Le notizie arrivano al prossimo aggiornamento.")}`);
       onAdded();
     } catch (e) {
       toast(e.message, { error: true });

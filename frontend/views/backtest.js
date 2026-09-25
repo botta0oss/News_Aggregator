@@ -189,7 +189,7 @@ function runsCard(runs, selectedId) {
     return h("tr", { class: `clickable${r.id === selectedId ? " selected" : ""}`, on: { click: (e) => { if (!e.target.closest("a")) window.location.hash = href; } } },
       h("td", {}, h("a", { href, "aria-current": r.id === selectedId ? "true" : null }, fmt.dateTime(r.created_at))),
       h("td", { class: "nowrap small" }, `${fmt.date(p.resolved_after)} – ${fmt.date(p.resolved_before)}`),
-      h("td", { class: "small" }, (p.horizons || []).map((d) => `${d} gg`).join(", ")),
+      h("td", { class: "small" }, (p.horizons || []).map((d) => t("{0} gg", d)).join(", ")),
       h("td", {}, statusBadge(r.status)),
       h("td", { class: "num" }, fmt.int(r.done)),
       h("td", { class: "num" }, o ? b3(o.brier_model) : "–"),
@@ -240,7 +240,7 @@ function metricsTable(rows, firstLabel, firstValue) {
       return h("tr", {},
         h("th", { scope: "row" }, firstValue(r)), h("td", { class: "num" }, fmt.int(r.n)),
         cell(r.brier_market), cell(r.brier_model), cell(r.brier_blended),
-        h("td", { class: "num" }, r.signal_hit_rate == null ? "–" : `${fmt.pct(r.signal_hit_rate)} di ${r.signals}`),
+        h("td", { class: "num" }, r.signal_hit_rate == null ? "–" : t("{0} di {1}", fmt.pct(r.signal_hit_rate), r.signals)),
         h("td", { class: "num" }, fmt.int(r.bets)),
         h("td", { class: `num ${r.pnl > 0 ? "pos" : r.pnl < 0 ? "neg" : ""}` }, r.bets ? fmt.signedMoney(r.pnl) : "–"),
         h("td", { class: "num" }, r.roi == null ? "–" : fmt.pct(r.roi)));
@@ -302,7 +302,7 @@ async function resultsView(ctx, run, params) {
 function multiSignalCell(c) {
   if (c.signal !== "BUY_YES" && c.signal !== "BUY_NO") return h("span", { class: "muted small" }, t("Attendi"));
   const right = (c.details?.best === c.details?.winner) === (c.signal === "BUY_YES");
-  return h("span", { class: right ? "pos" : "neg" }, icon(right ? "check" : "x"), ` ${c.signal === "BUY_YES" ? t("SÌ") : "NO"} su ${c.details?.best}`);
+  return h("span", { class: right ? "pos" : "neg" }, icon(right ? "check" : "x"), " " + t("{0} su {1}", c.signal === "BUY_YES" ? t("SÌ") : "NO", c.details?.best));
 }
 
 function multiCard(run, m, cases) {
@@ -311,7 +311,7 @@ function multiCard(run, m, cases) {
     : m.brier_model > m.brier_market + 0.005 ? t("Il mercato ha previsto meglio di Jev") : t("Jev e il mercato hanno previsto con la stessa accuratezza");
   const rows = [...cases].sort((a, c) => Math.abs(c.pnl ?? 0) - Math.abs(a.pnl ?? 0)).slice(0, 30).map((c) => h("tr", {},
     h("td", { class: "q-cell" }, c.url ? externalLink(c.url, c.question) : c.question),
-    h("td", { class: "num nowrap" }, `${c.horizon_days} gg`, h("div", { class: "muted small" }, fmt.date(c.as_of))),
+    h("td", { class: "num nowrap" }, t("{0} gg", c.horizon_days), h("div", { class: "muted small" }, fmt.date(c.as_of))),
     h("td", {}, c.details?.winner || "–"),
     h("td", { class: "num" }, fmt.pct(c.price)), h("td", { class: "num" }, fmt.pct(c.model_probability)),
     h("td", {}, multiSignalCell(c)),
@@ -417,7 +417,7 @@ function casesCard(cases, skipped) {
       h("td", { class: "q-cell" }, c.url ? externalLink(c.url, c.question) : c.question,
         c.news?.length ? h("details", { class: "small" }, h("summary", {}, fmt.count(c.news.length, t("notizia"), t("notizie"))),
           h("ul", { class: "bullets" }, c.news.map((n) => h("li", {}, `${n.title} · ${n.source} · ${fmt.date(n.published_at)}`)))) : null),
-      h("td", { class: "num nowrap" }, `${c.horizon_days} gg`, h("div", { class: "muted small" }, fmt.date(c.as_of))),
+      h("td", { class: "num nowrap" }, t("{0} gg", c.horizon_days), h("div", { class: "muted small" }, fmt.date(c.as_of))),
       h("td", { class: "num" }, fmt.cents(c.price)),
       h("td", { class: "num" }, fmt.pct(c.model_probability)),
       h("td", { class: "num" }, fmt.pct(c.blended_probability)),

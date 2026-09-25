@@ -9,9 +9,9 @@ from backend.config import settings
 from backend.db.database import engine
 from sqlalchemy import text
 
-print(f"Groq API Key configurata: {bool(settings.GROQ_API_KEY and not settings.GROQ_API_KEY.startswith('your_'))}")
-print(f"TypeSafe Key configurata: {bool(settings.TYPESAFE_API_KEY and not settings.TYPESAFE_API_KEY.startswith('your_'))}")
-print(f"Gemini Key configurata: {bool(settings.GEMINI_API_KEY and not settings.GEMINI_API_KEY.startswith('your_'))}")
+print(f"Groq API key configured: {bool(settings.GROQ_API_KEY and not settings.GROQ_API_KEY.startswith('your_'))}")
+print(f"TypeSafe key configured: {bool(settings.TYPESAFE_API_KEY and not settings.TYPESAFE_API_KEY.startswith('your_'))}")
+print(f"Gemini key configured: {bool(settings.GEMINI_API_KEY and not settings.GEMINI_API_KEY.startswith('your_'))}")
 
 async def test_conn():
     try:

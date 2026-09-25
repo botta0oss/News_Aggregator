@@ -100,7 +100,7 @@ function resultsCard(s) {
       infoTip(t("Movimento a favore: di quanti punti il prezzo si è spostato nella direzione consigliata dopo l'allerta. Positivo vuol dire che l'allerta è arrivata prima del mercato. Servono decine di allerte perché i numeri dicano qualcosa.")),
     ),
     h("div", { class: "kpis" },
-      statTile(t("Opportunità"), fmt.int(s.opportunities), `su ${fmt.count(s.evaluated, t("valutazione"), t("valutazioni"))}`),
+      statTile(t("Opportunità"), fmt.int(s.opportunities), t("su {0}", fmt.count(s.evaluated, t("valutazione"), t("valutazioni")))),
       statTile(t("Notificate"), fmt.int(s.notified), t("su Telegram")),
       statTile(t("A favore dopo 1 ora"), oneHour.share_favorable == null ? "–" : fmt.pct(oneHour.share_favorable),
         oneHour.avg_move == null ? t("nessun dato ancora") : t("media {0}", fmt.pts(oneHour.avg_move))),
