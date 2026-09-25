@@ -82,7 +82,8 @@ class Settings(BaseSettings):
     # Forecasting / betting signals
     PREDICTION_AUTO: bool = False             # run Jev predictions automatically after each ingest
     PREDICTION_MAX_PER_RUN: int = 10
-    MODEL_WEIGHT_MAX: float = 0.5             # max weight of Jev vs market price in the blended probability
+    MODEL_WEIGHT_MAX: float = 0.25            # max weight of Jev vs market price in the blended probability
+    MODEL_DISAGREEMENT_LOGIT: float = 2.0     # Jev's weight shrinks when it is further than this (log-odds) from the price; 0 = off
     BLEND_METHOD: str = "logodds"             # "logodds" (pool in log-odds) or "linear"
     JEV_CALIB_A: float = 0.0                  # Platt scaling of Jev: logit p' = A + B · logit p (fitted by the backtest)
     JEV_CALIB_B: float = 1.0
@@ -90,6 +91,13 @@ class Settings(BaseSettings):
     MIN_EDGE: float = 0.05                    # minimum |edge| to emit a BUY signal
     MIN_EVIDENCE: float = 0.5                 # minimum normalized evidence strength to emit a signal
     KELLY_FRACTION: float = 0.25              # fractional Kelly sizing
+    # A forecast is re-evaluated at the current price; past these limits it needs a new one before buying
+    FORECAST_MAX_AGE_HOURS: float = 6.0
+    FORECAST_MAX_PRICE_MOVE: float = 0.5      # YES price moved more than this since the forecast, in log-odds
+                                              # (≈ 12 points around 50%, 4 points around 90%: moves near the extremes weigh more)
+    # Markets decided by an asset price at a date ("Bitcoin above $84,000 on September 24"): Jev reads
+    # news, not the live price, and the market price already knows it. No bets, no paid forecasts.
+    EXCLUDE_PRICE_MARKETS: bool = True
 
     # Betting economics (simulated portfolio)
     RISK_FREE_RATE: float = 0.04              # annual return of the risk-free alternative (e.g. T-bills)

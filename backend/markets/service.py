@@ -378,9 +378,10 @@ async def markets_needing_prediction(session: AsyncSession, limit: int) -> list[
         select(Market)
         .where(and_(Market.closed == False, Market.yes_price.is_not(None), Market.id.in_(new_links)))  # noqa: E712
         .order_by(Market.volume.desc())
-        .limit(limit)
     )
-    return list((await session.execute(stmt)).scalars().all())
+    from backend.markets.kinds import skip_paid_forecast
+    markets = [m for m in (await session.execute(stmt)).scalars().all() if not skip_paid_forecast(m.question)]
+    return markets[:limit]
 
 
 async def run_market_pipeline(session: AsyncSession) -> dict:

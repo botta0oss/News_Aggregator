@@ -62,7 +62,11 @@ All variables are set in `.env`. Placeholder values `your_...` count as "not con
 | `TARGETED_NEWS_LOCALE` | `hl=en-US&gl=US&ceid=US:en` | Language and country of the results |
 | `PREDICTION_AUTO` | `false` | Automatic forecasts after every collection (each forecast is a paid call) |
 | `PREDICTION_MAX_PER_RUN` | `10` | Cap on automatic forecasts per run |
-| `MODEL_WEIGHT_MAX` | `0.5` | Jev's maximum weight against the market price |
+| `MODEL_WEIGHT_MAX` | `0.25` | Jev's maximum weight against the market price |
+| `MODEL_DISAGREEMENT_LOGIT` | `2.0` | Jev's weight shrinks when it is further than this from the price, in log-odds (`0` = never) |
+| `FORECAST_MAX_AGE_HOURS` | `6` | A forecast older than this needs a new one before buying |
+| `FORECAST_MAX_PRICE_MOVE` | `0.5` | Same if the YES price has moved more than this since the forecast, in log-odds (≈ 12 points at 50 %, 4 at 90 %) |
+| `EXCLUDE_PRICE_MARKETS` | `true` | Markets decided by an asset's price get no bets and no automatic, bulk or alert forecasts |
 | `BLEND_METHOD` | `logodds` | How Jev and price are combined: `logodds` or `linear` |
 | `JEV_CALIB_A` / `JEV_CALIB_B` | `0` / `1` | Platt calibration of Jev's estimate (estimated by the backtest) |
 | `JEV_SAMPLES` | `1` | Jev calls per forecast, averaged (each one is paid) |

@@ -19,6 +19,11 @@ for key in ("TYPESAFE_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY"):
 os.environ["OLLAMA_BASE_URL"] = "http://127.0.0.1:9"
 # The existing tests check the Italian texts; tests/test_i18n.py covers English
 os.environ["APP_LANGUAGE"] = "it"
+# The existing tests were written for the earlier forecast parameters; tests/test_trust.py covers
+# the lower Jev weight, the disagreement reduction and the exclusion of price markets
+os.environ["MODEL_WEIGHT_MAX"] = "0.5"
+os.environ["MODEL_DISAGREEMENT_LOGIT"] = "0"
+os.environ["EXCLUDE_PRICE_MARKETS"] = "false"
 # Fast client-side rate limits in tests (test_ratelimit.py sets its own)
 os.environ["JEV_RPM"] = "6000"
 os.environ["GROQ_RPM"] = "6000"

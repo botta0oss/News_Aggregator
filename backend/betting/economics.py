@@ -237,7 +237,10 @@ def evaluate(
     exposure: Exposure,
     liquidity: float,
     risk_free_rate: float,
+    hours_to_end: Optional[float] = None,
+    extra_reasons: Optional[list] = None,
 ) -> Evaluation:
+    """extra_reasons: blocking reasons found by the caller (stale forecast, price market)."""
     side = "NO" if signal == "BUY_NO" else "YES"
     p_side = p_yes if side == "YES" else 1.0 - p_yes
     p_cons = max(0.0, p_side - profile.z * sigma)
@@ -254,6 +257,13 @@ def evaluate(
         notes.append(tr("Book non disponibile: book stimato a 4 livelli, da prezzo medio + metà spread in su, con la profondità dalla liquidità dichiarata.",
                         "Book not available: book estimated at 4 levels, from mid price + half spread upwards, with depth from the declared liquidity."))
 
+    reasons.extend(extra_reasons or [])
+    if hours_to_end is not None and hours_to_end < profile.min_hours_to_end:
+        left = tr(f"{hours_to_end:.0f} ore", f"{hours_to_end:.0f} hours") if hours_to_end >= 1 else \
+            tr(f"{hours_to_end * 60:.0f} minuti", f"{hours_to_end * 60:.0f} minutes")
+        reasons.append(Reason("too_close", tr(
+            f"Si risolve tra {left}: il prezzo sa già quasi tutto, il preset chiede almeno {profile.min_hours_to_end:.0f} ore.",
+            f"It resolves in {left}: the price already knows almost everything, the preset asks for at least {profile.min_hours_to_end:.0f} hours.")))
     if signal == "HOLD":
         reasons.append(Reason("no_signal", tr("Il modello non vede una differenza sufficiente rispetto al prezzo.",
                                                 "The model does not see a large enough difference from the price.")))
@@ -316,6 +326,16 @@ def evaluate(
                                  f"(tasso senza rischio {_num(risk_free_rate * 100)}% + premio del preset).",
                                  f"Prudent annualised return {_num(apr * 100)}%, below the {_num(hurdle * 100)}% threshold "
                                  f"(risk-free rate {_num(risk_free_rate * 100)}% + preset premium).")))
+
+    # Absolute return: annualizing a short bet makes any small margin look huge, so the prudent
+    # return on the money spent must also clear a minimum per bet
+    roi_cons = (exp_profit_cons / outlay) if outlay > 0 else \
+        ((p_cons / (best + fee_per_share(best, quote.fee_bps)) - 1) if best is not None else None)
+    if roi_cons is not None and roi_cons < profile.min_roi and signal != "HOLD" \
+            and not any(r.code in ("edge_after_costs", "return_too_low") for r in reasons):
+        reasons.append(Reason("roi_too_low", tr(
+            f"Rendimento prudente della scommessa {_num(roi_cons * 100, 1)}%: il preset ne chiede almeno {_num(profile.min_roi * 100)}%.",
+            f"Prudent return of the bet {_num(roi_cons * 100, 1)}%: the preset asks for at least {_num(profile.min_roi * 100)}%.")))
 
     blocking = [r for r in reasons if r.blocking]
     if blocking:

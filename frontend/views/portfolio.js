@@ -183,7 +183,7 @@ function settingsCard(ctx, data, refresh) {
           h("span", { class: "preset-name" }, p.label),
           h("span", { class: "preset-desc" }, p.description),
           h("span", { class: "preset-params mono" },
-            t("Kelly ×{0} · max {1}% per mercato · margine ≥ {2} pt · ≤ {3} giorni", fmt.dec(p.kelly_scale), Math.round(p.max_market_frac * 100), Math.round(p.min_net_edge * 100), p.max_days)),
+            t("Kelly ×{0} · max {1}% per mercato · margine ≥ {2} pt · rendimento ≥ {3}% · da {4} ore a {5} giorni dalla scadenza", fmt.dec(p.kelly_scale), Math.round(p.max_market_frac * 100), Math.round(p.min_net_edge * 100), Math.round((p.min_roi ?? 0) * 100), p.min_hours_to_end ?? "–", p.max_days)),
         ));
     }));
 

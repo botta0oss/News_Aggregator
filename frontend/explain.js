@@ -92,7 +92,16 @@ export function explainCard(p, market, evidence, status) {
       step(2, t("Quanto contano le notizie"), GLOSSARY.weight,
         h("p", {}, t("Forza delle evidenze "), h("b", { class: "mono" }, pct(p.evidence_strength)),
           t(". Il peso di Jev è il peso massimo per la forza delle evidenze:")),
-        formula(t("w = {0} × {1} = ", pct(maxW), pct(p.evidence_strength)), h("b", {}, pct(w))),
+        (() => {
+          // Weight reduced because Jev was far from the price (MODEL_DISAGREEMENT_LOGIT), or computed
+          // with the parameters of the time: show the formula that gives the stored weight
+          const base = maxW * p.evidence_strength;
+          if (Math.abs(w - base) < 0.0005) return formula(t("w = {0} × {1} = ", pct(maxW), pct(p.evidence_strength)), h("b", {}, pct(w)));
+          if (w < base) return h("div", {},
+            formula(t("w = {0} × {1} × {2} = ", pct(maxW), pct(p.evidence_strength), fmt.dec(w / base, 2)), h("b", {}, pct(w))),
+            h("p", { class: "muted small" }, t("Jev era molto lontano dal prezzo: il suo peso viene ridotto, perché su un mercato liquido le distanze più grandi sono più spesso errori di Jev che informazioni.")));
+          return h("div", {}, formula(t("w = "), h("b", {}, pct(w))), h("p", { class: "muted small" }, t("Calcolato con i parametri di allora.")));
+        })(),
       ),
       step(3, t("Probabilità finale (blended)"), GLOSSARY.blended,
         cal != null && Math.abs(cal - p.model_probability) >= 0.0005
