@@ -17,7 +17,7 @@ from backend.betting import portfolio
 from backend.betting.plans import known_bid
 from backend.betting.profiles import get_profile
 from backend.config import settings
-from backend.db.models import Market, MarketPrediction, PaperBet, PaperExclusion
+from backend.db.models import Market, MarketPrediction, PaperBet, PaperExclusion, PaperOrder
 from backend.i18n import tr
 
 # Cell formats (Excel): "money", "price" (0–1 with 4 decimals), "pct", "int", "date", "text"
@@ -27,6 +27,8 @@ BET_COLUMNS = [
     ("status", "text", "open, won, lost, void (50-50), sold (venduta prima della risoluzione), excluded (esclusa dalla simulazione)",
      "open, won, lost, void (50-50), sold (sold before resolution), excluded (excluded from the simulation)"),
     ("placed_by", "text", "auto (scommessa automatica) o manual", "auto (automatic bet) or manual"),
+    ("entry", "text", "taker (comprata sul book al prezzo di vendita) o maker (ordine limite eseguito, senza commissione)",
+     "taker (bought from the book at the ask) or maker (limit order filled, no fee)"),
     ("preset", "text", "Preset di rischio all'acquisto", "Risk preset at purchase"),
     ("created_at", "date", "Acquisto (UTC)", "Purchase (UTC)"),
     ("settled_at", "date", "Chiusura: risoluzione o vendita (UTC)", "Close: resolution or sale (UTC)"),
@@ -76,6 +78,8 @@ BET_COLUMNS = [
     ("jev_evidence_strength", "price", "Forza delle evidenze secondo Jev", "Evidence strength as Jev rated it"),
     ("objective_evidence", "price", "Forza delle evidenze dai fatti (fonti, età, conferme)", "Evidence strength from the facts (sources, age, confirmations)"),
     ("base_rate", "price", "Caso tipico secondo Jev: quanto spesso accadono eventi simili", "Jev's base rate: how often similar events happen"),
+    ("second_opinion", "price", "Probabilità del SÌ secondo la seconda opinione (Gemini o Groq)", "Probability of YES according to the second opinion (Gemini or Groq)"),
+    ("second_opinion_provider", "text", "Chi ha dato la seconda opinione", "Who gave the second opinion"),
     ("model_weight", "price", "Peso di Jev nella probabilità finale", "Jev's weight in the final probability"),
     ("edge", "price", "Probabilità finale − prezzo", "Final probability − price"),
     ("signal", "text", "Segnale: BUY_YES, BUY_NO, HOLD", "Signal: BUY_YES, BUY_NO, HOLD"),
@@ -90,6 +94,26 @@ BET_COLUMNS = [
 EQUITY_COLUMNS = [
     ("t", "date", "Chiusura di una scommessa (UTC); il primo punto è l'inizio", "Close of a bet (UTC); the first point is the start"),
     ("equity", "money", "Capitale dopo le scommesse chiuse fino a quel momento (USD)", "Capital after the bets closed up to then (USD)"),
+]
+
+ORDER_COLUMNS = [
+    ("order_id", "text", "Identificativo dell'ordine", "Order identifier"),
+    ("status", "text", "pending (in attesa), filled (eseguito), expired (scaduto), cancelled (annullato)",
+     "pending, filled, expired, cancelled"),
+    ("placed_by", "text", "auto o manual", "auto or manual"),
+    ("created_at", "date", "Inserimento (UTC)", "Placed (UTC)"),
+    ("expires_at", "date", "Scadenza (UTC)", "Expiry (UTC)"),
+    ("closed_at", "date", "Esecuzione, scadenza o annullamento (UTC)", "Fill, expiry or cancellation (UTC)"),
+    ("market_id", "text", "Identificativo del mercato Polymarket", "Polymarket market identifier"),
+    ("question", "text", "Domanda del mercato", "Market question"),
+    ("side", "text", "Lato: YES o NO", "Side: YES or NO"),
+    ("shares", "num", "Quote", "Shares"),
+    ("limit_price", "price", "Prezzo limite dell'ordine", "Limit price of the order"),
+    ("taker_price", "price", "Prezzo che si sarebbe pagato prendendo dal book", "Price that taking from the book would have cost"),
+    ("outlay", "money", "Importo riservato (USD)", "Amount reserved (USD)"),
+    ("p_side", "price", "Probabilità stimata che il lato vinca", "Estimated probability that the side wins"),
+    ("reason", "text", "Motivo di scadenza o annullamento", "Reason for expiry or cancellation"),
+    ("bet_id", "text", "Scommessa nata dall'ordine eseguito", "Bet created by the filled order"),
 ]
 
 EXCLUSION_COLUMNS = [
@@ -132,7 +156,7 @@ async def build(db: AsyncSession) -> dict:
         outlay = bet.stake + bet.fee
         end = bet.settled_at or now
         bets.append({
-            "bet_id": str(bet.id), "status": bet.status, "placed_by": bet.placed_by, "preset": bet.preset,
+            "bet_id": str(bet.id), "status": bet.status, "placed_by": bet.placed_by, "entry": bet.entry, "preset": bet.preset,
             "created_at": bet.created_at, "settled_at": bet.settled_at,
             "days_held": round((end - bet.created_at).total_seconds() / 86400, 2),
             "market_id": m.id, "question": m.question, "market_url": _market_url(m), "category": m.category,
@@ -161,6 +185,8 @@ async def build(db: AsyncSession) -> dict:
             "jev_evidence_strength": p.jev_evidence_strength if p is not None else None,
             "objective_evidence": p.objective_evidence if p is not None else None,
             "base_rate": p.base_rate if p is not None else None,
+            "second_opinion": p.second_opinion if p is not None else None,
+            "second_opinion_provider": p.second_opinion_provider if p is not None else None,
             "model_weight": p.model_weight if p is not None else None,
             "edge": p.edge if p is not None else None,
             "signal": p.signal if p is not None else None,
@@ -173,6 +199,14 @@ async def build(db: AsyncSession) -> dict:
     exclusions = [
         {"kind": x.kind, "value": x.value, "label": x.label, "created_at": x.created_at}
         for x in (await db.execute(select(PaperExclusion).order_by(PaperExclusion.created_at))).scalars().all()
+    ]
+    orders = [
+        {"order_id": str(o.id), "status": o.status, "placed_by": o.placed_by, "created_at": o.created_at,
+         "expires_at": o.expires_at, "closed_at": o.closed_at, "market_id": m.id, "question": m.question,
+         "side": o.side, "shares": o.shares, "limit_price": o.limit_price, "taker_price": o.taker_price,
+         "outlay": o.outlay, "p_side": o.p_side, "reason": o.reason, "bet_id": str(o.bet_id) if o.bet_id else None}
+        for o, m in (await db.execute(select(PaperOrder, Market).join(Market, Market.id == PaperOrder.market_id)
+                                      .order_by(PaperOrder.created_at))).all()
     ]
     equity = [{"t": datetime.fromisoformat(pt["t"]), "equity": pt["equity"]} for pt in summ["equity_curve"]]
 
@@ -206,6 +240,13 @@ async def build(db: AsyncSession) -> dict:
         ("clv_share_positive", "pct", tr("Quota comprata sotto la chiusura", "Share bought below the close"), clv_all.get("share_positive")),
         ("clv_n", "int", tr("Scommesse con CLV", "Bets with CLV"), clv_all.get("n")),
         ("clv_open_avg", "price", tr("Movimento medio finora sulle aperte", "Average move so far on the open ones"), clv_open.get("avg")),
+        ("order_mode", "text", tr("Acquisti automatici: maker (ordini limite) o taker", "Automatic buys: maker (limit orders) or taker"), summ["orders"]["mode"]),
+        ("orders_pending", "int", tr("Ordini limite in attesa", "Limit orders pending"), summ["orders"]["counts"]["pending"]),
+        ("orders_reserved", "money", tr("Importo riservato dagli ordini in attesa", "Amount reserved by pending orders"), summ["orders"]["reserved"]),
+        ("orders_filled", "int", tr("Ordini limite eseguiti", "Limit orders filled"), summ["orders"]["counts"]["filled"]),
+        ("orders_expired", "int", tr("Ordini limite scaduti", "Limit orders expired"), summ["orders"]["counts"]["expired"]),
+        ("orders_fill_rate", "pct", tr("Eseguiti / (eseguiti + scaduti)", "Filled / (filled + expired)"), summ["orders"]["fill_rate"]),
+        ("orders_saved", "money", tr("Risparmio degli ordini eseguiti rispetto al prezzo del book all'inserimento", "Saving of the filled orders against the book price when placed"), summ["orders"]["saved"]),
         ("guard_paused", "bool", tr("Scommesse automatiche in pausa per il CLV", "Automatic bets paused by the CLV guard"), s.paused_at is not None),
         ("guard_reason", "text", tr("Motivo della pausa", "Reason for the pause"), s.paused_reason),
         ("risk_free_rate", "pct", tr("Tasso senza rischio", "Risk-free rate"), settings.RISK_FREE_RATE),
@@ -221,7 +262,7 @@ async def build(db: AsyncSession) -> dict:
         ("preset_min_liquidity", "money", tr("Preset: liquidità minima del mercato", "Preset: minimum market liquidity"), profile.min_liquidity),
         ("preset_max_days", "int", tr("Preset: scadenza massima (giorni)", "Preset: maximum end date (days)"), profile.max_days),
     ]
-    return {"now": now, "summary": summary, "bets": bets, "equity": equity, "exclusions": exclusions}
+    return {"now": now, "summary": summary, "bets": bets, "orders": orders, "equity": equity, "exclusions": exclusions}
 
 
 def filename(now: datetime, ext: str) -> str:
@@ -296,6 +337,8 @@ def to_xlsx(data: dict) -> bytes:
 
     table(wb.create_sheet(tr("Scommesse", "Bets")), BET_COLUMNS, data["bets"],
           widths={"bet_id": 38, "question": 48, "market_url": 40, "exit_reason": 40, "prediction_id": 38})
+    table(wb.create_sheet(tr("Ordini", "Orders")), ORDER_COLUMNS, data["orders"],
+          widths={"order_id": 38, "question": 48, "reason": 40, "bet_id": 38})
     table(wb.create_sheet(tr("Capitale", "Equity")), EQUITY_COLUMNS, data["equity"])
     table(wb.create_sheet(tr("Esclusioni", "Exclusions")), EXCLUSION_COLUMNS, data["exclusions"], widths={"value": 30, "label": 48})
 
@@ -303,7 +346,8 @@ def to_xlsx(data: dict) -> bytes:
     ws.append([tr("foglio", "sheet"), tr("colonna", "column"), tr("descrizione", "description")])
     for cell in ws[1]:
         cell.font = bold
-    for sheet, columns in ((tr("Scommesse", "Bets"), BET_COLUMNS), (tr("Capitale", "Equity"), EQUITY_COLUMNS),
+    for sheet, columns in ((tr("Scommesse", "Bets"), BET_COLUMNS), (tr("Ordini", "Orders"), ORDER_COLUMNS),
+                           (tr("Capitale", "Equity"), EQUITY_COLUMNS),
                            (tr("Esclusioni", "Exclusions"), EXCLUSION_COLUMNS)):
         for key, desc in _describe(columns).items():
             ws.append([sheet, key, desc])

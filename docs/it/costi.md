@@ -11,7 +11,8 @@ controllo.
 
 **Cosa viene registrato.** Ogni chiamata a Jev, Groq e Gemini, con:
 - la **funzione** che l'ha fatta (classificazione, riassunti, riclassificazione, previsioni,
-  Valuta tutti, allerte, più esiti, backtest);
+  Valuta tutti, allerte, più esiti, backtest); la seconda opinione delle previsioni (Gemini o
+  Groq) conta sotto la funzione della sua previsione;
 - i **token** in entrata e in uscita;
 - un **costo stimato**, calcolato dai prezzi che imposti: per milione di token e, per Jev,
   anche per chiamata. Con i prezzi a 0 si contano chiamate e token, ma non il costo.

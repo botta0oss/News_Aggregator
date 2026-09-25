@@ -408,6 +408,8 @@ async def apply_economics(session: AsyncSession, event: MultiEvent, prediction: 
             if category:
                 market.category = category
             pred = outcome_prediction(prediction, entry["id"])
+            from backend.betting import orders
+            await orders.cancel_on_market(session, market.id, tr("Nuova previsione", "New forecast"))
             ev = await portfolio.evaluate_prediction(session, market, pred)
             results[entry["id"]] = ev.as_dict()
             if entry["id"] == prediction.best_outcome_id and prediction.signal in ("BUY_YES", "BUY_NO"):

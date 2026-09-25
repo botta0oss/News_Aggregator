@@ -96,7 +96,7 @@ export function strategySection(plan, priceYes) {
   );
 }
 
-const STRUCTURAL = new Set(["illiquid", "too_far", "too_close", "price_market", "exposure_cap", "no_cash", "no_book"]);
+const STRUCTURAL = new Set(["illiquid", "too_far", "too_close", "price_market", "exposure_cap", "no_cash", "no_book", "second_opinion"]);
 
 /** One line for lists, from the evaluation stored with the forecast (prices of that moment). */
 export function planLine(ev) {

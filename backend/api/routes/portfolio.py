@@ -6,12 +6,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.auth.deps import require_admin
-from backend.betting import export, guard, plans, portfolio
+from backend.betting import export, guard, orders, plans, portfolio
 from backend.betting.profiles import PROFILES, get_profile
 from backend.markets.calibration import summary as calibration_summary
 from backend.config import settings
 from backend.db.database import get_db
-from backend.db.models import Market, MarketPrediction, PaperBet, PaperExclusion
+from backend.db.models import Market, MarketPrediction, PaperBet, PaperExclusion, PaperOrder
 from backend.i18n import tr
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
@@ -59,7 +59,7 @@ def _bet_dict(bet: PaperBet, market: Market) -> dict:
         "unrealized_pnl_mid": (mid - bet.stake - bet.fee) if mid is not None else None,
         "bid_price": plans.known_bid(market, bet.side) if bet.status == "open" else None,
         "clv": portfolio.bet_clv(bet, market),
-        "exit_price": bet.exit_price, "exit_reason": bet.exit_reason,
+        "exit_price": bet.exit_price, "exit_reason": bet.exit_reason, "entry": bet.entry,
     }
 
 
@@ -79,6 +79,30 @@ async def resume_guard(db: AsyncSession = Depends(get_db)):
     """Resumes automatic bets after the closing-line guard paused them."""
     await guard.resume(db)
     return await guard.status(db)
+
+
+@router.get("/orders")
+async def list_orders(status: Literal["pending", "closed", "all"] = Query("pending"),
+                      limit: int = Query(100, ge=1, le=500), db: AsyncSession = Depends(get_db)):
+    """Simulated maker limit orders: waiting in the book (`pending`) or done (filled, expired, cancelled)."""
+    stmt = select(PaperOrder, Market).join(Market, Market.id == PaperOrder.market_id)
+    if status == "pending":
+        stmt = stmt.where(PaperOrder.status == "pending")
+    elif status == "closed":
+        stmt = stmt.where(PaperOrder.status != "pending")
+    rows = (await db.execute(stmt.order_by(PaperOrder.created_at.desc()).limit(limit))).all()
+    return [orders.order_dict(o, m) | {"url": _market_url(m)} for o, m in rows]
+
+
+@router.post("/orders/{order_id}/cancel", dependencies=admin)
+async def cancel_order(order_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    order = await db.get(PaperOrder, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=tr("Ordine non trovato", "Order not found"))
+    if order.status != "pending":
+        raise HTTPException(status_code=409, detail=tr("L'ordine non è in attesa", "The order is not pending"))
+    await orders.cancel(db, order, tr("Annullato a mano", "Cancelled by hand"))
+    return orders.order_dict(order)
 
 
 @router.get("/export")
@@ -251,6 +275,9 @@ async def market_economics(market_id: str, preset: Optional[Literal["prudente", 
         "preset": profile.as_dict(),
         "excluded_by": excluded_by,
         "open_bet": _bet_dict(open_bet, market) if open_bet else None,
+        "pending_orders": [orders.order_dict(o) for o in await orders.pending_on(db, market_id)],
+        # Where an automatic buy would wait in the book (maker mode), if the evaluation says buy
+        "maker_price": orders.maker_price(market, ev) if orders.maker_mode() and ev.verdict in ("GO", "SMALL") else None,
         "market": {"id": market.id, "event_slug": market.event_slug, "category": market.category, "question": market.question,
                    "yes_price": market.yes_price},
         "evaluated_at": datetime.now().astimezone(),

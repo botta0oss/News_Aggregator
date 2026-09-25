@@ -10,7 +10,8 @@ under control.
 
 **What is recorded.** Every call to Jev, Groq and Gemini, with:
 - the **feature** that made it (classification, summaries, reclassification, forecasts,
-  Assess all, alerts, multi-outcome, backtest);
+  Assess all, alerts, multi-outcome, backtest); the forecasts' second opinion (Gemini or Groq)
+  counts under the feature of its forecast;
 - the input and output **tokens**;
 - an **estimated cost**, computed from the prices you set: per million tokens and, for Jev,
   also per call. With prices at 0, calls and tokens are counted but not the cost.

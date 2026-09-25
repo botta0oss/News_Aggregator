@@ -73,6 +73,10 @@ STATEMENTS = [
     "ALTER TABLE betting_settings ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ",
     "ALTER TABLE betting_settings ADD COLUMN IF NOT EXISTS paused_reason TEXT",
     "ALTER TABLE betting_settings ADD COLUMN IF NOT EXISTS guard_since TIMESTAMPTZ",
+    # Second opinion, maker orders (the paper_orders table is created with the others)
+    "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS second_opinion DOUBLE PRECISION",
+    "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS second_opinion_provider TEXT",
+    "ALTER TABLE paper_bets ADD COLUMN IF NOT EXISTS entry TEXT NOT NULL DEFAULT 'taker'",
     """UPDATE markets SET resolution = CASE WHEN resolved_yes THEN 'yes' ELSE 'no' END
        WHERE resolution IS NULL AND resolved_yes IS NOT NULL""",
 ]

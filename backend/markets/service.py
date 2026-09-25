@@ -328,6 +328,21 @@ async def ask_jev(state, questions, max_wait: Optional[float] = None, samples: O
     return responses[0], model_p, strength, len(parsed)
 
 
+async def ask_second_opinion(state: dict, signal, price: float, evidence_strength: float):
+    """(P(YES), provider) from a free model, only when a buy is possible near this price: enough
+    evidence and a calibrated Jev at least MIN_EDGE from the price. Free quotas are small."""
+    from backend.ai import second_opinion
+    if not second_opinion.is_available() or evidence_strength < settings.MIN_EVIDENCE:
+        return None
+    if abs(signal.calibrated_probability - price) < settings.MIN_EDGE:
+        return None
+    try:
+        return await second_opinion.ask(state)
+    except Exception as e:  # never lose the Jev forecast for it
+        logger.info(f"Second opinion failed: {e}")
+        return None
+
+
 async def predict_market(session: AsyncSession, market: Market, max_wait: Optional[float] = None) -> MarketPrediction:
     """Runs a Jev forecast for one market and stores it together with the betting signal."""
     if not jev.is_enabled():
@@ -358,6 +373,7 @@ async def predict_market(session: AsyncSession, market: Market, max_wait: Option
     if objective is not None:
         evidence_strength = min(evidence_strength, objective)
     signal = compute_signal(model_p, market.yes_price, evidence_strength)
+    second = await ask_second_opinion(state, signal, market.yes_price, evidence_strength)
     prediction = MarketPrediction(
         market_id=market.id,
         model_name=response.model,
@@ -370,6 +386,8 @@ async def predict_market(session: AsyncSession, market: Market, max_wait: Option
         jev_evidence_strength=round(jev_strength, 4),
         objective_evidence=round(objective, 4) if objective is not None else None,
         base_rate=parse_base_rate(response),
+        second_opinion=round(second[0], 4) if second else None,
+        second_opinion_provider=second[1] if second else None,
         blended_probability=signal.blended_probability,
         model_weight=signal.model_weight,
         edge=signal.edge,
@@ -427,6 +445,8 @@ async def run_market_pipeline(session: AsyncSession) -> dict:
 async def _run_market_pipeline(session: AsyncSession) -> dict:
     from backend.betting.portfolio import review_open_bets, settle_bets
     stats = await sync_markets(session)
+    from backend.betting.orders import process_orders
+    stats["orders"] = await process_orders(session)
     stats["settled_bets"] = await settle_bets(session)
     stats["sold_bets"] = await review_open_bets(session)
     stats["targeted"] = await run_targeted_search(session)

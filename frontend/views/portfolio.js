@@ -24,9 +24,10 @@ const planCell = (b) => {
 };
 
 export async function viewPortfolio(ctx) {
-  const [data, bets, exclusions, categories] = await Promise.all([
+  const [data, bets, exclusions, categories, pending] = await Promise.all([
     api("/portfolio"), api("/portfolio/bets", { params: { status: "all", limit: 500 } }),
     api("/portfolio/exclusions"), api("/sources/categories").catch(() => []),
+    api("/portfolio/orders").catch(() => []),
   ]);
   const admin = ctx.isAdmin();
   const refresh = () => ctx.rerender();
@@ -93,7 +94,9 @@ export async function viewPortfolio(ctx) {
     )),
     h("tbody", {}, open.map((b) => h("tr", {},
       h("td", { class: "q-cell" }, marketLink(b)), h("td", {}, sideBadge(b.side)),
-      h("td", { class: "num" }, fmt.shares(b.shares)), h("td", { class: "num" }, fmt.cents(b.avg_price)),
+      h("td", { class: "num" }, fmt.shares(b.shares)),
+      h("td", { class: "num" }, fmt.cents(b.avg_price), b.entry === "maker"
+        ? h("div", { class: "muted small", title: t("Comprata con un ordine limite eseguito, senza commissione") }, t("ordine limite")) : null),
       h("td", { class: "num" }, money(b.outlay)), h("td", { class: "num", title: b.current_price != null ? t("Prezzo di mercato {0}", fmt.cents(b.current_price)) : "" }, fmt.cents(b.bid_price)),
       h("td", { class: "num", title: b.mid_value != null ? t("Al prezzo di mercato: {0}", money(b.mid_value)) : "" }, money(b.current_value)),
       h("td", { class: `num ${pnlCls(b.unrealized_pnl)}` }, fmt.signedMoney(b.unrealized_pnl)),
@@ -104,6 +107,29 @@ export async function viewPortfolio(ctx) {
         betAction(b, `/portfolio/bets/${b.id}/exclude`, t("Escludi"), t("Scommessa esclusa dalla simulazione")), excludeMarket(b)) : null,
     ))),
   )) : h("p", { class: "secondary" }, t("Nessuna posizione aperta."));
+
+  const os = data.orders || { counts: {}, mode: "taker" };
+  const ordersCard = os.mode === "maker" || pending.length || os.counts.filled ? h("section", { class: "card", "aria-labelledby": "h-orders" },
+    h("div", { class: "card-head" }, h("h2", { id: "h-orders" }, t("Ordini limite in attesa ({0})", pending.length),
+      infoTip(t("Gli acquisti automatici non prendono dal book: aspettano un tick sopra il miglior prezzo di acquisto, senza commissione. Si eseguono se un aggiornamento dei mercati mostra qualcuno che vende a quel prezzo; altrimenti scadono. Il denaro resta riservato finché aspettano."))),
+      h("span", { class: "muted small" }, t("{0} eseguiti · {1} scaduti · {2} annullati", os.counts.filled || 0, os.counts.expired || 0, os.counts.cancelled || 0))),
+    pending.length ? h("div", { class: "table-wrap" }, h("table", {},
+      h("thead", {}, h("tr", {},
+        h("th", {}, t("Mercato")), h("th", {}, t("Lato")), h("th", { class: "num" }, t("Quote")), h("th", { class: "num" }, t("Prezzo limite")),
+        h("th", { class: "num" }, t("Miglior offerta"), infoTip(t("Prezzo più basso a cui qualcuno vende ora: l'ordine si esegue quando arriva al prezzo limite."))),
+        h("th", { class: "num" }, t("Riservato")), h("th", {}, t("Scade")), admin ? h("th", {}, h("span", { class: "sr-only" }, t("Azioni"))) : null)),
+      h("tbody", {}, pending.map((o) => h("tr", {},
+        h("td", { class: "q-cell" }, h("a", { href: `#/mercati/${encodeURIComponent(o.market_id)}` }, o.question)), h("td", {}, sideBadge(o.side)),
+        h("td", { class: "num" }, fmt.shares(o.shares)),
+        h("td", { class: "num", title: o.taker_price != null ? t("Prendendo dal book: {0}", fmt.cents(o.taker_price)) : "" }, fmt.cents(o.limit_price)),
+        h("td", { class: "num" }, fmt.cents(o.best_ask)), h("td", { class: "num" }, money(o.outlay)),
+        h("td", { class: "nowrap" }, fmt.dateTime(o.expires_at)),
+        admin ? h("td", { class: "row-actions" }, betAction(o, `/portfolio/orders/${o.id}/cancel`, t("Annulla"), t("Ordine annullato"))) : null,
+      ))))) : h("p", { class: "secondary" }, t("Nessun ordine in attesa.")),
+    os.fill_rate != null || os.saved ? h("p", { class: "muted small", style: { marginTop: "10px" } },
+      os.fill_rate != null ? t("Eseguito il {0} degli ordini arrivati a conclusione. ", fmt.pct(os.fill_rate)) : "",
+      os.saved ? t("Rispetto al prezzo del book quando sono stati inseriti, gli ordini eseguiti hanno risparmiato {0}.", money(os.saved)) : "") : null,
+  ) : null;
 
   const settledTable = settled.length ? h("div", { class: "table-wrap" }, h("table", {},
     h("thead", {}, h("tr", {},
@@ -150,7 +176,8 @@ export async function viewPortfolio(ctx) {
       statTile(t("Profitti realizzati"), fmt.signedMoney(data.realized_pnl), t("{0} vinte · {1} perse{2}{3}", data.counts.won, data.counts.lost, data.counts.sold ? t(" · {0} vendute", data.counts.sold) : "", data.counts.void ? t(" · {0} annullate", data.counts.void) : "")),
       statTile(h("span", {}, t("Profitti latenti"), infoTip(t("Vendendo ora le posizioni aperte al miglior prezzo offerto, commissione compresa. Al prezzo di mercato sarebbero {0}.", fmt.signedMoney(data.unrealized_pnl_mid)))),
         fmt.signedMoney(data.unrealized_pnl), t("{0} aperte · {1} investiti", data.counts.open, money(data.invested))),
-      statTile(t("Scommesse vinte"), data.hit_rate != null ? fmt.pct(data.hit_rate) : "–", t("liquidità {0}", money(data.cash))),
+      statTile(t("Scommesse vinte"), data.hit_rate != null ? fmt.pct(data.hit_rate) : "–",
+        t("liquidità {0}", money(data.cash)) + (data.orders?.reserved ? t(" · {0} negli ordini", money(data.orders.reserved)) : "")),
       statTile(t("Prezzo di chiusura"), data.clv?.n ? fmt.pts(data.clv.avg) : "–",
         data.clv?.n ? t("{0} comprate sotto la chiusura · {1}", fmt.pct(data.clv.share_positive), fmt.count(data.clv.n, t("mercato chiuso"), t("mercati chiusi")))
           : data.clv_open?.n ? t("finora {0} sulle aperte", fmt.pts(data.clv_open.avg)) : t("nessun mercato chiuso ancora")),
@@ -168,6 +195,7 @@ export async function viewPortfolio(ctx) {
         : t("Le scommesse automatiche sono disattivate: attivale qui sotto o aggiungile dal dettaglio di un mercato.")) : null,
     h("div", { class: "grid-2", style: { marginBottom: "16px" } }, curveCard, settingsCard(ctx, data, refresh)),
     h("div", { class: "stack" },
+      ordersCard,
       h("section", { class: "card", "aria-labelledby": "h-open" }, h("div", { class: "card-head" }, h("h2", { id: "h-open" }, t("Posizioni aperte ({0})", open.length))), openTable),
       h("section", { class: "card", "aria-labelledby": "h-settled" }, h("div", { class: "card-head" }, h("h2", { id: "h-settled" }, t("Scommesse chiuse ({0})", settled.length))), settledTable),
       excludedList,
@@ -241,6 +269,7 @@ function settingsCard(ctx, data, refresh) {
     resetArea,
     h("p", { class: "muted small", style: { marginTop: "10px" } },
       t("Tasso senza rischio {0}. ", fmt.pct(data.risk_free_rate)),
+      data.orders?.mode === "maker" ? t("Acquisti automatici con ordini limite (maker), a mano al prezzo del book. ") : t("Acquisti automatici al prezzo del book (taker). "),
       data.guard?.enabled ? t("Controllo del prezzo di chiusura: sulle ultime {0} scommesse il prezzo si è mosso in media di {1}; sotto {2} le scommesse automatiche si fermano (servono almeno {3} scommesse). ",
         data.guard.n, data.guard.avg_move != null ? fmt.pts(data.guard.avg_move) : "–", fmt.pts(data.guard.threshold), data.guard.min_bets) : "",
       data.calibration_factor !== 1 ? t("Incertezza corretta ×{0} in base ai risultati passati.", fmt.dec(data.calibration_factor, 2))

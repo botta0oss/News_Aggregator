@@ -13,7 +13,8 @@ from backend.betting.economics import Exposure, Quote, estimated_quote, evaluate
 from backend.betting.profiles import get_profile
 from backend.config import settings
 from backend.db.models import (
-    Article, BettingSettings, Market, MarketArticleLink, MarketPrediction, PaperBet, PaperExclusion, ProcessedArticle,
+    Article, BettingSettings, Market, MarketArticleLink, MarketPrediction, PaperBet, PaperExclusion, PaperOrder,
+    ProcessedArticle,
 )
 from backend.markets import polymarket
 from backend.markets.forecast import brier_score
@@ -59,6 +60,7 @@ async def reset_portfolio(db: AsyncSession, bankroll: float, preset: Optional[st
     """Starts over: deletes every simulated bet and sets a new initial capital."""
     if not (10 <= bankroll <= 10_000_000):
         raise ValueError(tr("Il capitale deve essere tra 10 $ e 10.000.000 $", "Capital must be between $10 and $10,000,000"))
+    await db.execute(delete(PaperOrder))
     await db.execute(delete(PaperBet))
     row = await get_settings(db)
     row.bankroll = float(bankroll)
@@ -79,9 +81,11 @@ async def ledger(db: AsyncSession) -> dict:
     open_outlay = (await db.execute(
         select(func.coalesce(func.sum(PaperBet.stake + PaperBet.fee), 0.0)).where(PaperBet.status == "open")
     )).scalar()
+    from backend.betting.orders import reserved
+    pending = await reserved(db)   # money of the maker orders waiting in the book
     equity = s.bankroll + realized
-    return {"bankroll": s.bankroll, "realized": realized, "open_outlay": open_outlay,
-            "equity": equity, "cash": equity - open_outlay}
+    return {"bankroll": s.bankroll, "realized": realized, "open_outlay": open_outlay, "pending_orders": pending,
+            "equity": equity, "cash": equity - open_outlay - pending}
 
 
 async def exposure_for(db: AsyncSession, market: Market) -> Exposure:
@@ -89,12 +93,15 @@ async def exposure_for(db: AsyncSession, market: Market) -> Exposure:
     base = select(func.coalesce(func.sum(outlay), 0.0)).select_from(PaperBet).join(Market, Market.id == PaperBet.market_id)\
         .where(PaperBet.status == "open")
 
+    from backend.betting.orders import reserved
+
     async def total(*conds):
-        return (await db.execute(base.where(*conds))).scalar()
+        # Open bets plus the pending limit orders, which would become bets
+        return (await db.execute(base.where(*conds))).scalar() + await reserved(db, *conds)
 
     return Exposure(
-        market=await total(PaperBet.market_id == market.id),
-        event=await total(Market.event_slug == market.event_slug) if market.event_slug else await total(PaperBet.market_id == market.id),
+        market=await total(Market.id == market.id),
+        event=await total(Market.event_slug == market.event_slug) if market.event_slug else await total(Market.id == market.id),
         category=await total(Market.category == market.category) if market.category else 0.0,
         total=await total(),
     )
@@ -212,7 +219,7 @@ async def evaluate_prediction(db: AsyncSession, market: Market, prediction: Mark
         liquidity=market.liquidity or 0.0,
         risk_free_rate=settings.RISK_FREE_RATE,
         hours_to_end=hours_to_end(market),
-        extra_reasons=forecast_reasons(market, prediction),
+        extra_reasons=forecast_reasons(market, prediction, signal),
     )
 
 
@@ -223,9 +230,10 @@ def hours_to_end(market: Market) -> Optional[float]:
     return (market.end_date - _now()).total_seconds() / 3600
 
 
-def forecast_reasons(market: Market, prediction) -> list:
+def forecast_reasons(market: Market, prediction, signal: Optional[str] = None) -> list:
     """Blocking reasons about the forecast itself: too old, the price moved too much since,
-    or a market decided by an asset's price (see markets/kinds.py)."""
+    a market decided by an asset's price (see markets/kinds.py), or a second opinion that
+    does not agree (ai/second_opinion.py)."""
     from backend.betting.economics import Reason
     from backend.markets.kinds import is_price_market
     reasons = []
@@ -245,7 +253,30 @@ def forecast_reasons(market: Market, prediction) -> list:
         reasons.append(Reason("stale_forecast", tr(
             f"La previsione {why}: prima di comprare serve una previsione nuova.",
             f"The forecast {why}: a new forecast is needed before buying.")))
+    reasons.extend(second_opinion_reasons(market, prediction, signal))
     return reasons
+
+
+def second_opinion_reasons(market: Market, prediction, signal: Optional[str]) -> list:
+    from backend.ai import second_opinion
+    from backend.betting.economics import Reason
+    if not settings.SECOND_OPINION_ENABLED or signal not in ("BUY_YES", "BUY_NO"):
+        return []
+    p2 = getattr(prediction, "second_opinion", None)
+    if p2 is None:
+        # Outcomes of multi-outcome events and forecasts made before the second opinion have none
+        if settings.SECOND_OPINION_REQUIRED and getattr(prediction, "multi_prediction_id", None) is None:
+            return [Reason("second_opinion", tr(
+                "Nessuna seconda opinione disponibile (Gemini, Groq): senza, non si compra.",
+                "No second opinion available (Gemini, Groq): no buying without one."))]
+        return []
+    if second_opinion.agrees(p2, market.yes_price, signal):
+        return []
+    who = (getattr(prediction, "second_opinion_provider", None) or "").capitalize() or tr("l'altro modello", "the other model")
+    side = tr("sopra", "above") if signal == "BUY_YES" else tr("sotto", "below")
+    return [Reason("second_opinion", tr(
+        f"Seconda opinione contraria: {who} stima il SÌ al {p2 * 100:.0f}%, non {side} il prezzo ({market.yes_price * 100:.0f}%) come Jev.",
+        f"Second opinion disagrees: {who} puts YES at {p2 * 100:.0f}%, not {side} the price ({market.yes_price * 100:.0f}%) like Jev."))]
 
 
 PORTFOLIO_REASONS = ("exposure_cap", "no_cash")  # reasons that depend on the portfolio, not on the market
@@ -299,7 +330,9 @@ async def add_exclusion(db: AsyncSession, kind: str, value: str, label: Optional
 
 async def maybe_place_bet(db: AsyncSession, market: Market, prediction: MarketPrediction, ev: Evaluation,
                           placed_by: str = "auto") -> Optional[PaperBet]:
-    """Places a simulated bet when the evaluation says so, unless excluded or already open on this market."""
+    """Places a simulated bet when the evaluation says so, unless excluded or already open on this market.
+    Automatic bets in maker mode become a limit order (betting/orders.py) that is filled later."""
+    from backend.betting import orders
     s = await get_settings(db)
     if placed_by == "auto" and not s.auto_paper:
         return None
@@ -313,9 +346,13 @@ async def maybe_place_bet(db: AsyncSession, market: Market, prediction: MarketPr
     from backend.betting import guard
     if placed_by == "auto" and not await guard.allows_auto_bet(db, market):
         return None   # paused: the price has been moving against the recent bets (betting/guard.py)
-    already = (await db.execute(select(PaperBet.id).where(PaperBet.market_id == market.id, PaperBet.status == "open"))).first()
-    if already:
-        return None
+    if placed_by == "auto":
+        if await orders.pending_on(db, market.id):
+            return None
+        if orders.maker_mode():
+            return await orders.place_order(db, market, prediction, ev, s.preset, placed_by)
+    else:
+        await orders.cancel_on_market(db, market.id, tr("Sostituito da una scommessa manuale", "Replaced by a manual bet"))
     bet = PaperBet(
         market_id=market.id, prediction_id=prediction.id, side=ev.side, shares=ev.shares,
         avg_price=ev.avg_price, stake=ev.stake, fee=ev.fee, p_side=ev.p_side, p_conservative=ev.p_conservative,
@@ -330,6 +367,9 @@ async def maybe_place_bet(db: AsyncSession, market: Market, prediction: MarketPr
 async def apply_economics(db: AsyncSession, market: Market, prediction: MarketPrediction) -> Optional[Evaluation]:
     """Called after every forecast: stores the evaluation and places the automatic simulated bet."""
     try:
+        from backend.betting import orders
+        # A new forecast replaces the limit orders of the previous one (a new one follows if it still says buy)
+        await orders.cancel_on_market(db, market.id, tr("Nuova previsione", "New forecast"))
         ev = await evaluate_prediction(db, market, prediction)
         prediction.economics = ev.as_dict()
         await db.commit()
@@ -530,8 +570,9 @@ async def summary(db: AsyncSession) -> dict:
         "realized_pnl": led["realized"],
         "unrealized_pnl": unrealized,          # selling now at the best bid, sale fee included
         "unrealized_pnl_mid": unrealized_mid,  # at the market (mid) price
-        "total_value": led["cash"] + open_value,
-        "roi": (led["cash"] + open_value - s.bankroll) / s.bankroll if s.bankroll else None,
+        # Money reserved by pending limit orders is still ours until they fill
+        "total_value": led["cash"] + led["pending_orders"] + open_value,
+        "roi": (led["cash"] + led["pending_orders"] + open_value - s.bankroll) / s.bankroll if s.bankroll else None,
         "counts": {"open": counts["open"], "won": counts["won"], "lost": counts["lost"], "void": counts["void"], "sold": counts["sold"], "excluded": counts["excluded"]},
         # Bets sold before resolution count as won when they made money
         "hit_rate": (counts["won"] + sold_won) / (settled + counts["sold"]) if settled + counts["sold"] else None,
@@ -542,4 +583,10 @@ async def summary(db: AsyncSession) -> dict:
         "clv_open": clv.summarize([clv.clv(b.avg_price, m.yes_price, b.side) for b, m in bets
                                    if b.status == "open" and not m.closed]),
         "equity_curve": curve,
+        "orders": await orders_stats(db),
     }
+
+
+async def orders_stats(db: AsyncSession) -> dict:
+    from backend.betting import orders
+    return await orders.stats(db)

@@ -19,7 +19,8 @@ every forecast and, live, in the **Worth it?** card of the market detail page.
    ending in less than the preset's minimum hours: at that point the price already knows the
    outcome. No shares under `LONGSHOT_MIN_PRICE` (10¢), on either side: long shots win less
    often than their price says (the *favourite–longshot bias*), and an error of a few points
-   on a 5¢ share is a large share of the stake.
+   on a 5¢ share is a large share of the stake. When a [second opinion](method.md#second-opinion)
+   puts the probability on the other side of the price from Jev, no buying either.
 1. **Real price.** It reads the book of the side to buy from Polymarket's CLOB (public API,
    read only) and computes the average price you would pay for that amount.
    Fee (only for those who take from the book, as here): `rate × price × (1 − price)` per
@@ -56,7 +57,25 @@ every forecast and, live, in the **Worth it?** card of the market detail page.
 | Aggressive | ×0.5 | 0.5 | 2 pts | 3% | 3% | 8% | 15% | 40% | 85% | $5,000 | 12 h – 730 d |
 
 **Simulated portfolio** (*Portfolio* page):
-- **Automatic bets:** every forecast with a *Worth it* or *Barely worth it* verdict becomes a virtual bet at the real price of the moment, at most one open per market.
+- **Automatic bets:** every forecast with a *Worth it* or *Barely worth it* verdict becomes a
+  virtual bet, at most one open per market. With `PAPER_ORDER_MODE=maker` (the default) it is
+  first a **limit order**, as a maker would place it:
+  - price: one tick (`MAKER_TICK`, 1¢) above the side's best bid, below its best ask, never
+    above the assessment's maximum price;
+  - no fee (on Polymarket makers pay none) and no half spread;
+  - it fills, at its price, when a market sync shows the side's best ask at or below it (a
+    seller came down to it). Prices between two syncs are not seen: a quick dip that recovers
+    is missed;
+  - it expires after `MAKER_ORDER_TTL_HOURS` (6); a new forecast on the market replaces it
+    (a new order follows if it still says buy); the guard's pause or an exclusion cancels it;
+    a market that closes against the side fills it (it went through the price on its way down);
+  - its money is reserved: it is not available cash and counts in the exposure limits.
+
+  The cost is adverse selection: orders fill more often when the price is moving against the
+  bet, and some never fill. The portfolio shows the pending orders, how many filled or expired,
+  and what the filled ones saved against the book price when they were placed. Manual bets
+  («Add now») still take the book (`entry` = taker) and cancel a pending order on the market.
+  `PAPER_ORDER_MODE=taker` goes back to taking the ask on automatic bets too.
 - **Closing-line guard:** the result of a bet takes weeks, the price moves within hours. For
   the latest `CLV_GUARD_WINDOW` (15) bets older than an hour, the guard measures how much the
   price of the side bought has moved since the purchase (to the closing price once the market

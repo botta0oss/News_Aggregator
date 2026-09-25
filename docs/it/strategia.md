@@ -20,6 +20,8 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
    conosce già l'esito. Niente quote sotto `LONGSHOT_MIN_PRICE` (10¢), su nessuno dei due
    lati: gli esiti improbabili vincono meno spesso di quanto dica il prezzo (il *favourite–longshot
    bias*), e un errore di pochi punti su una quota da 5¢ è una grossa parte della puntata.
+   Niente acquisto nemmeno quando una [seconda opinione](metodo.md#seconda-opinione) mette la
+   probabilità dall'altra parte del prezzo rispetto a Jev.
 1. **Prezzo reale.** Legge il book del lato da comprare dal CLOB di Polymarket (API
    pubblica, sola lettura) e calcola il prezzo medio che pagheresti per quella cifra.
    Commissione (solo per chi compra dal book, come qui): `tasso × prezzo × (1 − prezzo)` per
@@ -57,7 +59,26 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
 | Aggressivo | ×0,5 | 0,5 | 2 pt | 3% | 3% | 8% | 15% | 40% | 85% | 5.000 $ | da 12 h a 730 gg |
 
 **Portafoglio simulato** (pagina *Portafoglio*):
-- **Scommesse automatiche:** ogni previsione con verdetto *Conviene* o *Conviene poco* diventa una scommessa virtuale al prezzo reale del momento, al massimo una aperta per mercato.
+- **Scommesse automatiche:** ogni previsione con verdetto *Conviene* o *Conviene poco* diventa
+  una scommessa virtuale, al massimo una aperta per mercato. Con `PAPER_ORDER_MODE=maker` (il
+  valore di base) prima è un **ordine limite**, come lo metterebbe un maker:
+  - prezzo: un tick (`MAKER_TICK`, 1¢) sopra il miglior prezzo di acquisto del lato, sotto il
+    miglior prezzo di vendita, mai sopra il prezzo massimo della valutazione;
+  - nessuna commissione (su Polymarket i maker non la pagano) e niente metà spread;
+  - si esegue, al suo prezzo, quando un aggiornamento dei mercati mostra il miglior prezzo di
+    vendita del lato uguale o sotto il limite (qualcuno è sceso a vendere lì). I prezzi tra due
+    aggiornamenti non si vedono: un calo rapido che rientra viene perso;
+  - scade dopo `MAKER_ORDER_TTL_HOURS` (6); una nuova previsione sul mercato lo sostituisce (ne
+    segue uno nuovo se conviene ancora); la pausa della guardia o un'esclusione lo annullano; un
+    mercato che si chiude contro il lato lo esegue (il prezzo ci è passato scendendo);
+  - il suo denaro resta riservato: non è liquidità disponibile e conta nei limiti di esposizione.
+
+  Il costo è la selezione avversa: gli ordini si eseguono più spesso quando il prezzo si muove
+  contro la scommessa, e alcuni non si eseguono mai. Il portafoglio mostra gli ordini in attesa,
+  quanti sono stati eseguiti o sono scaduti e quanto hanno risparmiato quelli eseguiti rispetto
+  al prezzo del book quando sono stati inseriti. Le scommesse a mano («Aggiungi ora») comprano
+  ancora dal book (`entry` = taker) e annullano un ordine in attesa sul mercato.
+  `PAPER_ORDER_MODE=taker` torna a comprare dal book anche le scommesse automatiche.
 - **Guardia sul prezzo di chiusura:** il risultato di una scommessa arriva dopo settimane, il
   prezzo si muove in poche ore. Sulle ultime `CLV_GUARD_WINDOW` (15) scommesse più vecchie di
   un'ora la guardia misura quanto si è mosso il prezzo del lato comprato dall'acquisto (fino al
