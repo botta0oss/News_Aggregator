@@ -9,6 +9,19 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 "non configurato".
 
 <details>
+<summary><b>Docker compose</b></summary>
+
+| Variabile | Default | Descrizione |
+|---|---|---|
+| `POSTGRES_PASSWORD` | `password` | Password del database; va scelta prima del primo avvio (solo lettere e cifre) |
+| `COMPOSE_PROFILES` | – | Servizi opzionali: `tunnel` (Cloudflare Tunnel), `backup` (dump giornaliero), anche insieme: `tunnel,backup` |
+| `CLOUDFLARE_TUNNEL_TOKEN` | – | Token del tunnel creato su Cloudflare |
+| `BACKUP_KEEP_DAYS` | `14` | Giorni di backup tenuti in `./backups` |
+| `API_BIND` | `127.0.0.1` | Indirizzo su cui risponde la porta 8000: solo questa macchina, oppure `0.0.0.0` per la rete di casa (vedi [Deploy](deploy.md#uso-in-locale-e-nella-rete-di-casa)) |
+
+</details>
+
+<details>
 <summary><b>Database e AI</b></summary>
 
 | Variabile | Default | Descrizione |
@@ -131,7 +144,7 @@ Google AI Studio e TypeSafe).
 |---|---|---|
 | `SESSION_TTL_HOURS` | `168` | Durata massima di una sessione (7 giorni) |
 | `SESSION_IDLE_MINUTES` | `720` | Chiusura dopo inattività (12 ore) |
-| `SESSION_COOKIE_SECURE` | `auto` | `auto` = `Secure` tranne su localhost in HTTP; oppure `true` / `false` |
+| `SESSION_COOKIE_SECURE` | `auto` | `auto` = `Secure` tranne su localhost in HTTP; oppure `true` / `false`. Per aprire la dashboard in HTTP da un altro dispositivo di casa serve `false` |
 | `CLIENT_IP_HEADER` | – | Header con l'IP reale del visitatore messo da un proxy fidato davanti all'app (`CF-Connecting-IP` dietro Cloudflare Tunnel). Usalo solo se l'app è raggiungibile unicamente attraverso quel proxy |
 | `LOGIN_MAX_ATTEMPTS` | `5` | Tentativi falliti per IP e username prima del blocco |
 | `LOGIN_MAX_ATTEMPTS_PER_IP` | `20` | Tentativi falliti per IP, qualunque username |

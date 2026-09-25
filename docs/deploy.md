@@ -2,7 +2,8 @@
 
 <sub>[← Torna al README](../README.md) · [Tutta la documentazione](README.md)</sub>
 
-Immagini Docker per CPU e GPU e messa online su un VPS con Cloudflare Tunnel.
+Immagini Docker per CPU e GPU, uso in locale e nella rete di casa, messa online su un VPS
+con Cloudflare Tunnel.
 
 ## Immagini Docker: CPU o GPU
 
@@ -23,6 +24,42 @@ Nel log all'avvio, `Embedding model ... on cuda:0` conferma che la GPU è in uso
 altrimenti). Le due immagini hanno nomi diversi (`news-aggregator-api:cpu` e `:cuda`), quindi
 si può passare dall'una all'altra senza ricostruire ogni volta. Per un server la GPU non serve:
 il modello è piccolo e gli articoli arrivano a gruppi.
+
+## Uso in locale e nella rete di casa
+
+Per usarla sul proprio computer non servono tunnel né altro: `tunnel` e `backup` sono
+servizi opzionali, attivi solo se elencati in `COMPOSE_PROFILES`. Senza, il compose avvia
+solo il database e l'app.
+
+```bash
+cp .env.example .env      # TYPESAFE_API_KEY, POSTGRES_PASSWORD e le altre chiavi
+docker compose up -d --build
+docker compose exec api python -m backend.auth.cli create-user tuonome --role admin
+```
+
+La dashboard è su **http://localhost:8000**. Il login funziona anche in HTTP: con
+`SESSION_COOKIE_SECURE=auto` il cookie di sessione non chiede HTTPS quando l'indirizzo è
+`localhost` (o `127.0.0.1`). Per il backup giornaliero anche in locale:
+`COMPOSE_PROFILES=backup`.
+
+**Da un altro dispositivo di casa** (telefono, tablet, un altro PC), per esempio su
+`http://192.168.1.10:8000`, servono due impostazioni in `.env`:
+
+| Variabile | Valore | Perché |
+|---|---|---|
+| `API_BIND` | `0.0.0.0` | Di base la porta 8000 risponde solo alla macchina su cui gira l'app |
+| `SESSION_COOKIE_SECURE` | `false` | Con un indirizzo diverso da `localhost`, `auto` marca il cookie come `Secure`: in HTTP il browser non lo salva e l'accesso non riesce: la pagina di login lo segnala e indica questa impostazione |
+
+Poi `docker compose up -d` per applicarle. L'indirizzo del computer si trova con
+`ip addr` (Linux), `ipconfig` (Windows) o nelle impostazioni di rete (macOS); se non
+risponde, controlla che il firewall del computer lasci passare la porta 8000.
+
+> [!WARNING]
+> Senza HTTPS password e sessione viaggiano in chiaro: va bene solo su una rete di casa
+> fidata, mai su una rete pubblica. Per accedere da fuori usa
+> [Cloudflare Tunnel](#deploy-su-un-vps-con-cloudflare-tunnel): funziona anche con l'app
+> sul computer di casa, e in quel caso rimetti `SESSION_COOKIE_SECURE=auto` e
+> `API_BIND=127.0.0.1`.
 
 ## Deploy su un VPS con Cloudflare Tunnel
 

@@ -12,6 +12,6 @@
 | 💳 | [Uso e costi](costi.md) | Chiamate a pagamento, stima dei costi, limiti giornalieri |
 | ⚙️ | [Configurazione](configurazione.md) | Tutte le variabili di `.env` |
 | 🔒 | [Accesso e sicurezza](sicurezza.md) | Utenti e ruoli, sessioni, protezioni |
-| 🚀 | [Deploy](deploy.md) | Immagini CPU/GPU, VPS con Cloudflare Tunnel, backup |
+| 🚀 | [Deploy](deploy.md) | Immagini CPU/GPU, uso in locale e nella rete di casa, VPS con Cloudflare Tunnel, backup |
 | 🔌 | [API](api.md) | Gli endpoint REST |
 | 🛠️ | [Sviluppo e test](sviluppo.md) | Test, CI, struttura del codice |

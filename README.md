@@ -174,7 +174,8 @@ docker compose exec api python -m backend.auth.cli create-user tuonome --role ad
 
 Apri **http://localhost:8000** e accedi con l'utente appena creato. Il compose avvia anche
 Postgres con pgvector; alla prima partenza la raccolta delle notizie e il sync dei mercati
-iniziano subito.
+iniziano subito. Per aprirla dal telefono o da un altro PC di casa vedi
+[Uso nella rete di casa](docs/deploy.md#uso-in-locale-e-nella-rete-di-casa).
 
 > [!TIP]
 > Con una GPU NVIDIA in locale:
@@ -246,7 +247,7 @@ Tutte le altre: **[Configurazione](docs/configurazione.md)**.
 | [Uso e costi](docs/costi.md) | Chiamate a pagamento, stima dei costi, limiti giornalieri |
 | [Configurazione](docs/configurazione.md) | Tutte le variabili di `.env` |
 | [Accesso e sicurezza](docs/sicurezza.md) | Utenti e ruoli, sessioni, protezioni |
-| [Deploy](docs/deploy.md) | Immagini CPU/GPU, VPS con Cloudflare Tunnel, backup |
+| [Deploy](docs/deploy.md) | Immagini CPU/GPU, uso in locale e nella rete di casa, VPS con Cloudflare Tunnel, backup |
 | [API](docs/api.md) | Gli endpoint REST |
 | [Sviluppo e test](docs/sviluppo.md) | Test, CI, struttura del codice |
 
