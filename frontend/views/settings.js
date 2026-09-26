@@ -368,6 +368,8 @@ function parametersCard(ctx) {
         ? `${st.second_opinion.providers} · ${st.second_opinion.required ? t("obbligatoria") : t("facoltativa")}` : t("spenta"), "SECOND_OPINION_*"),
       row(t("Acquisti automatici"), st.paper_order_mode === "maker"
         ? t("ordini limite, validi {0} ore", st.maker_order_ttl_hours) : t("al prezzo del book"), "PAPER_ORDER_MODE / MAKER_ORDER_TTL_HOURS"),
+      row(t("Esecuzione degli ordini limite"), st.maker_fill_from_history ? t("anche dallo storico dei prezzi al minuto") : t("solo dal book a ogni aggiornamento"), "MAKER_FILL_FROM_HISTORY"),
+      row(t("Scommesse ombra dei filtri"), st.shadow_bets_enabled ? t("attive") : t("spente"), "SHADOW_BETS_ENABLED"),
       row(t("Come si uniscono Jev e prezzo"), st.blend_method === "linear" ? t("media lineare") : t("media in log-odds"), "BLEND_METHOD"),
       row(t("Calibrazione di Jev (a, b)"), `${fmt.num3(st.jev_calib_a ?? 0)} · ${fmt.num3(st.jev_calib_b ?? 1)}`, "JEV_CALIB_A / JEV_CALIB_B"),
       row(t("Chiamate a Jev per previsione"), String(st.jev_samples ?? 1), "JEV_SAMPLES"),

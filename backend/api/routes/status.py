@@ -37,6 +37,7 @@ async def get_status(db: AsyncSession = Depends(get_db)):
         "second_opinion": {"enabled": settings.SECOND_OPINION_ENABLED, "providers": settings.SECOND_OPINION_PROVIDERS,
                            "margin": settings.SECOND_OPINION_MARGIN, "required": settings.SECOND_OPINION_REQUIRED},
         "paper_order_mode": settings.PAPER_ORDER_MODE, "maker_order_ttl_hours": settings.MAKER_ORDER_TTL_HOURS,
+        "maker_fill_from_history": settings.MAKER_FILL_FROM_HISTORY, "shadow_bets_enabled": settings.SHADOW_BETS_ENABLED,
         "blend_method": settings.BLEND_METHOD,
         "jev_calib_a": settings.JEV_CALIB_A,
         "jev_calib_b": settings.JEV_CALIB_B,

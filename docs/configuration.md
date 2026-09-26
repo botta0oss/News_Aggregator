@@ -117,6 +117,8 @@ All variables are set in `.env`. Placeholder values `your_...` count as "not con
 | `PAPER_ORDER_MODE` | `maker` | Automatic buys: `maker` (limit order at the bid, no fee, fills later or expires) or `taker` (takes the ask now) |
 | `MAKER_ORDER_TTL_HOURS` | `6` | An unfilled limit order expires after this |
 | `MAKER_TICK` | `0.01` | Price step: the order goes one tick above the best bid |
+| `MAKER_FILL_FROM_HISTORY` | `true` | Between syncs, fill an order if the minute price history traded below its limit |
+| `SHADOW_BETS_ENABLED` | `true` | Follow without money the automatic bets blocked only by filters, to measure each filter |
 | `LONGSHOT_MIN_PRICE` | `0.10` | No buys of shares cheaper than this, on either side (`0` = off) |
 | `CLV_GUARD_ENABLED` | `true` | Closing-line guard on automatic bets |
 | `CLV_GUARD_WINDOW` | `15` | Latest bets it looks at |

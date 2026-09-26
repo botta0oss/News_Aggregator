@@ -205,7 +205,20 @@ async def test_backtest_run_end_to_end(db, jev_client, services):
         assert c["news"][0]["source"] == "Reuters"
         # Jev saw the date of that moment, not today
         assert captured[-1]["state"]["today"] == c["as_of"][:10]
-        assert "0.3" not in str(captured[-1]["state"])  # price not leaked
+        # Price not leaked: no number equal to it and no price field anywhere in the state (a text
+        # search for "0.3" also matched timestamps such as 07:47:40.392993)
+        def leaves(x, key=""):
+            if isinstance(x, dict):
+                for k, v in x.items():
+                    yield from leaves(v, k)
+            elif isinstance(x, list):
+                for v in x:
+                    yield from leaves(v, key)
+            else:
+                yield key, x
+        state = list(leaves(captured[-1]["state"]))
+        assert not any(isinstance(v, (int, float)) and abs(v - 0.3) < 1e-9 for _, v in state)
+        assert not any("price" in k for k, _ in state)
 
         assert len((await api.get("/backtest/runs")).json()) == 1
         assert (await api.delete(f"/backtest/runs/{run_id}")).status_code == 204

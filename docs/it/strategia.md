@@ -66,8 +66,11 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
     miglior prezzo di vendita, mai sopra il prezzo massimo della valutazione;
   - nessuna commissione (su Polymarket i maker non la pagano) e niente metà spread;
   - si esegue, al suo prezzo, quando un aggiornamento dei mercati mostra il miglior prezzo di
-    vendita del lato uguale o sotto il limite (qualcuno è sceso a vendere lì). I prezzi tra due
-    aggiornamenti non si vedono: un calo rapido che rientra viene perso;
+    vendita del lato uguale o sotto il limite (qualcuno è sceso a vendere lì). Tra due
+    aggiornamenti legge lo storico dei prezzi al minuto del CLOB (`MAKER_FILL_FROM_HISTORY`):
+    se il lato è stato scambiato **sotto** il limite mentre l'ordine aspettava, si esegue
+    all'ora di quello scambio (al limite esatto altri potrebbero essere avanti in coda, quindi
+    non conta). Senza storico aspetta l'aggiornamento successivo;
   - scade dopo `MAKER_ORDER_TTL_HOURS` (6); una nuova previsione sul mercato lo sostituisce (ne
     segue uno nuovo se conviene ancora); la pausa della guardia o un'esclusione lo annullano; un
     mercato che si chiude contro il lato lo esegue (il prezzo ci è passato scendendo);
@@ -79,6 +82,18 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
   al prezzo del book quando sono stati inseriti. Le scommesse a mano («Aggiungi ora») comprano
   ancora dal book (`entry` = taker) e annullano un ordine in attesa sul mercato.
   `PAPER_ORDER_MODE=taker` torna a comprare dal book anche le scommesse automatiche.
+- **Scommesse ombra:** ogni scommessa automatica bloccata **solo** da filtri viene seguita senza
+  soldi, come se fosse stata comprata al prezzo del book, fino alla risoluzione
+  (`SHADOW_BETS_ENABLED`). I filtri misurati: quote sotto il prezzo minimo, seconda opinione
+  contraria, mercati sul prezzo di un asset, troppo vicino alla scadenza, rendimento della
+  scommessa troppo basso, evidenze dai fatti più deboli della valutazione di Jev, pausa per il
+  prezzo di chiusura (anche le categorie che ha escluso). Una scommessa bloccata anche da
+  altro (mercato poco liquido, margine dopo i costi…) non conta: il filtro non avrebbe cambiato
+  nulla. La scheda del portafoglio «Cosa hanno bloccato i filtri» mostra per ogni filtro quante
+  scommesse ha bloccato, vinte/perse, il risultato ipotetico, per dollaro, e come si è mosso il
+  prezzo dopo il blocco. Negativo vuol dire che il filtro ha evitato perdite; positivo su molte
+  scommesse, che sta costando guadagni e si può allentare. `GET /portfolio/shadow` e il foglio
+  *Ombra* dell'export le elencano una per una.
 - **Guardia sul prezzo di chiusura:** il risultato di una scommessa arriva dopo settimane, il
   prezzo si muove in poche ore. Sulle ultime `CLV_GUARD_WINDOW` (15) scommesse più vecchie di
   un'ora la guardia misura quanto si è mosso il prezzo del lato comprato dall'acquisto (fino al
@@ -118,7 +133,8 @@ previsione e, dal vivo, nella scheda **Conviene?** del dettaglio mercato.
   - *Scommesse*: tutte, anche quelle escluse, con acquisto, vendita o risoluzione, risultato,
     valore attuale e piano delle aperte, la previsione che le ha generate (Jev, blended,
     evidenze, edge, segnale) e la valutazione economica;
-  - *Capitale*, *Esclusioni* e *Colonne*, che spiega ogni colonna.
+  - *Ordini* (ordini limite, eseguiti o no), *Ombra* (scommesse bloccate dai filtri), *Capitale*,
+    *Esclusioni* e *Colonne*, che spiega ogni colonna.
 
   I nomi delle colonne sono chiavi fisse (le stesse dell'API); prezzi e probabilità sono
   frazioni tra 0 e 1, gli importi in dollari, le ore in UTC. «CSV» scarica solo le scommesse

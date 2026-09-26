@@ -128,6 +128,7 @@ class CalibrationResponse(BaseModel):
     gain_model: Optional[dict] = None
     gain_blended: Optional[dict] = None
     signal_clv: Optional[dict] = None
+    second_opinion: Optional[dict] = None
 
 class StatusResponse(BaseModel):
     jev_enabled: bool

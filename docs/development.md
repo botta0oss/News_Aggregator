@@ -51,6 +51,7 @@ In CI an unreachable database fails the tests instead of skipping them.
 | `tests/test_usage.py` | Call log, estimated costs, daily limits and warnings |
 | `tests/test_evidence.py` | No long shots, base rate asked to Jev, evidence from the facts (lower of the two), closing-line guard (category, pause, resume) |
 | `tests/test_orders.py` | Second opinion (answer parsing, fallback, agreement, block), maker limit orders (price, fill, expiry, replacement, reserved cash, API) |
+| `tests/test_shadow.py` | Shadow bets per filter (economic filters, objective evidence, guard), settlement and report, second-opinion scorecard, maker fills from the price history |
 | `tests/test_i18n.py` | English and Italian texts: request language (`X-Lang`), `APP_LANGUAGE`, plans in English, every dashboard text translated |
 
 The tests run with `APP_LANGUAGE=it` (set in `tests/conftest.py`), so most of them check the

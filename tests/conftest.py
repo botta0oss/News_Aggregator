@@ -29,6 +29,8 @@ os.environ["EVIDENCE_OBJECTIVE_HALF"] = "0"
 os.environ["LONGSHOT_MIN_PRICE"] = "0"
 # ... and taking the ask on automatic bets (tests/test_orders.py covers maker limit orders)
 os.environ["PAPER_ORDER_MODE"] = "taker"
+# No CLOB price history from tests unless a test mocks it (tests/test_shadow.py)
+os.environ["MAKER_FILL_FROM_HISTORY"] = "false"
 # Fast client-side rate limits in tests (test_ratelimit.py sets its own)
 os.environ["JEV_RPM"] = "6000"
 os.environ["GROQ_RPM"] = "6000"

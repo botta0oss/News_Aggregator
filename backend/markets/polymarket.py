@@ -384,7 +384,8 @@ HISTORY_FIDELITIES = (60, 720)   # minutes: hourly first, then every 12 hours
 
 
 async def fetch_price_history(token_id: str, start: datetime, end: datetime,
-                              client: Optional[httpx.AsyncClient] = None) -> list[tuple[datetime, float]]:
+                              client: Optional[httpx.AsyncClient] = None,
+                              fidelities: tuple = HISTORY_FIDELITIES) -> list[tuple[datetime, float]]:
     """Price points (time, price) of a share between two dates, from the CLOB.
 
     Long periods are fetched in windows of at most 14 days. If there are no hourly points
@@ -393,7 +394,7 @@ async def fetch_price_history(token_id: str, start: datetime, end: datetime,
     own_client = client is None
     client = client or httpx.AsyncClient(base_url=settings.POLYMARKET_CLOB_URL, timeout=20.0)
     try:
-        for fidelity in HISTORY_FIDELITIES:
+        for fidelity in fidelities:
             points: dict[int, float] = {}
             lo = start
             while lo < end:

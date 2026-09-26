@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.betting import portfolio
+from backend.betting import portfolio, shadow
 from backend.betting.plans import known_bid
 from backend.betting.profiles import get_profile
 from backend.config import settings
@@ -116,6 +116,25 @@ ORDER_COLUMNS = [
     ("bet_id", "text", "Scommessa nata dall'ordine eseguito", "Bet created by the filled order"),
 ]
 
+SHADOW_COLUMNS = [
+    ("shadow_id", "text", "Identificativo della scommessa ombra", "Shadow bet identifier"),
+    ("filter", "text", "Filtro che l'ha bloccata (codici uniti da +)", "Filter that blocked it (codes joined by +)"),
+    ("filter_label", "text", "Filtro, per esteso", "Filter, in words"),
+    ("status", "text", "open, won, lost, void (50-50)", "open, won, lost, void (50-50)"),
+    ("created_at", "date", "Quando è stata bloccata (UTC)", "When it was blocked (UTC)"),
+    ("settled_at", "date", "Risoluzione (UTC)", "Resolution (UTC)"),
+    ("market_id", "text", "Identificativo del mercato Polymarket", "Polymarket market identifier"),
+    ("question", "text", "Domanda del mercato", "Market question"),
+    ("side", "text", "Lato che si sarebbe comprato", "Side that would have been bought"),
+    ("shares", "num", "Quote", "Shares"),
+    ("avg_price", "price", "Prezzo medio che si sarebbe pagato (book)", "Average price that would have been paid (book)"),
+    ("outlay", "money", "Esborso ipotetico (USD)", "Hypothetical outlay (USD)"),
+    ("p_side", "price", "Probabilità stimata che il lato vinca", "Estimated probability that the side wins"),
+    ("expected_profit", "money", "Profitto atteso ipotetico (USD)", "Hypothetical expected profit (USD)"),
+    ("pnl", "money", "Risultato ipotetico (USD): < 0 = il filtro ha evitato una perdita", "Hypothetical result (USD): < 0 = the filter avoided a loss"),
+    ("move", "price", "Movimento del prezzo del lato: fino alla chiusura, o finora", "Price move of the side: to the close, or so far"),
+]
+
 EXCLUSION_COLUMNS = [
     ("kind", "text", "market, event o category", "market, event or category"),
     ("value", "text", "Mercato, evento o categoria esclusi", "Excluded market, event or category"),
@@ -196,6 +215,13 @@ async def build(db: AsyncSession) -> dict:
             "net_edge": econ.get("net_edge"), "apr": econ.get("apr"),
         })
 
+    shadows = [
+        {"shadow_id": str(d["id"]), "filter": d["filter"], "filter_label": d["filter_label"], "status": d["status"],
+         "created_at": d["created_at"], "settled_at": d["settled_at"], "market_id": d["market_id"], "question": d["question"],
+         "side": d["side"], "shares": d["shares"], "avg_price": d["avg_price"], "outlay": d["outlay"], "p_side": d["p_side"],
+         "expected_profit": d["expected_profit"], "pnl": d["pnl"], "move": d["move"]}
+        for d in reversed(await shadow.listing(db, limit=100_000))
+    ]
     exclusions = [
         {"kind": x.kind, "value": x.value, "label": x.label, "created_at": x.created_at}
         for x in (await db.execute(select(PaperExclusion).order_by(PaperExclusion.created_at))).scalars().all()
@@ -247,6 +273,9 @@ async def build(db: AsyncSession) -> dict:
         ("orders_expired", "int", tr("Ordini limite scaduti", "Limit orders expired"), summ["orders"]["counts"]["expired"]),
         ("orders_fill_rate", "pct", tr("Eseguiti / (eseguiti + scaduti)", "Filled / (filled + expired)"), summ["orders"]["fill_rate"]),
         ("orders_saved", "money", tr("Risparmio degli ordini eseguiti rispetto al prezzo del book all'inserimento", "Saving of the filled orders against the book price when placed"), summ["orders"]["saved"]),
+        *[(f"shadow_{r['filter']}", "money", tr(f"Scommesse ombra «{r['label']}»: {r['n']} bloccate, risultato ipotetico sulle risolte",
+                                                    f"Shadow bets «{r['label']}»: {r['n']} blocked, hypothetical result on the resolved ones"), r["pnl"])
+          for r in summ["shadow"]],
         ("guard_paused", "bool", tr("Scommesse automatiche in pausa per il CLV", "Automatic bets paused by the CLV guard"), s.paused_at is not None),
         ("guard_reason", "text", tr("Motivo della pausa", "Reason for the pause"), s.paused_reason),
         ("risk_free_rate", "pct", tr("Tasso senza rischio", "Risk-free rate"), settings.RISK_FREE_RATE),
@@ -262,7 +291,8 @@ async def build(db: AsyncSession) -> dict:
         ("preset_min_liquidity", "money", tr("Preset: liquidità minima del mercato", "Preset: minimum market liquidity"), profile.min_liquidity),
         ("preset_max_days", "int", tr("Preset: scadenza massima (giorni)", "Preset: maximum end date (days)"), profile.max_days),
     ]
-    return {"now": now, "summary": summary, "bets": bets, "orders": orders, "equity": equity, "exclusions": exclusions}
+    return {"now": now, "summary": summary, "bets": bets, "orders": orders, "shadow": shadows, "equity": equity,
+            "exclusions": exclusions}
 
 
 def filename(now: datetime, ext: str) -> str:
@@ -339,6 +369,8 @@ def to_xlsx(data: dict) -> bytes:
           widths={"bet_id": 38, "question": 48, "market_url": 40, "exit_reason": 40, "prediction_id": 38})
     table(wb.create_sheet(tr("Ordini", "Orders")), ORDER_COLUMNS, data["orders"],
           widths={"order_id": 38, "question": 48, "reason": 40, "bet_id": 38})
+    table(wb.create_sheet(tr("Ombra", "Shadow")), SHADOW_COLUMNS, data["shadow"],
+          widths={"shadow_id": 38, "question": 48, "filter_label": 36})
     table(wb.create_sheet(tr("Capitale", "Equity")), EQUITY_COLUMNS, data["equity"])
     table(wb.create_sheet(tr("Esclusioni", "Exclusions")), EXCLUSION_COLUMNS, data["exclusions"], widths={"value": 30, "label": 48})
 
@@ -347,6 +379,7 @@ def to_xlsx(data: dict) -> bytes:
     for cell in ws[1]:
         cell.font = bold
     for sheet, columns in ((tr("Scommesse", "Bets"), BET_COLUMNS), (tr("Ordini", "Orders"), ORDER_COLUMNS),
+                           (tr("Ombra", "Shadow"), SHADOW_COLUMNS),
                            (tr("Capitale", "Equity"), EQUITY_COLUMNS),
                            (tr("Esclusioni", "Exclusions"), EXCLUSION_COLUMNS)):
         for key, desc in _describe(columns).items():

@@ -97,6 +97,15 @@ over many markets. With few resolved markets the comparison is not meaningful: `
 and `gain_model` give the edge over the price with the 95 % interval (bootstrap on markets). If
 the interval includes zero, the edge may be due to chance.
 
+**Second opinion.** `second_opinion` in Calibration (card «The second opinion») looks at the
+latest forecast with a second opinion for each resolved market: its Brier score against Jev's
+and the price's on the same markets, its edge over the price with the 95 % interval
+(`gain_second`), how many times it disagreed with a signal, how many of those Jev was right,
+and the average result per share of the bets the disagreement blocked (`blocked_result_per_share`,
+Jev's side bought at the price of the forecast: negative means blocking them saved money). If
+the second opinion forecasts worse than the price and the blocked bets would have won, turn it
+off with `SECOND_OPINION_ENABLED=false`.
+
 **Closing price (CLV).** The sync records the last price of each market while it still trades
 (`last_trading_price`): it is the «close», the market's estimate when all the information is
 known. Consistently buying below the close is the most reliable sign of a real edge, and it
