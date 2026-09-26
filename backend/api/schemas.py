@@ -66,6 +66,8 @@ class PredictionResponse(BaseModel):
     jev_evidence_strength: Optional[float] = None
     objective_evidence: Optional[float] = None
     base_rate: Optional[float] = None
+    second_opinion: Optional[float] = None
+    second_opinion_provider: Optional[str] = None
     blended_probability: float
     model_weight: Optional[float] = None
     edge: float

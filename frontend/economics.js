@@ -171,11 +171,17 @@ function portfolioBar(ctx, market, data) {
     const b = data.open_bet;
     bar.append(h("p", {}, icon("check"), t(" Nel portafoglio simulato: {0} quote {1} a {2} ({3}). ", fmt.shares(b.shares), b.side === "YES" ? t("SÌ") : "NO", fmt.cents(b.avg_price), money(b.outlay)),
       h("a", { href: "#/portafoglio" }, t("Vedi il portafoglio"))));
+  } else if (data.pending_orders?.length) {
+    const o = data.pending_orders[0];
+    bar.append(h("p", {}, icon("pause"), t(" Ordine limite in attesa: {0} quote {1} a {2} ({3}), fino a {4}. ", fmt.shares(o.shares), o.side === "YES" ? t("SÌ") : "NO", fmt.cents(o.limit_price), money(o.outlay), fmt.dateTime(o.expires_at)),
+      h("a", { href: "#/portafoglio" }, t("Vedi il portafoglio"))));
   } else if (data.excluded_by) {
     const what = { market: t("questo mercato"), event: t("questo evento"), category: t("la categoria {0}", data.market.category) }[data.excluded_by];
     bar.append(h("p", {}, icon("pause"), t(" Escluso dal portafoglio simulato automatico: hai escluso {0}.", what)));
   } else if (ev.verdict !== "NO") {
-    bar.append(h("p", {}, t("Le prossime previsioni con questo esito vengono aggiunte automaticamente al portafoglio simulato.")));
+    bar.append(h("p", {}, data.maker_price != null
+      ? t("Le prossime previsioni con questo esito diventano un ordine limite nel portafoglio simulato, a {0}: si compra se qualcuno vende a quel prezzo.", fmt.cents(data.maker_price))
+      : t("Le prossime previsioni con questo esito vengono aggiunte automaticamente al portafoglio simulato.")));
   }
 
   if (admin) {
@@ -186,7 +192,7 @@ function portfolioBar(ctx, market, data) {
         add.disabled = true;
         try {
           await api(`/markets/${encodeURIComponent(market.id)}/paper-bet`, { method: "POST" });
-          toast(t("Scommessa simulata aggiunta"));
+          toast(data.pending_orders?.length ? t("Scommessa simulata aggiunta al prezzo del book; l'ordine limite è annullato") : t("Scommessa simulata aggiunta"));
           refresh();
         } catch (e) { toast(e.message, { error: true }); add.disabled = false; }
       });

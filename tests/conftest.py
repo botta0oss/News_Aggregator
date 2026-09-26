@@ -27,6 +27,8 @@ os.environ["EXCLUDE_PRICE_MARKETS"] = "false"
 # ... and without the objective evidence strength and the long-shot rule (tests/test_evidence.py)
 os.environ["EVIDENCE_OBJECTIVE_HALF"] = "0"
 os.environ["LONGSHOT_MIN_PRICE"] = "0"
+# ... and taking the ask on automatic bets (tests/test_orders.py covers maker limit orders)
+os.environ["PAPER_ORDER_MODE"] = "taker"
 # Fast client-side rate limits in tests (test_ratelimit.py sets its own)
 os.environ["JEV_RPM"] = "6000"
 os.environ["GROQ_RPM"] = "6000"

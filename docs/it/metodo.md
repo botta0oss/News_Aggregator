@@ -93,6 +93,18 @@ valore di base 1,5 servono circa tre notizie fresche da testate affidabili, o un
 primaria confermata, per arrivare a 0,5. La previsione usa la **più bassa** delle due, così un
 solo articolo non può valere come evidenza forte perché lo dice Jev. Si salvano entrambe.
 
+### Seconda opinione
+
+Quando un acquisto è possibile (evidenze ≥ `MIN_EVIDENCE` e Jev calibrato ad almeno `MIN_EDGE`
+dal prezzo), un modello gratuito riceve lo stesso stato (domanda, regole, date, notizie, niente
+prezzo) e gli si chiede, prima il tasso di base, la probabilità del SÌ: Gemini, poi Groq se
+Gemini non risponde (`SECOND_OPINION_PROVIDERS`). Viene salvata con la previsione e mostrata
+nella spiegazione. Per comprare deve stare **dalla stessa parte del prezzo** della previsione
+(oltre di `SECOND_OPINION_MARGIN`, 0 di base): che due modelli facciano lo stesso errore è meno
+probabile che lo faccia uno. Se nessun provider risponde la previsione va avanti con il solo
+Jev, a meno che `SECOND_OPINION_REQUIRED=true`. Le chiamate contano nelle quote gratuite di
+Gemini e Groq, condivise con i riassunti; gli eventi a più esiti e il backtest non la usano.
+
 ### 2. Dalla stima al segnale
 
 I mercati liquidi di solito sono già ben calibrati, quindi la stima di Jev non viene usata

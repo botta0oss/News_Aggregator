@@ -91,6 +91,18 @@ announcements…). The total `T` becomes `T / (T + EVIDENCE_OBJECTIVE_HALF)`: wi
 needed to reach 0.5. The forecast uses the **lower** of the two ratings, so a single article
 cannot count as strong evidence because Jev says so. Both ratings are saved.
 
+### Second opinion
+
+When a buy is possible (evidence ≥ `MIN_EVIDENCE` and the calibrated Jev at least `MIN_EDGE`
+from the price), a free model gets the same state (question, rules, dates, news, no price) and
+is asked, base rate first, for the probability of YES: Gemini, then Groq if Gemini does not
+answer (`SECOND_OPINION_PROVIDERS`). It is saved with the forecast and shown in the
+explanation. A buy needs it on the **same side of the price** as the forecast (beyond it by
+`SECOND_OPINION_MARGIN`, 0 by default): two models making the same mistake is less likely than
+one. If no provider answers, the forecast goes on with Jev alone, unless
+`SECOND_OPINION_REQUIRED=true`. The calls count in the free quotas of Gemini and Groq, shared
+with summaries; multi-outcome events and the backtest do not use it.
+
 ### 2. From estimate to signal
 
 Liquid markets are usually already well calibrated, so Jev's estimate is not used as it is:

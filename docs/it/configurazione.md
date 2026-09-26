@@ -74,6 +74,10 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | `JEV_SAMPLES` | `1` | Chiamate a Jev per previsione, mediate (ognuna si paga) |
 | `MIN_EDGE` | `0.05` | Edge minimo per emettere un segnale |
 | `MIN_EVIDENCE` | `0.5` | Forza minima delle evidenze per emettere un segnale |
+| `SECOND_OPINION_ENABLED` | `true` | Seconda opinione di un modello gratuito prima di comprare |
+| `SECOND_OPINION_PROVIDERS` | `gemini,groq` | Provider provati, in ordine (servono `GEMINI_API_KEY` / `GROQ_API_KEY`) |
+| `SECOND_OPINION_MARGIN` | `0` | Quanto oltre il prezzo, dal lato della previsione, deve stare la seconda opinione |
+| `SECOND_OPINION_REQUIRED` | `false` | Nessun provider ha risposto: `true` blocca l'acquisto, `false` va avanti con il solo Jev |
 | `EVIDENCE_OBJECTIVE_HALF` | `1.5` | Evidenze calcolate dai fatti: totale pesato delle notizie a cui valgono 0,5. La previsione usa la più bassa tra questa e la valutazione di Jev (`0` = solo Jev) |
 | `KELLY_FRACTION` | `0.25` | Frazione del criterio di Kelly usata per la puntata |
 
@@ -112,6 +116,9 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | `MODEL_PSEUDO_COUNT` | `20` | Quante "osservazioni" vale una stima Jev con evidenze piene (regola l'incertezza) |
 | `PAPER_BANKROLL` | `1000` | Capitale iniziale simulato (modificabile dalla dashboard) |
 | `PAPER_PRESET` | `bilanciato` | Preset iniziale: `prudente`, `bilanciato`, `aggressivo` |
+| `PAPER_ORDER_MODE` | `maker` | Acquisti automatici: `maker` (ordine limite al bid, senza commissione, eseguito dopo o scaduto) o `taker` (compra subito dal book) |
+| `MAKER_ORDER_TTL_HOURS` | `6` | Un ordine limite non eseguito scade dopo queste ore |
+| `MAKER_TICK` | `0.01` | Passo di prezzo: l'ordine va un tick sopra il miglior prezzo di acquisto |
 | `LONGSHOT_MIN_PRICE` | `0.10` | Nessun acquisto di quote che costano meno di così, su nessuno dei due lati (`0` = disattivato) |
 | `CLV_GUARD_ENABLED` | `true` | Guardia sul prezzo di chiusura per le scommesse automatiche |
 | `CLV_GUARD_WINDOW` | `15` | Ultime scommesse che considera |

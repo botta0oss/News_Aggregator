@@ -88,6 +88,13 @@ export function explainCard(p, market, evidence, status) {
           h("b", { class: "mono" }, pct(p.model_probability)), t(" di probabilità che si risolva SÌ.")),
         p.base_rate != null ? h("p", { class: "muted small" },
           t("Prima di leggere le notizie, il caso tipico: eventi simili accadono circa nel {0} dei casi. Jev parte da lì e se ne allontana solo con notizie forti.", pct(p.base_rate))) : null,
+        p.second_opinion != null ? h("p", { class: "muted small" },
+          t("Seconda opinione di {0}, con le stesse regole e notizie e senza prezzo: {1}.", (p.second_opinion_provider || "").replace(/^./, (c) => c.toUpperCase()), pct(p.second_opinion)), " ",
+          p.signal === "BUY_YES" || p.signal === "BUY_NO"
+            ? ((p.signal === "BUY_YES") === (p.second_opinion > p.market_probability)
+              ? t("È dalla stessa parte del prezzo di Jev: si può comprare.")
+              : t("È dall'altra parte del prezzo rispetto a Jev: niente acquisto."))
+            : "") : null,
         judged ? h("p", { class: "muted small" },
           t("Delle notizie valutate: {0} favoriscono il SÌ, {1} il NO, {2} sono neutre.", tally.raises_yes, tally.lowers_yes, tally.neutral)) : null,
       ),

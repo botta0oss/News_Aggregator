@@ -111,6 +111,12 @@ class Settings(BaseSettings):
     CLV_GUARD_MIN_AVG: float = -0.02          # pause when the average move is below this (points of the side bought)
     CLV_GUARD_CATEGORY_MIN_BETS: int = 5      # same rule per category, which gets excluded
     CLV_GUARD_MIN_AGE_HOURS: float = 1.0      # bets younger than this have not had time to move
+    # Second opinion: a free model (Gemini, Groq) estimates the same question from the same news;
+    # buys only when it is on the same side of the price as the forecast
+    SECOND_OPINION_ENABLED: bool = True
+    SECOND_OPINION_PROVIDERS: str = "gemini,groq"   # tried in this order
+    SECOND_OPINION_MARGIN: float = 0.0        # it must be beyond the price by at least this much
+    SECOND_OPINION_REQUIRED: bool = False     # no provider answered: block buys (true) or go on with Jev alone
 
     # Betting economics (simulated portfolio)
     RISK_FREE_RATE: float = 0.04              # annual return of the risk-free alternative (e.g. T-bills)
@@ -119,6 +125,10 @@ class Settings(BaseSettings):
     MODEL_PSEUDO_COUNT: float = 20.0          # how many "observations" a fully-evidenced Jev estimate is worth
     PAPER_BANKROLL: float = 1000.0            # initial simulated bankroll (USD), editable in the dashboard
     PAPER_PRESET: str = "bilanciato"          # prudente / bilanciato / aggressivo
+    # Automatic buys as maker limit orders (no fee, price at the bid) instead of taking the ask
+    PAPER_ORDER_MODE: str = "maker"           # maker / taker
+    MAKER_ORDER_TTL_HOURS: float = 6.0        # an unfilled order is cancelled after this
+    MAKER_TICK: float = 0.01                  # price step of the book: the order goes one tick above the bid
 
     # Feed fetching
     FEED_TIMEOUT_SECONDS: float = 20.0

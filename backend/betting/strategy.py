@@ -23,7 +23,7 @@ from backend.markets.forecast import pool
 
 GRID = [round(0.01 + i * 0.005, 3) for i in range(197)]   # YES prices from 1¢ to 99¢
 # Reasons that no price can fix: the market itself does not suit the preset or the portfolio
-STRUCTURAL = {"illiquid", "too_far", "too_close", "price_market", "exposure_cap", "no_cash", "no_book"}
+STRUCTURAL = {"illiquid", "too_far", "too_close", "price_market", "exposure_cap", "no_cash", "no_book", "second_opinion"}
 
 
 def _cents(p: Optional[float]) -> str:

@@ -153,6 +153,8 @@ class MarketPrediction(Base):
     jev_evidence_strength: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # as Jev rated it
     objective_evidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)     # from sources, age, confirmations
     base_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Jev's outside view: how often events like this happen
+    second_opinion: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # P(YES) of a free model (ai/second_opinion.py)
+    second_opinion_provider: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     blended_probability: Mapped[float] = mapped_column(Float, nullable=False)  # shrunk toward market
     model_weight: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # weight w of Jev in the blend
     edge: Mapped[float] = mapped_column(Float, nullable=False)                 # blended - market
@@ -230,8 +232,36 @@ class PaperBet(Base):
     pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     exit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # average sale price, if sold
     exit_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)     # why it was sold
+    entry: Mapped[str] = mapped_column(Text, default="taker")                     # taker (took the ask) / maker (limit order filled)
 
     market = relationship("Market")
+
+
+class PaperOrder(Base):
+    """A simulated maker limit order: it waits in the book at `limit_price` and becomes a bet
+    when the market comes down to it (betting/orders.py)."""
+    __tablename__ = 'paper_orders'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    market_id: Mapped[str] = mapped_column(ForeignKey('markets.id', ondelete='CASCADE'), index=True)
+    prediction_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('market_predictions.id', ondelete='SET NULL'), nullable=True)
+    side: Mapped[str] = mapped_column(Text, nullable=False)                # YES / NO
+    shares: Mapped[float] = mapped_column(Float, nullable=False)
+    limit_price: Mapped[float] = mapped_column(Float, nullable=False)
+    taker_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # what taking the ask would have cost per share
+    p_side: Mapped[float] = mapped_column(Float, nullable=False)
+    p_conservative: Mapped[float] = mapped_column(Float, nullable=False)
+    preset: Mapped[str] = mapped_column(Text, nullable=False)
+    placed_by: Mapped[str] = mapped_column(Text, default="auto")
+    status: Mapped[str] = mapped_column(Text, default="pending", index=True)  # pending / filled / expired / cancelled
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)       # why it was cancelled
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    bet_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('paper_bets.id', ondelete='SET NULL'), nullable=True)
+
+    @property
+    def outlay(self) -> float:
+        return self.shares * self.limit_price
 
 
 class PaperExclusion(Base):
