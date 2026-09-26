@@ -795,6 +795,32 @@ async function viewCalibration() {
         statTile(t("Segnali a favore"), fmt.pct(sc.share_positive), t("su {0} in mercati chiusi", fmt.count(sc.n, t("segnale"), t("segnali")))))
         : h("p", { class: "muted small" }, t("Nessun segnale su mercati già chiusi.")),
     ),
+    secondOpinionCard(cal.second_opinion),
+  );
+}
+
+function secondOpinionCard(so) {
+  if (!so || !so.n) return null;
+  const who = Object.keys(so.providers || {}).map((p) => p.replace(/^./, (c) => c.toUpperCase())).join(", ");
+  const g = so.gain_second;
+  const verdict = g && g.lo != null
+    ? (g.lo > 0 ? t("Batte il prezzo anche nel caso peggiore dell'intervallo al 95%.")
+      : g.hi < 0 ? t("Fa peggio del prezzo anche nel caso migliore dell'intervallo al 95%: come filtro rischia di bloccare a caso.")
+        : t("L'intervallo al 95% comprende lo zero: non si può ancora dire se prevede meglio del prezzo."))
+    : null;
+  return h("section", { class: "card", "aria-labelledby": "h-second", style: { marginTop: "16px" } },
+    h("div", { class: "card-head" }, h("h2", { id: "h-second" }, t("La seconda opinione")),
+      h("span", { class: "muted small" }, t("{0} su {1}", who, fmt.count(so.n, t("mercato risolto"), t("mercati risolti"))))),
+    h("div", { class: "kpis" },
+      statTile(t("Brier seconda opinione"), fmt.num3(so.brier_second), t("Jev {0} · prezzo {1}", fmt.num3(so.brier_model), fmt.num3(so.brier_market))),
+      statTile(t("In disaccordo con Jev"), fmt.int(so.disagreements),
+        so.disagreements ? t("Jev aveva ragione in {0}", fmt.count(so.jev_right, t("caso"), t("casi"))) : t("nessun segnale bloccato")),
+      statTile(t("Scommesse bloccate, per quota"), so.blocked_result_per_share != null ? fmt.pts(so.blocked_result_per_share) : "–",
+        t("negativo: bloccarle ha evitato perdite")),
+    ),
+    verdict ? h("p", { class: "secondary small", style: { marginTop: "10px" } }, verdict) : null,
+    h("p", { class: "muted small", style: { marginTop: "6px" } },
+      t("Sugli stessi mercati: ultima previsione con una seconda opinione per ciascuno. Se la seconda opinione prevede peggio del prezzo e le scommesse bloccate avrebbero guadagnato, conviene spegnerla (SECOND_OPINION_ENABLED=false).")),
   );
 }
 

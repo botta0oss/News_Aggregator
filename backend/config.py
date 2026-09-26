@@ -126,9 +126,12 @@ class Settings(BaseSettings):
     PAPER_BANKROLL: float = 1000.0            # initial simulated bankroll (USD), editable in the dashboard
     PAPER_PRESET: str = "bilanciato"          # prudente / bilanciato / aggressivo
     # Automatic buys as maker limit orders (no fee, price at the bid) instead of taking the ask
+    # Bets blocked by a filter are followed as if placed, without money, to measure each filter
+    SHADOW_BETS_ENABLED: bool = True
     PAPER_ORDER_MODE: str = "maker"           # maker / taker
     MAKER_ORDER_TTL_HOURS: float = 6.0        # an unfilled order is cancelled after this
     MAKER_TICK: float = 0.01                  # price step of the book: the order goes one tick above the bid
+    MAKER_FILL_FROM_HISTORY: bool = True      # also fill when the minute price history traded below the limit between syncs
 
     # Feed fetching
     FEED_TIMEOUT_SECONDS: float = 20.0

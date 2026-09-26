@@ -470,7 +470,7 @@ async def test_export_workbook_and_csv(db, book):
     assert r.status_code == 200 and r.headers["content-type"].startswith("application/vnd.openxmlformats")
     assert 'attachment; filename="news-markets-portfolio-' in r.headers["content-disposition"]
     wb = load_workbook(io.BytesIO(r.content))
-    assert wb.sheetnames == ["Summary", "Bets", "Orders", "Equity", "Exclusions", "Columns"]
+    assert wb.sheetnames == ["Summary", "Bets", "Orders", "Shadow", "Equity", "Exclusions", "Columns"]
 
     summary = {row[0]: row[2] for row in wb["Summary"].iter_rows(min_row=2, values_only=True)}
     assert summary["bankroll"] == 1000 and summary["count_sold"] == 1 and summary["count_open"] == 1
@@ -506,4 +506,4 @@ async def test_export_sheet_names_follow_the_language(db):
     import io
     async with login_client("viewer") as api:
         r = await api.get("/portfolio/export", params={"format": "xlsx"}, headers={"X-Lang": "it"})
-    assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Riepilogo", "Scommesse", "Ordini", "Capitale", "Esclusioni", "Colonne"]
+    assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Riepilogo", "Scommesse", "Ordini", "Ombra", "Capitale", "Esclusioni", "Colonne"]

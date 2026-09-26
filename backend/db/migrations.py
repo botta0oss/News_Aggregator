@@ -77,6 +77,10 @@ STATEMENTS = [
     "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS second_opinion DOUBLE PRECISION",
     "ALTER TABLE market_predictions ADD COLUMN IF NOT EXISTS second_opinion_provider TEXT",
     "ALTER TABLE paper_bets ADD COLUMN IF NOT EXISTS entry TEXT NOT NULL DEFAULT 'taker'",
+    # Shadow bets (the table is created with the others): exclusions made by the closing-line guard
+    "ALTER TABLE paper_exclusions ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'user'",
+    """UPDATE paper_exclusions SET source = 'guard' WHERE kind = 'category' AND source = 'user'
+       AND (label LIKE 'Pausa automatica:%' OR label LIKE 'Automatic pause:%')""",
     """UPDATE markets SET resolution = CASE WHEN resolved_yes THEN 'yes' ELSE 'no' END
        WHERE resolution IS NULL AND resolved_yes IS NOT NULL""",
 ]

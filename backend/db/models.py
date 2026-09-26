@@ -272,7 +272,34 @@ class PaperExclusion(Base):
     kind: Mapped[str] = mapped_column(Text, nullable=False)    # market / event / category
     value: Mapped[str] = mapped_column(Text, nullable=False)
     label: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(Text, default="user")   # user / guard (closing-line guard, betting/guard.py)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class ShadowBet(Base):
+    """A bet a filter blocked, followed as if it had been placed (no money), to measure whether the
+    filter helps: if the blocked bets lose, it does (betting/shadow.py)."""
+    __tablename__ = 'shadow_bets'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    market_id: Mapped[str] = mapped_column(ForeignKey('markets.id', ondelete='CASCADE'), index=True)
+    prediction_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('market_predictions.id', ondelete='SET NULL'), nullable=True)
+    filter: Mapped[str] = mapped_column(Text, nullable=False, index=True)   # reason code(s) that blocked it, joined by +
+    side: Mapped[str] = mapped_column(Text, nullable=False)
+    shares: Mapped[float] = mapped_column(Float, nullable=False)
+    avg_price: Mapped[float] = mapped_column(Float, nullable=False)
+    stake: Mapped[float] = mapped_column(Float, nullable=False)
+    fee: Mapped[float] = mapped_column(Float, default=0.0)
+    p_side: Mapped[float] = mapped_column(Float, nullable=False)
+    expected_profit: Mapped[float] = mapped_column(Float, default=0.0)
+    status: Mapped[str] = mapped_column(Text, default="open", index=True)   # open / won / lost / void
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    settled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    payout: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    @property
+    def outlay(self) -> float:
+        return self.stake + (self.fee or 0.0)
 
 
 class AlertSettings(Base):

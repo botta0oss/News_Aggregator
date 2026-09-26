@@ -14,7 +14,7 @@ from backend.betting.profiles import get_profile
 from backend.config import settings
 from backend.db.models import (
     Article, BettingSettings, Market, MarketArticleLink, MarketPrediction, PaperBet, PaperExclusion, PaperOrder,
-    ProcessedArticle,
+    ProcessedArticle, ShadowBet,
 )
 from backend.markets import polymarket
 from backend.markets.forecast import brier_score
@@ -61,6 +61,7 @@ async def reset_portfolio(db: AsyncSession, bankroll: float, preset: Optional[st
     if not (10 <= bankroll <= 10_000_000):
         raise ValueError(tr("Il capitale deve essere tra 10 $ e 10.000.000 $", "Capital must be between $10 and $10,000,000"))
     await db.execute(delete(PaperOrder))
+    await db.execute(delete(ShadowBet))
     await db.execute(delete(PaperBet))
     row = await get_settings(db)
     row.bankroll = float(bankroll)
@@ -181,7 +182,8 @@ def days_to_end(market: Market) -> float:
 
 
 async def evaluate_prediction(db: AsyncSession, market: Market, prediction: MarketPrediction,
-                              quote: Optional[Quote] = None, preset: Optional[str] = None) -> Evaluation:
+                              quote: Optional[Quote] = None, preset: Optional[str] = None,
+                              ignore: frozenset = frozenset()) -> Evaluation:
     """Economic evaluation of a forecast at the market's current price.
 
     The blend is recomputed at the current price (Jev pooled with the price of now, with today's
@@ -220,6 +222,7 @@ async def evaluate_prediction(db: AsyncSession, market: Market, prediction: Mark
         risk_free_rate=settings.RISK_FREE_RATE,
         hours_to_end=hours_to_end(market),
         extra_reasons=forecast_reasons(market, prediction, signal),
+        ignore=ignore,
     )
 
 
@@ -304,14 +307,20 @@ async def stale_portfolio_reasons(db: AsyncSession, market: Market, economics: O
 
 # ---------- Exclusions ----------
 
-async def excluded_reason(db: AsyncSession, market: Market) -> Optional[str]:
+async def matching_exclusion(db: AsyncSession, market: Market) -> Optional[PaperExclusion]:
     checks = [("market", market.id), ("event", market.event_slug), ("category", market.category)]
     for kind, value in checks:
-        if value and (await db.execute(
-            select(PaperExclusion.id).where(PaperExclusion.kind == kind, PaperExclusion.value == value)
-        )).first():
-            return kind
+        if value:
+            row = (await db.execute(select(PaperExclusion).where(
+                PaperExclusion.kind == kind, PaperExclusion.value == value))).scalars().first()
+            if row is not None:
+                return row
     return None
+
+
+async def excluded_reason(db: AsyncSession, market: Market) -> Optional[str]:
+    row = await matching_exclusion(db, market)
+    return row.kind if row is not None else None
 
 
 async def add_exclusion(db: AsyncSession, kind: str, value: str, label: Optional[str] = None) -> PaperExclusion:
@@ -338,14 +347,21 @@ async def maybe_place_bet(db: AsyncSession, market: Market, prediction: MarketPr
         return None
     if ev.verdict not in ("GO", "SMALL") or ev.shares <= 0:
         return None
-    if placed_by == "auto" and await excluded_reason(db, market):
-        return None
+    from backend.betting import shadow
+    if placed_by == "auto":
+        exclusion = await matching_exclusion(db, market)
+        if exclusion is not None:
+            if exclusion.source == "guard":   # a category the closing-line guard took out: measure it
+                await shadow.record(db, market, prediction, ev, "clv_guard")
+            return None
     already_open = (await db.execute(select(PaperBet.id).where(PaperBet.market_id == market.id, PaperBet.status == "open"))).first()
     if already_open:
         return None
     from backend.betting import guard
     if placed_by == "auto" and not await guard.allows_auto_bet(db, market):
-        return None   # paused: the price has been moving against the recent bets (betting/guard.py)
+        # paused: the price has been moving against the recent bets (betting/guard.py)
+        await shadow.record(db, market, prediction, ev, "clv_guard")
+        return None
     if placed_by == "auto":
         if await orders.pending_on(db, market.id):
             return None
@@ -374,6 +390,10 @@ async def apply_economics(db: AsyncSession, market: Market, prediction: MarketPr
         prediction.economics = ev.as_dict()
         await db.commit()
         await maybe_place_bet(db, market, prediction, ev)
+        from backend.betting import shadow
+        await shadow.after_evaluation(db, market, prediction, ev)
+        if isinstance(prediction, MarketPrediction):
+            await shadow.after_objective_evidence(db, market, prediction)
         await review_open_bets(db, [market.id])
         return ev
     except Exception as e:
@@ -584,7 +604,13 @@ async def summary(db: AsyncSession) -> dict:
                                    if b.status == "open" and not m.closed]),
         "equity_curve": curve,
         "orders": await orders_stats(db),
+        "shadow": await shadow_report(db),
     }
+
+
+async def shadow_report(db: AsyncSession) -> list:
+    from backend.betting import shadow
+    return await shadow.report(db)
 
 
 async def orders_stats(db: AsyncSession) -> dict:

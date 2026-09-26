@@ -240,8 +240,10 @@ def evaluate(
     risk_free_rate: float,
     hours_to_end: Optional[float] = None,
     extra_reasons: Optional[list] = None,
+    ignore: frozenset = frozenset(),
 ) -> Evaluation:
-    """extra_reasons: blocking reasons found by the caller (stale forecast, price market)."""
+    """extra_reasons: blocking reasons found by the caller (stale forecast, price market).
+    ignore: reason codes left out, to see what a filter blocked (betting/shadow.py)."""
     side = "NO" if signal == "BUY_NO" else "YES"
     p_side = p_yes if side == "YES" else 1.0 - p_yes
     p_cons = max(0.0, p_side - profile.z * sigma)
@@ -287,6 +289,8 @@ def evaluate(
         reasons.append(Reason("edge_after_costs",
                               tr(f"Dopo spread, commissioni e incertezza il margine è {_num(net_edge * 100, 1)} punti: ne servono almeno {_num(profile.min_net_edge * 100)}.",
                                  f"After spread, fees and uncertainty the margin is {_num(net_edge * 100, 1)} points: at least {_num(profile.min_net_edge * 100)} are needed.")))
+
+    reasons = [r for r in reasons if r.code not in ignore]
 
     # Sizing
     caps = {
@@ -345,6 +349,7 @@ def evaluate(
             f"Rendimento prudente della scommessa {_num(roi_cons * 100, 1)}%: il preset ne chiede almeno {_num(profile.min_roi * 100)}%.",
             f"Prudent return of the bet {_num(roi_cons * 100, 1)}%: the preset asks for at least {_num(profile.min_roi * 100)}%.")))
 
+    reasons = [r for r in reasons if r.code not in ignore]
     blocking = [r for r in reasons if r.blocking]
     if blocking:
         verdict = "NO"

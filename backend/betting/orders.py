@@ -99,17 +99,19 @@ async def cancel(db: AsyncSession, order: PaperOrder, reason: str) -> None:
     await db.commit()
 
 
-async def fill(db: AsyncSession, order: PaperOrder) -> PaperBet:
-    """The order becomes a bet at its limit price, without fee (makers pay none)."""
+async def fill(db: AsyncSession, order: PaperOrder, at: Optional[datetime] = None) -> PaperBet:
+    """The order becomes a bet at its limit price, without fee (makers pay none), at time `at`
+    (when the price history shows it filled) or now."""
+    at = at or _now()
     bet = PaperBet(
         market_id=order.market_id, prediction_id=order.prediction_id, side=order.side, shares=order.shares,
         avg_price=order.limit_price, stake=order.shares * order.limit_price, fee=0.0, p_side=order.p_side,
         p_conservative=order.p_conservative, expected_profit=order.shares * (order.p_side - order.limit_price),
-        preset=order.preset, placed_by=order.placed_by, entry="maker", created_at=_now(),
+        preset=order.preset, placed_by=order.placed_by, entry="maker", created_at=at,
     )
     db.add(bet)
     await db.flush()
-    order.status, order.closed_at, order.bet_id = "filled", _now(), bet.id
+    order.status, order.closed_at, order.bet_id = "filled", at, bet.id
     return bet
 
 
@@ -149,6 +151,11 @@ async def process_orders(db: AsyncSession) -> dict:
         if ask is not None and ask <= order.limit_price + 1e-9:
             await fill(db, order)
             stats["filled"] += 1
+            continue
+        traded_at = await traded_through(order, market) if settings.MAKER_FILL_FROM_HISTORY else None
+        if traded_at is not None:
+            await fill(db, order, at=traded_at)
+            stats["filled"] += 1
         elif _now() >= order.expires_at:
             _close(order, "expired", tr("Non eseguito in tempo", "Not filled in time"))
             stats["expired"] += 1
@@ -156,6 +163,29 @@ async def process_orders(db: AsyncSession) -> dict:
     if any(stats.values()):
         logger.info(f"Paper limit orders: {stats}")
     return stats
+
+
+async def traded_through(order: PaperOrder, market: Market) -> Optional[datetime]:
+    """First time, while the order was waiting, the side traded below its limit (minute price
+    history of the CLOB): someone sold under our bid, so the order ahead of them in the book was
+    hit. Strictly below, because at the limit itself others may have been ahead in the queue.
+    None without a token, without points or if the CLOB cannot be reached."""
+    from backend.markets import polymarket
+    token = market.yes_token_id if order.side == "YES" else market.no_token_id
+    if not token:
+        return None
+    end = min(_now(), order.expires_at)
+    if end <= order.created_at:
+        return None
+    try:
+        history = await polymarket.fetch_price_history(token, order.created_at, end, fidelities=(1, 60))
+    except Exception as e:
+        logger.info(f"Price history unavailable for order {order.id}: {e}")
+        return None
+    for t, price in history:
+        if order.created_at <= t <= end and price < order.limit_price - 1e-9:
+            return t
+    return None
 
 
 async def reserved(db: AsyncSession, *conds) -> float:

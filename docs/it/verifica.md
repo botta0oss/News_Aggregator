@@ -98,6 +98,16 @@ Il sistema aggiunge valore solo se `brier_blended` è stabilmente **inferiore** 
 `gain_blended` e `gain_model` danno il vantaggio sul prezzo con l'intervallo al 95%
 (bootstrap sui mercati). Se l'intervallo comprende lo zero, il vantaggio può essere dovuto al caso.
 
+**Seconda opinione.** `second_opinion` in Calibrazione (scheda «La seconda opinione») guarda
+l'ultima previsione con una seconda opinione per ogni mercato risolto: il suo Brier score
+contro quello di Jev e del prezzo sugli stessi mercati, il vantaggio sul prezzo con
+l'intervallo al 95% (`gain_second`), quante volte era in disaccordo con un segnale, in quante
+di queste aveva ragione Jev e il risultato medio per quota delle scommesse bloccate dal
+disaccordo (`blocked_result_per_share`, il lato di Jev comprato al prezzo della previsione:
+negativo vuol dire che bloccarle ha fatto risparmiare). Se la seconda opinione prevede peggio
+del prezzo e le scommesse bloccate avrebbero guadagnato, spegnila con
+`SECOND_OPINION_ENABLED=false`.
+
 **Prezzo di chiusura (CLV).** Il sync registra l'ultimo prezzo di ogni mercato mentre si
 scambia ancora (`last_trading_price`): è la «chiusura», la stima del mercato quando tutte le
 informazioni sono note. Comprare stabilmente sotto la chiusura è il segno più affidabile di un

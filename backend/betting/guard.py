@@ -86,7 +86,7 @@ async def allows_auto_bet(db: AsyncSession, market: Market) -> bool:
             exists = (await db.execute(select(PaperExclusion).where(
                 PaperExclusion.kind == "category", PaperExclusion.value == market.category))).scalar_one_or_none()
             if exists is None:
-                db.add(PaperExclusion(kind="category", value=market.category, label=label))
+                db.add(PaperExclusion(kind="category", value=market.category, label=label, source="guard"))
                 await db.commit()
                 logger.warning(f"CLV guard: category {market.category} excluded ({avg:+.3f} over {len(moves)} bets)")
                 await _notify(tr(f"categoria {market.category} esclusa dalle scommesse automatiche. {label}.",

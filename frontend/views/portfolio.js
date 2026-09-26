@@ -131,6 +131,28 @@ export async function viewPortfolio(ctx) {
       os.saved ? t("Rispetto al prezzo del book quando sono stati inseriti, gli ordini eseguiti hanno risparmiato {0}.", money(os.saved)) : "") : null,
   ) : null;
 
+  const shadowRows = data.shadow || [];
+  const shadowCard = shadowRows.length ? h("section", { class: "card", "aria-labelledby": "h-shadow" },
+    h("div", { class: "card-head" }, h("h2", { id: "h-shadow" }, t("Cosa hanno bloccato i filtri"),
+      infoTip(t("Ogni scommessa automatica bloccata solo da un filtro viene seguita senza soldi, come se fosse stata comprata al prezzo del book, fino alla risoluzione. Un risultato ipotetico negativo vuol dire che il filtro ha evitato perdite; positivo, che sta costando guadagni."))),
+      h("span", { class: "muted small" }, t("scommesse ombra, senza soldi"))),
+    h("div", { class: "table-wrap" }, h("table", {},
+      h("thead", {}, h("tr", {},
+        h("th", {}, t("Filtro")), h("th", { class: "num" }, t("Bloccate")), h("th", { class: "num" }, t("Aperte")),
+        h("th", { class: "num" }, t("Vinte / perse")), h("th", { class: "num" }, t("Risultato ipotetico")),
+        h("th", { class: "num" }, t("Per dollaro")),
+        h("th", { class: "num" }, t("Prezzo dopo il blocco"), infoTip(t("Movimento medio del prezzo del lato che si sarebbe comprato: fino alla chiusura del mercato, o finora. Positivo = il mercato è andato verso il segnale bloccato."))))),
+      h("tbody", {}, shadowRows.map((r) => h("tr", {},
+        h("td", {}, r.label), h("td", { class: "num" }, fmt.int(r.n)), h("td", { class: "num" }, fmt.int(r.open)),
+        h("td", { class: "num" }, `${r.won} / ${r.lost}`),
+        h("td", { class: `num ${pnlCls(r.pnl)}` }, r.pnl != null ? fmt.signedMoney(r.pnl) : "–"),
+        h("td", { class: `num ${pnlCls(r.roi)}` }, r.roi != null ? fmt.pct(r.roi) : "–"),
+        h("td", { class: `num ${pnlCls(r.avg_move)}` }, r.avg_move != null ? fmt.pts(r.avg_move) : "–"),
+      ))))),
+    h("p", { class: "muted small", style: { marginTop: "10px" } },
+      t("Negativo: il filtro ha evitato perdite, tienilo. Positivo su molte scommesse: il filtro costa guadagni, valuta di allentarlo. Con poche scommesse risolte il risultato dipende molto dal caso.")),
+  ) : null;
+
   const settledTable = settled.length ? h("div", { class: "table-wrap" }, h("table", {},
     h("thead", {}, h("tr", {},
       h("th", {}, t("Mercato")), h("th", {}, t("Lato")), h("th", { class: "num" }, t("Costo")), h("th", {}, t("Esito")),
@@ -199,6 +221,7 @@ export async function viewPortfolio(ctx) {
       h("section", { class: "card", "aria-labelledby": "h-open" }, h("div", { class: "card-head" }, h("h2", { id: "h-open" }, t("Posizioni aperte ({0})", open.length))), openTable),
       h("section", { class: "card", "aria-labelledby": "h-settled" }, h("div", { class: "card-head" }, h("h2", { id: "h-settled" }, t("Scommesse chiuse ({0})", settled.length))), settledTable),
       excludedList,
+      shadowCard,
       exclusionsCard(ctx, exclusions, categories, refresh),
     ),
   );

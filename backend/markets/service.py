@@ -448,6 +448,8 @@ async def _run_market_pipeline(session: AsyncSession) -> dict:
     from backend.betting.orders import process_orders
     stats["orders"] = await process_orders(session)
     stats["settled_bets"] = await settle_bets(session)
+    from backend.betting import shadow
+    stats["settled_shadow"] = await shadow.settle(session)
     stats["sold_bets"] = await review_open_bets(session)
     stats["targeted"] = await run_targeted_search(session)
     stats["links"] = await refresh_links(session)

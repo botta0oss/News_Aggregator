@@ -81,8 +81,9 @@ curl -b cookie.txt "localhost:8000/articles?q=fed%20rate%20cut&since_hours=72&mi
 |---|---|---|
 | GET | `/portfolio` | Summary, capital curve, available presets, closing-line guard state (`guard`) |
 | GET | `/portfolio/orders` | Simulated limit orders: `status` = `pending` (default), `closed`, `all` |
+| GET | `/portfolio/shadow` | Bets the filters blocked, followed without money: per filter (`summary`) and one by one (`bets`) |
 | POST | `/portfolio/orders/{id}/cancel` | Cancels a pending limit order (admin) |
-| GET | `/portfolio/export` | The whole portfolio now: `format=xlsx` (summary, bets, orders, equity, exclusions, columns) or `format=csv` (bets); `lang=it/en` for the descriptions |
+| GET | `/portfolio/export` | The whole portfolio now: `format=xlsx` (summary, bets, orders, shadow bets, equity, exclusions, columns) or `format=csv` (bets); `lang=it/en` for the descriptions |
 | PUT | `/portfolio/settings` | `{preset, auto_paper, auto_sell}` (admin) |
 | POST | `/portfolio/guard/resume` | Resumes automatic bets paused by the closing-line guard; earlier bets are not counted again (admin) |
 | POST | `/portfolio/reset` | `{bankroll, preset}`: deletes the simulated bets and starts over (admin) |

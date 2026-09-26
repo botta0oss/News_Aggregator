@@ -119,6 +119,8 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 | `PAPER_ORDER_MODE` | `maker` | Acquisti automatici: `maker` (ordine limite al bid, senza commissione, eseguito dopo o scaduto) o `taker` (compra subito dal book) |
 | `MAKER_ORDER_TTL_HOURS` | `6` | Un ordine limite non eseguito scade dopo queste ore |
 | `MAKER_TICK` | `0.01` | Passo di prezzo: l'ordine va un tick sopra il miglior prezzo di acquisto |
+| `MAKER_FILL_FROM_HISTORY` | `true` | Tra un aggiornamento e l'altro esegue un ordine se lo storico dei prezzi al minuto è sceso sotto il limite |
+| `SHADOW_BETS_ENABLED` | `true` | Segue senza soldi le scommesse automatiche bloccate solo dai filtri, per misurare ogni filtro |
 | `LONGSHOT_MIN_PRICE` | `0.10` | Nessun acquisto di quote che costano meno di così, su nessuno dei due lati (`0` = disattivato) |
 | `CLV_GUARD_ENABLED` | `true` | Guardia sul prezzo di chiusura per le scommesse automatiche |
 | `CLV_GUARD_WINDOW` | `15` | Ultime scommesse che considera |

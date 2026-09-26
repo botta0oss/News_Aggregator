@@ -64,8 +64,10 @@ every forecast and, live, in the **Worth it?** card of the market detail page.
     above the assessment's maximum price;
   - no fee (on Polymarket makers pay none) and no half spread;
   - it fills, at its price, when a market sync shows the side's best ask at or below it (a
-    seller came down to it). Prices between two syncs are not seen: a quick dip that recovers
-    is missed;
+    seller came down to it). Between two syncs it reads the CLOB's minute price history
+    (`MAKER_FILL_FROM_HISTORY`): if the side traded **below** the limit while the order was
+    waiting, it fills at the time of that trade (at the limit itself others may be ahead in
+    the queue, so that does not count). Without history it waits for the next sync;
   - it expires after `MAKER_ORDER_TTL_HOURS` (6); a new forecast on the market replaces it
     (a new order follows if it still says buy); the guard's pause or an exclusion cancels it;
     a market that closes against the side fills it (it went through the price on its way down);
@@ -76,6 +78,17 @@ every forecast and, live, in the **Worth it?** card of the market detail page.
   and what the filled ones saved against the book price when they were placed. Manual bets
   («Add now») still take the book (`entry` = taker) and cancel a pending order on the market.
   `PAPER_ORDER_MODE=taker` goes back to taking the ask on automatic bets too.
+- **Shadow bets:** every automatic bet blocked **only** by filters is followed without money,
+  as if it had been bought at the book price, until resolution (`SHADOW_BETS_ENABLED`). The
+  filters measured: shares under the minimum price, second opinion disagreeing, markets on an
+  asset's price, too close to the end, return of the bet too low, evidence from the facts
+  weaker than Jev's rating, closing-line pause (also the categories it excluded). A bet also
+  blocked by something else (illiquid market, margin after costs…) is not counted: the filter
+  would not have changed anything. The portfolio card «What the filters blocked» shows per
+  filter how many bets it blocked, won/lost, the hypothetical result, per dollar, and how the
+  price moved after the block. Negative means the filter avoided losses; positive over many
+  bets, that it is costing gains and could be loosened. `GET /portfolio/shadow` and the
+  *Shadow* sheet of the export list them one by one.
 - **Closing-line guard:** the result of a bet takes weeks, the price moves within hours. For
   the latest `CLV_GUARD_WINDOW` (15) bets older than an hour, the guard measures how much the
   price of the side bought has moved since the purchase (to the closing price once the market
@@ -113,7 +126,8 @@ every forecast and, live, in the **Worth it?** card of the market detail page.
   - *Bets*: every bet, excluded ones too, with purchase, sale or resolution, result, current
     value and plan of the open ones, the forecast that led to it (Jev, blend, evidence, edge,
     signal) and its economic assessment;
-  - *Equity*, *Exclusions*, and *Columns*, which explains every column.
+  - *Orders* (limit orders, filled or not), *Shadow* (bets the filters blocked), *Equity*,
+    *Exclusions*, and *Columns*, which explains every column.
 
   Column names are stable keys (the same as the API); prices and probabilities are fractions
   0–1, amounts in dollars, times in UTC. «CSV» downloads only the bets (comma separator,

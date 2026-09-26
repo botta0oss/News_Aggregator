@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.auth.deps import require_admin
-from backend.betting import export, guard, orders, plans, portfolio
+from backend.betting import export, guard, orders, plans, portfolio, shadow
 from backend.betting.profiles import PROFILES, get_profile
 from backend.markets.calibration import summary as calibration_summary
 from backend.config import settings
@@ -92,6 +92,12 @@ async def list_orders(status: Literal["pending", "closed", "all"] = Query("pendi
         stmt = stmt.where(PaperOrder.status != "pending")
     rows = (await db.execute(stmt.order_by(PaperOrder.created_at.desc()).limit(limit))).all()
     return [orders.order_dict(o, m) | {"url": _market_url(m)} for o, m in rows]
+
+
+@router.get("/shadow")
+async def list_shadow(limit: int = Query(200, ge=1, le=1000), db: AsyncSession = Depends(get_db)):
+    """Bets the filters blocked, followed without money: per filter (`summary`) and one by one (`bets`)."""
+    return {"summary": await shadow.report(db), "bets": await shadow.listing(db, limit)}
 
 
 @router.post("/orders/{order_id}/cancel", dependencies=admin)
