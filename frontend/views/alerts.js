@@ -255,7 +255,7 @@ function settingsCard(ctx, s, categories) {
       h("div", { class: "field-col" },
         sw("al-enabled", t("Allerte attive"), "enabled"),
         sw("al-telegram", t("Notifiche su Telegram"), "telegram_enabled"),
-        h("p", { class: "muted small" }, s.telegram_configured ? t("Telegram configurato.") : t("Telegram non configurato (file .env).")),
+        h("p", { class: "muted small" }, s.telegram_configured ? t("Telegram configurato.") : t("Telegram non configurato: Impostazioni → Chiavi API.")),
       ),
       h("div", { class: "field-col" }, h("span", { class: "field-label" }, t("Categorie da seguire")), catBoxes,
         h("p", { class: "muted small" }, t("Nessuna selezionata = tutte."))),

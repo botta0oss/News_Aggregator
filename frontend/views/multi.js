@@ -127,7 +127,7 @@ export async function viewMultiDetail(ctx, id) {
     pred ? t("Nuova previsione") : t("Chiedi una previsione a Jev"));
   let blocker = null;
   if (!ctx.isAdmin()) blocker = t("Solo gli amministratori possono chiedere previsioni (sono chiamate a pagamento).");
-  else if (!status?.jev_enabled) blocker = t("Serve TYPESAFE_API_KEY nel file .env.");
+  else if (!status?.jev_enabled) blocker = t("Serve la chiave TypeSafe: Impostazioni → Chiavi API.");
   else if (e.closed) blocker = t("L'evento è chiuso.");
   else if (!e.evidence.length) blocker = t("Nessuna notizia recente collegata a questo evento.");
   predictBtn.disabled = Boolean(blocker);

@@ -171,8 +171,8 @@ function renderBanner() {
     banner.hidden = false;
   } else if (!status.jev_enabled) {
     banner.append(icon("alert"), h("span", {},
-      t("Previsioni disattivate: manca la chiave TypeSafe. Aggiungi "), h("code", {}, "TYPESAFE_API_KEY"),
-      t(" al file .env e riavvia. Nel frattempo le notizie vengono classificate con un'euristica locale."),
+      t("Previsioni disattivate: manca la chiave TypeSafe. Inseriscila in "), h("a", { href: "#/impostazioni" }, t("Impostazioni → Chiavi API")),
+      t(". Nel frattempo le notizie vengono classificate con un'euristica locale."),
     ));
     banner.hidden = false;
   } else if (status.usage?.blocked) {
@@ -635,7 +635,7 @@ async function viewMarketDetail(id) {
   const predictBtn = h("button", { class: "btn btn-primary", type: "button" }, h("span", { class: "spinner", "aria-hidden": "true" }), icon("refresh"), latest ? t("Nuova previsione") : t("Chiedi una previsione a Jev"));
   let blocker = null;
   if (!isAdmin()) blocker = t("Solo gli amministratori possono chiedere previsioni (sono chiamate a pagamento).");
-  else if (!status?.jev_enabled) blocker = t("Serve TYPESAFE_API_KEY nel file .env.");
+  else if (!status?.jev_enabled) blocker = t("Serve la chiave TypeSafe: Impostazioni → Chiavi API.");
   else if (market.closed) blocker = t("Il mercato è chiuso.");
   else if (market.evidence.length === 0) blocker = t("Nessuna notizia recente collegata a questo mercato.");
   predictBtn.disabled = Boolean(blocker);
@@ -905,6 +905,7 @@ const ctx = {
   checkField,
   setBusy,
   rerender: () => route({ quiet: true }),
+  reloadStatus: () => loadStatus(),
 };
 
 // ---------- Boot ----------

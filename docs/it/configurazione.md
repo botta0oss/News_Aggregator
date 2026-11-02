@@ -8,6 +8,11 @@ Tutte le variabili del file `.env`.
 Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contano come
 "non configurato".
 
+> [!TIP]
+> Le chiavi API (`TYPESAFE_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`) e Telegram (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`)
+> si possono impostare anche dalla dashboard, **Impostazioni → Chiavi API** (solo amministratori). Valgono subito, senza riavvio,
+> e sostituiscono i valori di `.env`; rimuovendole si torna a `.env`. Sono salvate nel database e non vengono più mostrate per intero.
+
 <details>
 <summary><b>Docker compose</b></summary>
 
