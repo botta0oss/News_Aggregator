@@ -73,6 +73,8 @@ async def place_order(db: AsyncSession, market: Market, prediction, ev, preset: 
     db.add(order)
     await db.commit()
     logger.info(f"Paper limit order {ev.side} {ev.shares:.1f} shares at {price:.3f} on {market.id}")
+    from backend.betting import live
+    await live.follow_order(db, market, order)   # the same real limit order, if the real wallet is on
     return order
 
 
@@ -91,12 +93,17 @@ async def cancel_on_market(db: AsyncSession, market_id: str, reason: str) -> int
         _close(order, "cancelled", reason)
     if orders:
         await db.commit()
+        from backend.betting import live
+        for order in orders:
+            await live.cancel_for_order(db, order, reason)
     return len(orders)
 
 
 async def cancel(db: AsyncSession, order: PaperOrder, reason: str) -> None:
     _close(order, "cancelled", reason)
     await db.commit()
+    from backend.betting import live
+    await live.cancel_for_order(db, order, reason)
 
 
 async def fill(db: AsyncSession, order: PaperOrder, at: Optional[datetime] = None) -> PaperBet:
@@ -112,6 +119,8 @@ async def fill(db: AsyncSession, order: PaperOrder, at: Optional[datetime] = Non
     db.add(bet)
     await db.flush()
     order.status, order.closed_at, order.bet_id = "filled", at, bet.id
+    from backend.betting import live
+    await live.link_fill(db, order, bet)
     return bet
 
 

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.auth.deps import require_admin
-from backend.betting import export, guard, orders, plans, portfolio, shadow
+from backend.betting import export, guard, live, orders, plans, portfolio, shadow
 from backend.betting.profiles import PROFILES, get_profile
 from backend.markets.calibration import summary as calibration_summary
 from backend.config import settings
@@ -134,8 +134,41 @@ async def update_settings(body: SettingsIn, db: AsyncSession = Depends(get_db)):
 @router.post("/reset", dependencies=admin)
 async def reset(body: ResetIn, db: AsyncSession = Depends(get_db)):
     """Deletes all simulated bets and starts over with a new capital."""
-    s = await portfolio.reset_portfolio(db, body.bankroll, body.preset)
+    try:
+        s = await portfolio.reset_portfolio(db, body.bankroll, body.preset)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     return {"bankroll": s.bankroll, "preset": s.preset, "auto_paper": s.auto_paper}
+
+
+class LiveModeIn(BaseModel):
+    mode: Literal["off", "manual", "auto"]
+    # Turning real money on must be explicit: the dashboard sends it after the user confirms
+    confirm: bool = False
+
+
+@router.get("/live", dependencies=admin)
+async def live_status(db: AsyncSession = Depends(get_db)):
+    """Real wallet: configuration, mode, address and balance, limits, real orders and positions."""
+    return await live.status(db)
+
+
+@router.put("/live", dependencies=admin)
+async def set_live_mode(body: LiveModeIn, db: AsyncSession = Depends(get_db)):
+    """Real wallet mode: off, manual (only the bets placed by hand) or auto (every bet)."""
+    if body.mode != "off" and not body.confirm:
+        raise HTTPException(status_code=400, detail=tr("Serve la conferma per usare soldi veri", "Confirmation is needed to use real money"))
+    try:
+        await live.set_mode(db, body.mode)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return await live.status(db)
+
+
+@router.post("/live/stop", dependencies=admin)
+async def stop_live(db: AsyncSession = Depends(get_db)):
+    """Emergency stop: real wallet off and all its waiting orders cancelled on Polymarket."""
+    return await live.stop(db)
 
 
 @router.post("/bets/{bet_id}/sell", dependencies=admin)

@@ -81,6 +81,9 @@ STATEMENTS = [
     "ALTER TABLE paper_exclusions ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'user'",
     """UPDATE paper_exclusions SET source = 'guard' WHERE kind = 'category' AND source = 'user'
        AND (label LIKE 'Pausa automatica:%' OR label LIKE 'Automatic pause:%')""",
+    # Real wallet (the live_orders table is created with the others)
+    "ALTER TABLE betting_settings ADD COLUMN IF NOT EXISTS live_mode TEXT NOT NULL DEFAULT 'off'",
+    "ALTER TABLE betting_settings ADD COLUMN IF NOT EXISTS live_since TIMESTAMPTZ",
     """UPDATE markets SET resolution = CASE WHEN resolved_yes THEN 'yes' ELSE 'no' END
        WHERE resolution IS NULL AND resolved_yes IS NOT NULL""",
 ]

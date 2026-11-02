@@ -130,6 +130,47 @@ All variables are set in `.env`. Placeholder values `your_...` count as "not con
 </details>
 
 <details>
+<summary><b>Real wallet on Polymarket (real money)</b></summary>
+
+Off by default. With it on, every buy, limit order and sale of the simulated portfolio is **also sent as a
+real order** on Polymarket, signed with your wallet. The simulation keeps running as before and keeps
+deciding; the real wallet follows it:
+
+- **sizes**: the same share of capital as the simulated bet (stake ÷ simulated capital), applied to the
+  wallet's USDC balance, within the three limits below. An order under 5 shares or 1 $ is not sent and is
+  listed as *blocked* with the reason;
+- **buys from the book** become a real buy now (what is not filled at once is cancelled), at most at the
+  maximum price of the evaluation; **limit orders** become the same real limit order, which expires with it
+  and is cancelled with it; **sales** sell the real shares held, not below the simulated sale price minus
+  `LIVE_SELL_SLIPPAGE`;
+- **winning shares** of resolved markets are redeemed from polymarket.com (the app sends no on-chain
+  transactions).
+
+How to turn it on:
+
+1. Install the optional package: `pip install -r requirements-live.txt` (with Docker it is built in when
+   `LIVE_TRADING_ENABLED=true` is in `.env`: `docker compose up -d --build`).
+2. Put in `.env` the variables below. Use a wallet holding only money you accept to lose.
+3. In the **Portfolio** page, *Real wallet* card, pick *Only bets placed by hand* or *Every bet* and confirm.
+   *Emergency stop* turns it off and cancels every waiting order of the wallet on Polymarket.
+
+| Variable | Default | Description |
+|---|---|---|
+| `LIVE_TRADING_ENABLED` | `false` | Master switch: without it the dashboard cannot turn real orders on |
+| `POLYMARKET_PRIVATE_KEY` | – | Private key of the wallet that signs the orders. Secret: anyone who has it can spend the wallet |
+| `POLYMARKET_FUNDER` | – | Address holding the USDC when it is not the key's own (the Polymarket proxy wallet) |
+| `POLYMARKET_SIGNATURE_TYPE` | `0` | `0` own wallet (EOA), `1` Polymarket email/Magic account, `2` browser wallet connected to Polymarket |
+| `POLYMARKET_CHAIN_ID` | `137` | Polygon |
+| `LIVE_MAX_ORDER_USD` | `10` | Largest single real buy |
+| `LIVE_MAX_DAILY_USD` | `50` | Real buys per day (UTC) |
+| `LIVE_MAX_OPEN_USD` | `200` | Money in open real positions and waiting real orders |
+| `LIVE_SELL_SLIPPAGE` | `0.03` | A real sale goes down to this much below the simulated sale price, not further |
+
+While the real wallet is on, *Start over* of the simulation is refused: the real orders follow the simulated bets.
+
+</details>
+
+<details>
 <summary><b>AI API limits</b></summary>
 
 Each provider has a client-side limiter: it spaces requests out, caps concurrent ones and, when

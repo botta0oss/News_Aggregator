@@ -205,6 +205,9 @@ class BettingSettings(Base):
     paused_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     paused_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     guard_since: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Real wallet on Polymarket (betting/live.py): off / manual (only the bets placed by hand) / auto (every bet)
+    live_mode: Mapped[str] = mapped_column(Text, default="off")
+    live_since: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
@@ -262,6 +265,34 @@ class PaperOrder(Base):
     @property
     def outlay(self) -> float:
         return self.shares * self.limit_price
+
+
+class LiveOrder(Base):
+    """A real order sent to Polymarket with the wallet, following a simulated bet, limit order or
+    sale (betting/live.py). `blocked` rows were not sent: a safety limit stopped them."""
+    __tablename__ = 'live_orders'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    market_id: Mapped[str] = mapped_column(ForeignKey('markets.id', ondelete='CASCADE'), index=True)
+    token_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    side: Mapped[str] = mapped_column(Text, nullable=False)                 # YES / NO
+    action: Mapped[str] = mapped_column(Text, nullable=False)               # BUY / SELL
+    order_type: Mapped[str] = mapped_column(Text, nullable=False)           # FAK (now, rest cancelled) / GTD (waits in the book)
+    price: Mapped[float] = mapped_column(Float, nullable=False)             # limit price per share
+    shares: Mapped[float] = mapped_column(Float, nullable=False)            # shares asked
+    filled_shares: Mapped[float] = mapped_column(Float, default=0.0)
+    # submitted / live (waiting in the book) / filled / partial (closed part filled) / cancelled / failed / blocked
+    status: Mapped[str] = mapped_column(Text, default="submitted", index=True)
+    exchange_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    placed_by: Mapped[str] = mapped_column(Text, default="auto")
+    paper_bet_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('paper_bets.id', ondelete='SET NULL'), nullable=True, index=True)
+    paper_order_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('paper_orders.id', ondelete='SET NULL'), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    @property
+    def usd(self) -> float:
+        return self.shares * self.price
 
 
 class PaperExclusion(Base):

@@ -60,6 +60,9 @@ async def reset_portfolio(db: AsyncSession, bankroll: float, preset: Optional[st
     """Starts over: deletes every simulated bet and sets a new initial capital."""
     if not (10 <= bankroll <= 10_000_000):
         raise ValueError(tr("Il capitale deve essere tra 10 $ e 10.000.000 $", "Capital must be between $10 and $10,000,000"))
+    if (await get_settings(db)).live_mode != "off":
+        # The real orders follow the simulated bets: starting over would leave the real shares without them
+        raise ValueError(tr("Disattiva prima il portafoglio reale", "Turn off the real wallet first"))
     await db.execute(delete(PaperOrder))
     await db.execute(delete(ShadowBet))
     await db.execute(delete(PaperBet))
@@ -377,6 +380,8 @@ async def maybe_place_bet(db: AsyncSession, market: Market, prediction: MarketPr
     db.add(bet)
     await db.commit()
     logger.info(f"Paper bet {ev.side} {ev.shares:.1f} shares on {market.id} for {ev.outlay:.2f} $")
+    from backend.betting import live
+    await live.follow_bet(db, market, bet, ev.limit_price)   # the real buy, if the real wallet is on
     return bet
 
 
@@ -461,6 +466,8 @@ async def sell_bet(db: AsyncSession, bet: PaperBet, market: Market, reason: str,
     bet.settled_at = _now()
     await db.commit()
     logger.info(f"Paper bet {bet.id} sold at {bet.exit_price:.3f}: {reason}")
+    from backend.betting import live
+    await live.follow_sale(db, market, bet, min_price)   # the real sale, if real shares are held
     return True
 
 
