@@ -1367,4 +1367,13 @@ export default {
   "La chiave viene salvata nel database del server: chi ha accesso al server o ai suoi backup può spendere i fondi. Usa un portafoglio con dentro solo i soldi che accetti di perdere.": "The key is saved in the server's database: anyone with access to the server or its backups can spend the funds. Use a wallet holding only money you accept to lose.",
   "Nessuna posizione reale.": "No real positions.",
   "Hai fatto l'accesso a Polymarket con l'email: 1. Con MetaMask o un altro portafoglio del browser: 2. Usi la chiave direttamente, senza il sito: 0.": "You sign in to Polymarket with your email: 1. With MetaMask or another browser wallet: 2. You use the key directly, without the site: 0.",
+  "Una chiamata per ogni notizia valutata. Finite le chiamate, le notizie successive vengono saltate fino al giorno dopo. Contano anche nel limite generale di Jev della pagina Uso e costi.": "One call per news item evaluated. When the calls run out, later news is skipped until the next day. They also count in the general Jev limit of the Usage and costs page.",
+  "modifica": "edit",
+  "Impostazioni delle allerte non disponibili.": "Alert settings unavailable.",
+  "Usate nelle ultime 24 ore: {0}.": "Used in the last 24 hours: {0}.",
+  "Limite delle allerte: {0} chiamate al giorno": "Alert limit: {0} calls a day",
+  "Quante chiamate a Jev possono usare le allerte in 24 ore: una per ogni notizia valutata. Finite quelle, le notizie successive vengono saltate fino al giorno dopo. ": "How many Jev calls the alerts may use in 24 hours: one per news item evaluated. When they run out, later news is skipped until the next day. ",
+  "Altre impostazioni delle allerte": "Other alert settings",
+  "Chiamate Jev al giorno per le allerte": "Jev calls a day for the alerts",
+  "Contano anche nel limite generale di Jev, nella pagina ": "They also count in the general Jev limit, in the page ",
 };

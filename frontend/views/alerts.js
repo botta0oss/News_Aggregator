@@ -104,7 +104,11 @@ function resultsCard(s) {
       statTile(t("Notificate"), fmt.int(s.notified), t("su Telegram")),
       statTile(t("A favore dopo 1 ora"), oneHour.share_favorable == null ? "–" : fmt.pct(oneHour.share_favorable),
         oneHour.avg_move == null ? t("nessun dato ancora") : t("media {0}", fmt.pts(oneHour.avg_move))),
-      statTile(t("Chiamate Jev (24 ore)"), `${fmt.int(s.calls_last_24h)} / ${fmt.int(s.daily_budget)}`, t("limite giornaliero delle allerte")),
+      statTile(t("Chiamate Jev (24 ore)"), `${fmt.int(s.calls_last_24h)} / ${fmt.int(s.daily_budget)}`,
+        h("span", {}, t("limite giornaliero delle allerte"), " · ", h("button", { class: "link-btn", type: "button", on: { click: () => {
+          const input = document.getElementById("al-budget");
+          if (input) { input.scrollIntoView({ behavior: "smooth", block: "center" }); input.focus({ preventScroll: true }); }
+        } } }, t("modifica")))),
     ),
     h("div", { class: "table-wrap" },
       h("table", { class: "compact-table" },
@@ -258,7 +262,8 @@ function settingsCard(ctx, s, categories) {
       h("div", { class: "field-col" }, match,
         number("al-age", t("Età massima della notizia"), "max_news_age_hours", { min: 0.5, max: 72, step: 0.5, suffix: "ore" })),
       h("div", { class: "field-col" },
-        number("al-budget", t("Chiamate Jev al giorno"), "daily_budget", { min: 0, max: 500, step: 1 }),
+        number("al-budget", t("Chiamate Jev al giorno"), "daily_budget", { min: 0, max: 10000, step: 10 }),
+        h("p", { class: "muted small" }, t("Una chiamata per ogni notizia valutata. Finite le chiamate, le notizie successive vengono saltate fino al giorno dopo. Contano anche nel limite generale di Jev della pagina Uso e costi.")),
         number("al-cooldown", t("Pausa per mercato dopo un'allerta"), "cooldown_hours", { min: 0, max: 72, step: 0.5, suffix: "ore" })),
       h("div", { class: "field-col" }, h("span", { class: "field-label" }, t("Quando notificare")), verdictGroup),
       h("div", { class: "field-col" }, h("span", { class: "field-label" }, t("Ore silenziose ({0})", s.timezone)),

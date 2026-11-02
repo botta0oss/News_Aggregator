@@ -23,7 +23,7 @@ last 3 hours, are skipped.
 
 **What happens.**
 1. The price is refreshed from Polymarket at that moment.
-2. Jev assesses the market: it is one call, counted in the daily limit (30 by default).
+2. Jev assesses the market: it is one call, counted in the daily limit (30 by default, up to 10,000: set it in the Alerts page or in Settings).
 3. The economic assessment decides whether it is worth it and how much to stake. The
    simulated bet follows the portfolio rules.
 4. If it is worth it a Telegram message arrives with the news, the price, the estimate, the
