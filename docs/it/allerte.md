@@ -24,7 +24,7 @@ ultime 3 ore, vengono saltati.
 
 **Cosa succede.**
 1. Il prezzo viene aggiornato da Polymarket in quel momento.
-2. Jev valuta il mercato: è una chiamata, contata nel limite giornaliero (30 di default).
+2. Jev valuta il mercato: è una chiamata, contata nel limite giornaliero (30 di default, fino a 10.000: si imposta nella pagina Allerte o in Impostazioni).
 3. La valutazione economica decide se conviene e quanto puntare. La scommessa simulata segue
    le regole del portafoglio.
 4. Se conviene arriva un messaggio Telegram con la notizia, il prezzo, la stima, l'edge, la

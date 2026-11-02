@@ -52,7 +52,43 @@ export async function viewSettings(ctx) {
         classificationCard(ctx),
         parametersCard(ctx),
       ),
+      alertCallsCard(ctx),
     ),
+  );
+}
+
+// ---------- Jev calls of the alerts (same setting as in the Alerts page) ----------
+
+function alertCallsCard(ctx) {
+  const admin = ctx.isAdmin();
+  const input = h("input", { id: "set-alert-budget", class: "input", type: "number", min: 0, max: 10000, step: 10, disabled: true, style: { maxWidth: "140px" } });
+  const used = h("span", { class: "muted small" });
+  const save = h("button", { class: "btn btn-primary", type: "button", disabled: true }, t("Salva"));
+  api("/alerts/settings").then((s) => {
+    input.value = String(s.daily_budget);
+    input.disabled = save.disabled = !admin;
+  }).catch(() => { used.textContent = t("Impostazioni delle allerte non disponibili."); });
+  api("/alerts/summary").then((s) => { used.textContent = t("Usate nelle ultime 24 ore: {0}.", fmt.int(s.calls_last_24h)); }).catch(() => {});
+  save.addEventListener("click", async () => {
+    save.disabled = true;
+    try {
+      const r = await api("/alerts/settings", { method: "PUT", body: { daily_budget: Number(input.value) } });
+      input.value = String(r.daily_budget);
+      toast(t("Limite delle allerte: {0} chiamate al giorno", fmt.int(r.daily_budget)));
+    } catch (e) { toast(e.message, { error: true }); }
+    finally { save.disabled = false; }
+  });
+  return h("section", { class: "card", "aria-labelledby": "h-alert-calls" },
+    h("h2", { id: "h-alert-calls" }, t("Allerte")),
+    h("p", { class: "muted small", style: { margin: "6px 0 12px" } },
+      t("Quante chiamate a Jev possono usare le allerte in 24 ore: una per ogni notizia valutata. Finite quelle, le notizie successive vengono saltate fino al giorno dopo. "),
+      h("a", { href: "#/allerte" }, t("Altre impostazioni delle allerte"))),
+    h("div", { class: "form-field" },
+      h("label", { for: "set-alert-budget" }, t("Chiamate Jev al giorno per le allerte")),
+      h("div", { class: "inline" }, input, admin ? save : null),
+      used),
+    h("p", { class: "muted small", style: { marginTop: "8px" } },
+      t("Contano anche nel limite generale di Jev, nella pagina "), h("a", { href: "#/uso" }, t("Uso e costi")), "."),
   );
 }
 

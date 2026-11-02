@@ -35,6 +35,7 @@ CHECKPOINTS = {"15m": timedelta(minutes=15), "1h": timedelta(hours=1), "6h": tim
 VERDICTS = {"GO": ("GO",), "SMALL": ("GO", "SMALL")}
 MIN_SOURCE_QUALITY = 0.5
 MAX_FOLLOWUPS_PER_RUN = 60
+MAX_DAILY_BUDGET = 10_000   # Jev calls per 24 h the alerts may use (dashboard setting)
 
 
 def _now() -> datetime:
@@ -67,7 +68,8 @@ def validate_settings(data: dict) -> dict:
         out["categories"] = cats
     ranges = {"min_match": (0.3, 1.0, tr("La pertinenza minima deve essere tra 30% e 100%", "The minimum match must be between 30% and 100%")),
               "max_news_age_hours": (0.5, 72, tr("L'età massima della notizia deve essere tra 0,5 e 72 ore", "The maximum news age must be between 0.5 and 72 hours")),
-              "daily_budget": (0, 500, tr("Il limite giornaliero deve essere tra 0 e 500 chiamate", "The daily limit must be between 0 and 500 calls")),
+              "daily_budget": (0, MAX_DAILY_BUDGET, tr(f"Il limite giornaliero deve essere tra 0 e {MAX_DAILY_BUDGET} chiamate",
+                                                        f"The daily limit must be between 0 and {MAX_DAILY_BUDGET} calls")),
               "cooldown_hours": (0, 72, tr("La pausa per mercato deve essere tra 0 e 72 ore", "The pause per market must be between 0 and 72 hours"))}
     for key, (lo, hi, msg) in ranges.items():
         if key in data:

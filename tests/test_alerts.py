@@ -228,3 +228,11 @@ async def test_existing_links_are_not_alerted_after_upgrade(db):
             "WHERE table_name = 'market_article_links' AND column_name = 'alert_checked'"
         ))).scalar()
     assert default == "false"
+
+
+def test_daily_budget_can_go_well_above_the_old_cap():
+    """The Jev calls of the alerts are a dashboard setting, up to 10 000 a day."""
+    assert service.validate_settings({"daily_budget": 2000}) == {"daily_budget": 2000}
+    assert service.validate_settings({"daily_budget": 10_000}) == {"daily_budget": 10_000}
+    with pytest.raises(ValueError):
+        service.validate_settings({"daily_budget": 10_001})
