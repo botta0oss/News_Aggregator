@@ -1,6 +1,14 @@
 /.venv
 /graphify-out
 /.env
+# Any other env file and database dumps: since keys can be saved from the dashboard,
+# a dump holds the API keys and the wallet's private key
+.env
+.env.*
+!.env.example
+*.dump
+*.sql
+*.sql.gz
 __pycache__/
 *.pyc
 .pytest_cache/
