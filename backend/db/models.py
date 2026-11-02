@@ -267,6 +267,21 @@ class PaperOrder(Base):
         return self.shares * self.limit_price
 
 
+class LiveWalletConfig(Base):
+    """Real wallet settings saved from the dashboard (single row, id = 1); empty fields fall back to
+    the POLYMARKET_* / LIVE_* variables of .env. The private key is never sent back to the browser."""
+    __tablename__ = 'live_wallet_config'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    private_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    funder: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    signature_type: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    max_order_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    max_daily_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    max_open_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    sell_slippage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class LiveOrder(Base):
     """A real order sent to Polymarket with the wallet, following a simulated bet, limit order or
     sale (betting/live.py). `blocked` rows were not sent: a safety limit stopped them."""

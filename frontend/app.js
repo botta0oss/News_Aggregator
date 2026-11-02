@@ -9,6 +9,7 @@ import { viewNews } from "./views/news.js";
 import { viewSettings } from "./views/settings.js";
 import { viewMethod } from "./views/method.js";
 import { viewPortfolio } from "./views/portfolio.js";
+import { viewLivePortfolio } from "./views/live.js";
 import { bulkPredict } from "./views/bulk.js";
 import { viewAlerts } from "./views/alerts.js";
 import { viewBacktest } from "./views/backtest.js";
@@ -286,7 +287,7 @@ function localizeStatic() {
   text("#btn-ingest .muted", t("Scarica le fonti, classifica e collega ai mercati"));
   text("#btn-sync b", t("Aggiorna mercati"));
   text("#btn-sync .muted", t("Prezzi da Polymarket e collegamento delle notizie"));
-  text("#footer p", t("Segnali indicativi, non consulenza finanziaria. L'app non piazza ordini su Polymarket."));
+  text("#footer p", t("Segnali indicativi, non consulenza finanziaria. L'app piazza ordini su Polymarket solo se attivi il portafoglio reale."));
   attr("#bottom-nav", "aria-label", t("Sezioni principali"));
   text("#more-title", t("Tutte le sezioni"));
   attr("#btn-more-close", "aria-label", t("Chiudi"));
@@ -306,6 +307,7 @@ const routes = [
   [/^#\/impostazioni$/, "impostazioni", () => viewSettings(ctx)],
   [/^#\/metodo$/, "metodo", () => viewMethod(ctx)],
   [/^#\/portafoglio$/, "portafoglio", () => viewPortfolio(ctx)],
+  [/^#\/portafoglio-reale$/, "portafoglio-reale", () => viewLivePortfolio(ctx)],
   [/^#\/allerte$/, "allerte", () => viewAlerts(ctx)],
   [/^#\/multi$/, "multi", () => viewMultiList(ctx)],
   [/^#\/uso$/, "uso", () => viewUsage(ctx)],

@@ -134,41 +134,48 @@ Tutte le variabili si impostano in `.env`. I valori segnaposto `your_...` contan
 <details>
 <summary><b>Portafoglio reale su Polymarket (soldi veri)</b></summary>
 
-Spento per impostazione predefinita. Se attivo, ogni acquisto, ordine limite e vendita del portafoglio
-simulato viene **inviato anche come ordine reale** su Polymarket, firmato con il tuo portafoglio. La
-simulazione continua come prima e continua a decidere; il portafoglio reale la segue:
+Si configura dalla dashboard, pagina **Portafoglio reale** (solo amministratori), accanto alla pagina
+**Portafoglio simulato**. Spento per impostazione predefinita. Se attivo, ogni acquisto, ordine limite e
+vendita del portafoglio simulato viene **inviato anche come ordine reale** su Polymarket, firmato con il tuo
+portafoglio. La simulazione continua e continua a decidere; il portafoglio reale la segue:
 
 - **importi**: la stessa quota di capitale della scommessa simulata (puntata ÷ capitale simulato), applicata
-  al saldo USDC del portafoglio, entro i tre limiti sotto. Un ordine sotto 5 quote o 1 $ non viene inviato e
-  compare come *bloccato* con il motivo;
+  al saldo USDC del portafoglio, entro i limiti. Un ordine sotto 5 quote o 1 $ non viene inviato e compare
+  come *non inviato* con il motivo;
 - gli **acquisti dal book** diventano un acquisto reale immediato (quel che non si esegue subito viene
   annullato), al massimo al prezzo massimo della valutazione; gli **ordini limite** diventano lo stesso ordine
   limite reale, che scade e si annulla con quello simulato; le **vendite** vendono le quote reali possedute,
-  non sotto il prezzo di vendita simulato meno `LIVE_SELL_SLIPPAGE`;
+  non sotto il prezzo di vendita simulato meno il margine sulle vendite;
 - le **quote vincenti** dei mercati risolti si riscattano da polymarket.com (l'app non invia transazioni on-chain).
 
-Come attivarlo:
+Come attivarlo, tutto dalla pagina **Portafoglio reale**:
 
-1. Installa il pacchetto opzionale: `pip install -r requirements-live.txt` (con Docker viene incluso quando
-   in `.env` c'è `LIVE_TRADING_ENABLED=true`: `docker compose up -d --build`).
-2. Metti in `.env` le variabili sotto. Usa un portafoglio con dentro solo i soldi che accetti di perdere.
-3. Nella pagina **Portafoglio**, riquadro *Portafoglio reale*, scegli *Solo le scommesse fatte a mano* o
-   *Tutte le scommesse* e conferma. *Arresto di emergenza* lo spegne e annulla su Polymarket tutti gli ordini
-   in attesa del portafoglio.
+1. *Portafoglio e limiti*: incolla la chiave privata, l'indirizzo con i fondi se non è quello della chiave
+   (l'indirizzo del tuo profilo Polymarket) e il tipo di account (`1` account con email, `2` portafoglio del
+   browser collegato a Polymarket, `0` chiave usata direttamente), imposta i limiti, *Salva*. La pagina mostra
+   indirizzo e saldo USDC quando il portafoglio risponde.
+2. *Attivazione*: scegli *Solo le scommesse fatte a mano* o *Tutte le scommesse* e conferma. *Arresto di
+   emergenza* lo spegne e annulla su Polymarket tutti gli ordini in attesa del portafoglio.
+
+La chiave non viene mai rimandata al browser, ma è **salvata nel database del server**: chi ha accesso al
+server o ai suoi backup può spendere i fondi. Usa un portafoglio con dentro solo i soldi che accetti di
+perdere. Chiave, indirizzo e tipo di account non si cambiano con il portafoglio reale attivo, e *Ricomincia*
+della simulazione è rifiutato finché è attivo.
+
+L'immagine Docker include il pacchetto che firma gli ordini; senza Docker installalo con
+`pip install -r requirements-live.txt`. Le variabili sotto sono valori predefiniti facoltativi per i campi
+lasciati vuoti nella pagina.
 
 | Variabile | Default | Descrizione |
 |---|---|---|
-| `LIVE_TRADING_ENABLED` | `false` | Interruttore generale: senza, la dashboard non può attivare gli ordini reali |
-| `POLYMARKET_PRIVATE_KEY` | – | Chiave privata del portafoglio che firma gli ordini. Segreta: chi la ha può spendere il portafoglio |
-| `POLYMARKET_FUNDER` | – | Indirizzo che contiene gli USDC, se non è quello della chiave (il portafoglio proxy di Polymarket) |
-| `POLYMARKET_SIGNATURE_TYPE` | `0` | `0` portafoglio proprio (EOA), `1` account Polymarket con email/Magic, `2` portafoglio del browser collegato a Polymarket |
+| `POLYMARKET_PRIVATE_KEY` | – | Chiave usata se nella pagina non ne è salvata una |
+| `POLYMARKET_FUNDER` | – | Indirizzo che contiene gli USDC, se non è quello della chiave |
+| `POLYMARKET_SIGNATURE_TYPE` | `0` | `0` portafoglio proprio (EOA), `1` account Polymarket con email, `2` portafoglio del browser collegato a Polymarket |
 | `POLYMARKET_CHAIN_ID` | `137` | Polygon |
 | `LIVE_MAX_ORDER_USD` | `10` | Acquisto reale singolo più grande |
 | `LIVE_MAX_DAILY_USD` | `50` | Acquisti reali al giorno (UTC) |
 | `LIVE_MAX_OPEN_USD` | `200` | Denaro in posizioni reali aperte e ordini reali in attesa |
 | `LIVE_SELL_SLIPPAGE` | `0.03` | Una vendita reale scende fino a questo sotto il prezzo di vendita simulato, non oltre |
-
-Con il portafoglio reale attivo, *Ricomincia* della simulazione è rifiutato: gli ordini reali seguono le scommesse simulate.
 
 </details>
 

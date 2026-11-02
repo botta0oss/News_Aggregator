@@ -133,11 +133,9 @@ class Settings(BaseSettings):
     MAKER_TICK: float = 0.01                  # price step of the book: the order goes one tick above the bid
     MAKER_FILL_FROM_HISTORY: bool = True      # also fill when the minute price history traded below the limit between syncs
 
-    # Real wallet on Polymarket (betting/live.py). Off unless LIVE_TRADING_ENABLED is true AND the
-    # dashboard switch is on: then the buys and sales of the simulated portfolio are also sent as
-    # real orders, sized on the wallet's balance and capped by the limits below.
-    # Needs the optional package: pip install -r requirements-live.txt
-    LIVE_TRADING_ENABLED: bool = False
+    # Real wallet on Polymarket (betting/live.py). Wallet, limits and on/off are set from the dashboard
+    # (page "Portafoglio reale"); these values are only the defaults of fields left empty there.
+    # Needs the package of requirements-live.txt (built into the Docker image).
     POLYMARKET_PRIVATE_KEY: Optional[str] = None   # key of the wallet that signs the orders (keep it secret)
     POLYMARKET_FUNDER: Optional[str] = None        # address holding the USDC (the Polymarket proxy wallet), if not the key's own
     POLYMARKET_SIGNATURE_TYPE: int = 0             # 0 = own wallet (EOA), 1 = Polymarket email/Magic account, 2 = browser wallet via Polymarket

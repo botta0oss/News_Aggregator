@@ -165,6 +165,28 @@ async def set_live_mode(body: LiveModeIn, db: AsyncSession = Depends(get_db)):
     return await live.status(db)
 
 
+class LiveConfigIn(BaseModel):
+    private_key: Optional[str] = Field(default=None, max_length=100)   # write-only; empty = unchanged
+    clear_key: bool = False
+    funder: Optional[str] = Field(default=None, max_length=100)        # "" = none (the key's own address)
+    signature_type: Optional[Literal[0, 1, 2]] = None
+    max_order_usd: Optional[float] = None
+    max_daily_usd: Optional[float] = None
+    max_open_usd: Optional[float] = None
+    sell_slippage: Optional[float] = None
+
+
+@router.put("/live/config", dependencies=admin)
+async def set_live_config(body: LiveConfigIn, db: AsyncSession = Depends(get_db)):
+    """Real wallet settings from the dashboard: key (never sent back), funder address, signature
+    type and safety limits. Returns the status, with the wallet's address and balance if it connects."""
+    try:
+        await live.save_config(db, **body.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return await live.status(db)
+
+
 @router.post("/live/stop", dependencies=admin)
 async def stop_live(db: AsyncSession = Depends(get_db)):
     """Emergency stop: real wallet off and all its waiting orders cancelled on Polymarket."""

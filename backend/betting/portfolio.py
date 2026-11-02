@@ -589,7 +589,7 @@ async def summary(db: AsyncSession) -> dict:
     sold_won = sum(1 for bet, _ in bets if bet.status == "sold" and (bet.pnl or 0) > 0)
     return {
         "settings": {"bankroll": s.bankroll, "preset": s.preset, "auto_paper": s.auto_paper, "auto_sell": s.auto_sell,
-                     "started_at": s.started_at},
+                     "started_at": s.started_at, "live_mode": s.live_mode or "off"},
         "equity": led["equity"],
         "cash": led["cash"],
         "invested": led["open_outlay"],

@@ -25,7 +25,7 @@
 
 > [!WARNING]
 > **This is not financial advice.** By default the app does not place orders: it produces suggestions to be checked.
-> An optional [real wallet](docs/configuration.md) (off unless you configure it) can follow the simulated portfolio with real orders, within limits you set.
+> An optional [real wallet](docs/configuration.md) (off unless you set it up in the *Real wallet* page) can follow the simulated portfolio with real orders, within limits you set.
 > Before using real money, check the results over many resolved markets
 > ([backtest and calibration](docs/verification.md)).
 >

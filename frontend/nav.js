@@ -16,7 +16,8 @@ export const NAV = [
     { id: "notizie", href: "#/notizie", label: t("Notizie"), icon: "news" },
   ] },
   { group: t("Risultati"), items: [
-    { id: "portafoglio", href: "#/portafoglio", label: t("Portafoglio"), icon: "wallet" },
+    { id: "portafoglio", href: "#/portafoglio", label: t("Portafoglio simulato"), icon: "wallet" },
+    { id: "portafoglio-reale", href: "#/portafoglio-reale", label: t("Portafoglio reale"), icon: "wallet" },
     { id: "backtest", href: "#/backtest", label: t("Backtest"), icon: "history" },
     { id: "calibrazione", href: "#/calibrazione", label: t("Calibrazione"), icon: "target" },
   ] },
