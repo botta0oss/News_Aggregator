@@ -97,7 +97,7 @@ async def test_limits_cap_the_real_order_and_too_small_orders_are_blocked(db, bo
         m2 = await make_market(s, mid="m-other", event="other")
         await portfolio.apply_economics(s, m2, await make_prediction(s, m2))
         blocked = (await _live_orders(s))[1]
-        assert blocked.status == "blocked" and "LIVE_MAX_DAILY_USD" in blocked.error
+        assert blocked.status == "blocked" and "giornaliero" in blocked.error
         assert len(wallet.placed) == 1
 
 
@@ -202,10 +202,64 @@ async def test_api_needs_confirmation_and_stop_cancels_everything(db, book, wall
         assert (await api.get("/portfolio/live")).status_code == 403
 
 
-async def test_cannot_turn_on_without_configuration(db):
+async def test_cannot_turn_on_without_a_key(db):
     live.set_client(None)
     async with login_client("admin") as api:
         r = await api.put("/portfolio/live", json={"mode": "auto", "confirm": True})
-        assert r.status_code == 409 and "LIVE_TRADING_ENABLED" in r.json()["detail"]
+        assert r.status_code == 409 and "chiave privata" in r.json()["detail"]
         r = await api.get("/portfolio/live")
-        assert r.json()["enabled"] is False and r.json()["unavailable"]
+        assert r.json()["unavailable"] and r.json()["config"]["has_key"] is False
+
+
+KEY = "ab" * 32
+
+
+async def test_wallet_settings_from_the_dashboard(db, monkeypatch):
+    """Key, address and signature type saved from the web app connect the wallet; the key is never sent back."""
+    live.set_client(None)
+    made = []
+
+    class Wallet(FakeWallet):
+        def __init__(self, cfg):
+            super().__init__(balance=42.0)
+            made.append(cfg)
+    monkeypatch.setattr(live, "ClobWallet", Wallet)
+    monkeypatch.setattr(live, "library_installed", lambda: True)
+    funder = "0x" + "1" * 40
+    async with login_client("admin") as api:
+        assert (await api.put("/portfolio/live/config", json={"private_key": "xyz"})).status_code == 400
+        assert (await api.put("/portfolio/live/config", json={"funder": "0x123"})).status_code == 400
+        assert (await api.put("/portfolio/live/config", json={"max_order_usd": 0})).status_code == 400
+        r = await api.put("/portfolio/live/config", json={"private_key": KEY, "funder": funder, "signature_type": 2,
+                                                          "max_order_usd": 25, "max_daily_usd": 80})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert KEY not in r.text and body["config"] == {"has_key": True, "key_source": "app", "funder": funder, "signature_type": 2}
+        assert body["balance"] == 42.0 and body["unavailable"] is None
+        assert body["limits"]["order"] == 25 and body["limits"]["daily"] == 80
+        assert made[-1].private_key == "0x" + KEY and made[-1].signature_type == 2
+        # Same settings: the connection is reused
+        await api.get("/portfolio/live")
+        assert len(made) == 1
+        # While real orders are on, the wallet cannot be swapped (the limits can)
+        assert (await api.put("/portfolio/live", json={"mode": "manual", "confirm": True})).status_code == 200
+        r = await api.put("/portfolio/live/config", json={"private_key": "cd" * 32})
+        assert r.status_code == 400 and "Spegni" in r.json()["detail"]
+        assert (await api.put("/portfolio/live/config", json={"max_open_usd": 300})).status_code == 200
+        assert (await api.put("/portfolio/live", json={"mode": "off"})).status_code == 200
+        # Removing the key turns it unavailable
+        r = await api.put("/portfolio/live/config", json={"clear_key": True})
+        assert r.json()["config"]["has_key"] is False and r.json()["unavailable"]
+    async with login_client("viewer") as api:
+        assert (await api.put("/portfolio/live/config", json={"max_order_usd": 5})).status_code == 403
+    live.set_client(None)
+
+
+async def test_limits_from_the_dashboard_cap_the_order(db, book, wallet):
+    wallet._balance = 10_000
+    async with SessionLocal() as s:
+        await live.save_config(s, max_order_usd=3)
+        await live.set_mode(s, "auto")
+        m = await make_market(s)
+        await portfolio.apply_economics(s, m, await make_prediction(s, m))
+        assert (await _live_orders(s))[0].usd == pytest.approx(3, abs=0.01)

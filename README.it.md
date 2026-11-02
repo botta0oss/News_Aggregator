@@ -25,7 +25,7 @@
 
 > [!WARNING]
 > **Non è consulenza finanziaria.** Di base l'app non piazza ordini: produce indicazioni da verificare.
-> Un [portafoglio reale](docs/it/configurazione.md) opzionale (spento finché non lo configuri) può seguire il portafoglio simulato con ordini veri, entro limiti che decidi tu.
+> Un [portafoglio reale](docs/it/configurazione.md) opzionale (spento finché non lo configuri nella pagina *Portafoglio reale*) può seguire il portafoglio simulato con ordini veri, entro limiti che decidi tu.
 > Prima di usare soldi veri controlla i risultati su molti mercati risolti
 > ([backtest e calibrazione](docs/it/verifica.md)).
 >

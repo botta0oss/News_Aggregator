@@ -2,7 +2,7 @@
 import { t, lang } from "../i18n.js";
 import { h, api, fmt, toast, icon, statTile, emptyState, infoTip, CATEGORY_LABELS } from "../ui.js";
 import { equityChart } from "../charts.js";
-import { liveBanner, liveCard } from "./live.js";
+import { liveBanner } from "./live.js";
 
 const money = fmt.money;
 const sideBadge = (side) => h("span", { class: `badge ${side === "YES" ? "badge-accent" : "badge-outline"}` }, side === "YES" ? t("SÌ") : "NO");
@@ -25,11 +25,10 @@ const planCell = (b) => {
 };
 
 export async function viewPortfolio(ctx) {
-  const [data, bets, exclusions, categories, pending, live] = await Promise.all([
+  const [data, bets, exclusions, categories, pending] = await Promise.all([
     api("/portfolio"), api("/portfolio/bets", { params: { status: "all", limit: 500 } }),
     api("/portfolio/exclusions"), api("/sources/categories").catch(() => []),
     api("/portfolio/orders").catch(() => []),
-    ctx.isAdmin() ? api("/portfolio/live").catch(() => null) : null,   // real wallet: admins only
   ]);
   const admin = ctx.isAdmin();
   const refresh = () => ctx.rerender();
@@ -206,7 +205,7 @@ export async function viewPortfolio(ctx) {
         data.clv?.n ? t("{0} comprate sotto la chiusura · {1}", fmt.pct(data.clv.share_positive), fmt.count(data.clv.n, t("mercato chiuso"), t("mercati chiusi")))
           : data.clv_open?.n ? t("finora {0} sulle aperte", fmt.pts(data.clv_open.avg)) : t("nessun mercato chiuso ancora")),
     ),
-    liveBanner(live),
+    liveBanner(s.live_mode),
     data.guard?.paused ? h("div", { class: "notice", role: "alert", style: { marginBottom: "16px" } }, icon("alert"),
       h("div", {}, h("p", {}, h("b", {}, t("Scommesse automatiche in pausa. ")), data.guard.reason || ""),
         h("p", { class: "small" }, t("Il prezzo si muove contro le scommesse recenti: i segnali non stanno anticipando il mercato. Riprendi quando hai cambiato qualcosa (calibrazione, preset, categorie): le scommesse fatte finora non verranno ricontate.")),
@@ -220,7 +219,6 @@ export async function viewPortfolio(ctx) {
         : t("Le scommesse automatiche sono disattivate: attivale qui sotto o aggiungile dal dettaglio di un mercato.")) : null,
     h("div", { class: "grid-2", style: { marginBottom: "16px" } }, curveCard, settingsCard(ctx, data, refresh)),
     h("div", { class: "stack" },
-      liveCard(ctx, live, refresh),
       ordersCard,
       h("section", { class: "card", "aria-labelledby": "h-open" }, h("div", { class: "card-head" }, h("h2", { id: "h-open" }, t("Posizioni aperte ({0})", open.length))), openTable),
       h("section", { class: "card", "aria-labelledby": "h-settled" }, h("div", { class: "card-head" }, h("h2", { id: "h-settled" }, t("Scommesse chiuse ({0})", settled.length))), settledTable),
