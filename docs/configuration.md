@@ -6,6 +6,11 @@ Every variable of the `.env` file.
 
 All variables are set in `.env`. Placeholder values `your_...` count as "not configured".
 
+> [!TIP]
+> The API keys (`TYPESAFE_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`) and Telegram (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`)
+> can also be set from the dashboard, **Settings → API keys** (admins only). They apply at once, without a restart, and replace
+> the `.env` values; removing them goes back to `.env`. They are stored in the database and never shown again in full.
+
 <details>
 <summary><b>Docker compose</b></summary>
 

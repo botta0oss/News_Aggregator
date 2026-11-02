@@ -460,6 +460,15 @@ class AppSetting(Base):
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
+class AppSecret(Base):
+    """API keys and tokens set from the dashboard (backend/apikeys.py); they override the .env values.
+    Never sent back to the browser."""
+    __tablename__ = 'app_secrets'
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class MultiEvent(Base):
     """Polymarket event with several mutually exclusive outcomes (e.g. "Who will win the election?").
 

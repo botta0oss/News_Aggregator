@@ -31,7 +31,7 @@ export function bulkPredict(ctx) {
 
   function paint() {
     const running = state.running;
-    const blocker = !state.jev_enabled ? t("Serve TYPESAFE_API_KEY nel file .env.")
+    const blocker = !state.jev_enabled ? t("Serve la chiave TypeSafe: Impostazioni → Chiavi API.")
       : state.eligible.all === 0 ? t("Nessun mercato aperto ha notizie recenti collegate. Aggiorna notizie e mercati.")
       : null;
     button.disabled = running || Boolean(blocker);

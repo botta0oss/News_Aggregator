@@ -48,6 +48,7 @@ export async function viewSettings(ctx) {
       formHolder,
       sourcesCard,
       admin ? catalogCard(ctx, catalog, rerender) : null,
+      admin ? apiKeysCard(ctx) : null,
       h("div", { class: "grid-2" },
         classificationCard(ctx),
         parametersCard(ctx),
@@ -55,6 +56,65 @@ export async function viewSettings(ctx) {
       alertCallsCard(ctx),
     ),
   );
+}
+
+// ---------- API keys (admins only): write-only, the server only says whether each one is set ----------
+
+const API_KEYS = [
+  ["TYPESAFE_API_KEY", () => t("TypeSafe (Jev)"), () => t("Previsioni, classificazione delle notizie, allerte e backtest. A pagamento."), "https://typesafe.ai"],
+  ["GEMINI_API_KEY", () => t("Google Gemini"), () => t("Riassunti delle notizie e seconda opinione. Piano gratuito disponibile."), "https://aistudio.google.com/apikey"],
+  ["GROQ_API_KEY", () => t("Groq"), () => t("Riassunti delle notizie e seconda opinione. Piano gratuito disponibile."), "https://console.groq.com/keys"],
+  ["TELEGRAM_BOT_TOKEN", () => t("Telegram · token del bot"), () => t("Per ricevere le allerte. Si crea scrivendo a @BotFather su Telegram."), "https://t.me/BotFather"],
+  ["TELEGRAM_CHAT_ID", () => t("Telegram · ID della chat"), () => t("Dove arrivano le allerte: il tuo ID (chiedilo a @userinfobot) o quello di un gruppo o canale."), null],
+];
+
+function apiKeysCard(ctx) {
+  const body = h("div", {}, h("p", { class: "muted small" }, t("Caricamento…")));
+  const card = h("section", { class: "card", "aria-labelledby": "h-apikeys" },
+    h("div", { class: "card-head" }, h("h2", { id: "h-apikeys" }, t("Chiavi API"))),
+    h("p", { class: "muted small", style: { margin: "6px 0 14px" } },
+      t("Valgono subito, senza riavviare. Una chiave salvata qui sostituisce quella del file .env; rimuovendola si torna a quella del file. Dopo il salvataggio non vengono più mostrate: si vedono solo le ultime cifre.")),
+    body);
+
+  const paint = (keys) => {
+    const inputs = {};
+    const rows = API_KEYS.map(([key, label, help, link]) => {
+      const k = keys[key] || {};
+      const secret = key !== "TELEGRAM_CHAT_ID";
+      const input = h("input", { id: `key-${key}`, class: "input", type: secret ? "password" : "text", autocomplete: "off", spellcheck: "false",
+        placeholder: k.set ? t("Lascia vuoto per non cambiarla") : secret ? t("Incolla qui la chiave") : "-1001234567890" });
+      inputs[key] = input;
+      const badge = !k.set ? h("span", { class: "badge badge-outline" }, t("Mancante"))
+        : h("span", { class: "badge badge-good", title: k.source === "env" ? t("Dal file .env") : t("Salvata dalla webapp") },
+          icon("check"), k.source === "env" ? t("dal file .env") : t("dalla webapp"), k.hint ? ` · ${k.hint}` : "");
+      const remove = k.source === "app" ? h("button", { class: "btn btn-ghost btn-sm", type: "button", on: { click: async (e) => {
+        e.currentTarget.disabled = true;
+        try { paint(await api("/settings/api-keys", { method: "PUT", body: { [key]: "" } })); toast(t("{0} rimossa", label())); ctx.reloadStatus(); }
+        catch (err) { toast(err.message, { error: true }); e.currentTarget.disabled = false; }
+      } } }, t("Rimuovi")) : null;
+      return h("div", { class: "form-field" },
+        h("div", { class: "inline", style: { justifyContent: "space-between" } }, h("label", { for: `key-${key}` }, label()), badge),
+        h("div", { class: "inline", style: { flexWrap: "nowrap" } }, input, remove),
+        h("span", { class: "field-hint" }, help(), link ? [" ", externalLink(link, t("Dove si ottiene"))] : null));
+    });
+    const save = h("button", { class: "btn btn-primary", type: "submit" }, t("Salva le chiavi"));
+    const form = h("form", { class: "form", novalidate: true }, h("div", { class: "grid-2", style: { alignItems: "start" } }, rows),
+      h("div", {}, save));
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const changes = Object.fromEntries(Object.entries(inputs).map(([k, el]) => [k, el.value.trim()]).filter(([, v]) => v));
+      if (!Object.keys(changes).length) { toast(t("Nessuna chiave da salvare: incollane almeno una.")); return; }
+      save.disabled = true;
+      try {
+        paint(await api("/settings/api-keys", { method: "PUT", body: changes }));
+        toast(t("Chiavi salvate: valgono da subito"));
+        ctx.reloadStatus();
+      } catch (err) { toast(err.message, { error: true }); save.disabled = false; }
+    });
+    body.replaceChildren(form);
+  };
+  api("/settings/api-keys").then(paint).catch((e) => body.replaceChildren(h("p", { class: "secondary" }, e.message)));
+  return card;
 }
 
 // ---------- Jev calls of the alerts (same setting as in the Alerts page) ----------
@@ -376,7 +436,7 @@ function classificationCard(ctx) {
     h("h2", { id: "h-classif" }, t("Classificazione")),
     h("p", { class: "secondary", style: { margin: "8px 0" } }, st.jev_enabled
       ? t("Le notizie sono classificate da Jev: categoria, regione, opinione o notizia, rilevanza per i mercati, autorevolezza e clickbait.")
-      : t("Senza chiave TypeSafe le notizie sono classificate con parole chiave. Aggiungi TYPESAFE_API_KEY per usare Jev.")),
+      : t("Senza chiave TypeSafe le notizie sono classificate con parole chiave. Inserisci la chiave qui sotto, in Chiavi API, per usare Jev.")),
     h("p", { class: "muted small" }, st.jev_enabled
       ? t("La riclassificazione passa a Jev le notizie classificate prima con le parole chiave. Ogni notizia è una chiamata a pagamento.")
       : t("La riclassificazione applica le regole attuali alle notizie salvate prima dell'ultimo aggiornamento.")),

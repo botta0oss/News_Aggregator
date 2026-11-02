@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from backend.config import settings
-from backend import overrides
+from backend import apikeys, overrides
 from backend.i18n import reset_lang, set_lang
 from backend.ingestor import reembed
 from backend.backtest import engine as backtest_engine
@@ -14,7 +14,7 @@ from backend.ingestor.scheduler import start_scheduler, shutdown_scheduler
 from backend.ai import jev
 from backend.auth.deps import require_user
 from backend.auth.service import ensure_bootstrap_admin
-from backend.api.routes import alerts, articles, auth, backtest, categories, ingest, markets, multi, portfolio, sources, status, usage
+from backend.api.routes import alerts, apikeys as apikeys_routes, articles, auth, backtest, categories, ingest, markets, multi, portfolio, sources, status, usage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
     async with SessionLocal() as db:
         await ensure_bootstrap_admin(db)
         await overrides.load(db)  # forecast parameters changed from the dashboard
+        await apikeys.load(db)    # API keys set from the dashboard
     await backtest_engine.recover_interrupted()
     await reembed.start_if_needed()  # vectors from another embedding model are recomputed
     start_scheduler()
@@ -103,6 +104,7 @@ app.include_router(alerts.router, dependencies=protected)
 app.include_router(backtest.router, dependencies=protected)
 app.include_router(multi.router, dependencies=protected)
 app.include_router(usage.router, dependencies=protected)
+app.include_router(apikeys_routes.router, dependencies=protected)
 
 # Static dashboard files are public (they contain no data); the data comes from the API above.
 # Mounted only if present: StaticFiles raises at startup on a missing directory.
