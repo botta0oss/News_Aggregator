@@ -24,7 +24,8 @@
 </div>
 
 > [!WARNING]
-> **This is not financial advice.** The app does not place orders: it produces suggestions to be checked.
+> **This is not financial advice.** By default the app does not place orders: it produces suggestions to be checked.
+> An optional [real wallet](docs/configuration.md) (off unless you configure it) can follow the simulated portfolio with real orders, within limits you set.
 > Before using real money, check the results over many resolved markets
 > ([backtest and calibration](docs/verification.md)).
 >

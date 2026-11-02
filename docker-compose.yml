@@ -22,6 +22,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        WITH_LIVE_WALLET: ${LIVE_TRADING_ENABLED:-false}
     image: news-aggregator-api:cpu
     restart: unless-stopped
     ports:

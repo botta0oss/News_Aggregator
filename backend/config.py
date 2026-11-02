@@ -133,6 +133,20 @@ class Settings(BaseSettings):
     MAKER_TICK: float = 0.01                  # price step of the book: the order goes one tick above the bid
     MAKER_FILL_FROM_HISTORY: bool = True      # also fill when the minute price history traded below the limit between syncs
 
+    # Real wallet on Polymarket (betting/live.py). Off unless LIVE_TRADING_ENABLED is true AND the
+    # dashboard switch is on: then the buys and sales of the simulated portfolio are also sent as
+    # real orders, sized on the wallet's balance and capped by the limits below.
+    # Needs the optional package: pip install -r requirements-live.txt
+    LIVE_TRADING_ENABLED: bool = False
+    POLYMARKET_PRIVATE_KEY: Optional[str] = None   # key of the wallet that signs the orders (keep it secret)
+    POLYMARKET_FUNDER: Optional[str] = None        # address holding the USDC (the Polymarket proxy wallet), if not the key's own
+    POLYMARKET_SIGNATURE_TYPE: int = 0             # 0 = own wallet (EOA), 1 = Polymarket email/Magic account, 2 = browser wallet via Polymarket
+    POLYMARKET_CHAIN_ID: int = 137                 # Polygon
+    LIVE_MAX_ORDER_USD: float = 10.0               # largest single real buy
+    LIVE_MAX_DAILY_USD: float = 50.0               # real buys per day (UTC), all orders together
+    LIVE_MAX_OPEN_USD: float = 200.0               # money in open real positions and waiting orders
+    LIVE_SELL_SLIPPAGE: float = 0.03               # a real sale goes down to this much below the simulated sale price, not further
+
     # Feed fetching
     FEED_TIMEOUT_SECONDS: float = 20.0
     FEED_MAX_BYTES: int = 5_000_000
@@ -167,7 +181,8 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    @field_validator("TYPESAFE_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "ADMIN_PASSWORD", mode="before")
+    @field_validator("TYPESAFE_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "ADMIN_PASSWORD", "POLYMARKET_PRIVATE_KEY",
+                     "POLYMARKET_FUNDER", mode="before")
     @classmethod
     def _ignore_placeholder_keys(cls, v):
         # Treat empty values and the ".env.example" placeholders as "not configured"

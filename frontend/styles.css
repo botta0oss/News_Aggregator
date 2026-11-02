@@ -881,3 +881,8 @@ th.num .th-sort { flex-direction: row-reverse; }
 /* Too narrow for the name next to the buttons: the logo alone (the link keeps its aria-label) */
 @media (max-width: 400px) { .brand-mobile .brand-text { display: none; } }
 .export-links { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Real wallet (Portfolio page): label / value pairs */
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 0.9rem; margin: 0; }
+.facts dt { color: var(--text-secondary); }
+.facts dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }

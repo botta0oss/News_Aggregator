@@ -13,6 +13,12 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
     && pip install --no-cache-dir -r requirements.txt \
     && python -c "import torch; assert torch.version.cuda is None, 'CUDA build of torch installed in the CPU image'"
 
+# Optional real wallet on Polymarket: built in when LIVE_TRADING_ENABLED=true in .env (docker compose
+# passes it as a build argument); then rebuild with: docker compose up -d --build
+ARG WITH_LIVE_WALLET=false
+COPY requirements-live.txt .
+RUN if [ "$WITH_LIVE_WALLET" = "true" ]; then pip install --no-cache-dir -r requirements-live.txt; fi
+
 # Pre-download the embedding model
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
 

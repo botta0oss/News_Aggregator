@@ -447,6 +447,12 @@ async def _run_market_pipeline(session: AsyncSession) -> dict:
     stats = await sync_markets(session)
     from backend.betting.orders import process_orders
     stats["orders"] = await process_orders(session)
+    try:
+        from backend.betting import live
+        stats["live"] = await live.sync(session)   # fills of the real orders (real wallet)
+    except Exception as e:  # the real wallet must never stop the pipeline
+        await session.rollback()
+        logger.error(f"Real wallet sync failed: {e}")
     stats["settled_bets"] = await settle_bets(session)
     from backend.betting import shadow
     stats["settled_shadow"] = await shadow.settle(session)
